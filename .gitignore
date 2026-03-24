@@ -1,0 +1,6 @@
+# Claude MCP 설정 (Notion 토큰 포함)
+.claude/
+
+# 임시 파일
+*.tmp
+*.json.bak
