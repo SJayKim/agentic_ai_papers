@@ -6,13 +6,12 @@
 📁 Notion Workspace
 └── 🧠 LLM Agent Memory 관련 논문 정리 (메인 페이지)
     ├── [Callout] 개요 설명
-    ├── [H1 + Table] 1. Knowledge Graph & Graph RAG
-    ├── [H1 + Table] 2. Meta-Learning & Evolution
-    ├── [H1 + Table] 3. Long-term & Multi-Agent
-    ├── [H1 + Table] 4. Management, Benchmark & Privacy
-    ├── [H1 + Table] 5. Prompt & Architecture Auto-Optimization
-    ├── [H1 + Table] 6. RL-based Reasoning & Tool Use
-    ├── [H1 + Table] 7. Self-Reflection & Knowledge Graph Fusion
+    ├── [H1 + Table] 1. Memory Management
+    ├── [H1 + Table] 2. Tool Use & MCP
+    ├── [H1 + Table] 3. Planning & Task Decomposition
+    ├── [H1 + Table] 4. Self-Correction & Test-Time Compute
+    ├── [H1 + Table] 5. Agentic RAG & Graph RAG
+    ├── [H1 + Table] 6. General
     ├── [Divider]
     ├── [H2] 개별 논문 상세 Summary
     ├── [Paragraph] 설명 텍스트

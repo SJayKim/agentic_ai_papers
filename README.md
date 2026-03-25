@@ -1,6 +1,17 @@
-# AI Agent Memory 논문 정리
+# LLM Agentic AI 논문 정리
 
-AI Agent Memory 관련 논문을 체계적으로 정리하고 Notion에 동기화하는 프로젝트.
+LLM Agentic AI 관련 논문을 체계적으로 정리하고 Notion에 동기화하는 프로젝트.
+
+## 카테고리
+
+| # | 카테고리 | 설명 |
+|---|---------|------|
+| 1 | Memory Management | 메모리 저장/검색/구조화/진화 |
+| 2 | Tool Use & MCP | 외부 도구 호출, function calling, MCP |
+| 3 | Planning & Task Decomposition | 작업 분할, 계획 수립, 오케스트레이션 |
+| 4 | Self-Correction & Test-Time Compute | 자가 교정, 추론 시간 연산, RL 기반 학습 |
+| 5 | Agentic RAG & Graph RAG | 지식 그래프, 그래프 RAG, 능동적 검색 |
+| 6 | General | 에이전트 아키텍처/서베이/기타 |
 
 ## 구조
 

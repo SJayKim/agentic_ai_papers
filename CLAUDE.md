@@ -2,7 +2,18 @@
 
 ## 프로젝트 개요
 
-AI Agent Memory 관련 논문들을 체계적으로 정리하고, 로컬 마크다운과 Notion에 동기화하는 프로젝트.
+LLM Agentic AI 관련 논문들을 체계적으로 정리하고, 로컬 마크다운과 Notion에 동기화하는 프로젝트.
+
+## 카테고리 체계
+
+| # | 카테고리 | 범위 |
+|---|---------|------|
+| 1 | **Memory Management** | 메모리 저장/검색/구조화/진화 |
+| 2 | **Tool Use & MCP** | 외부 도구 호출, function calling, MCP |
+| 3 | **Planning & Task Decomposition** | 작업 분할, 계획 수립, 오케스트레이션 |
+| 4 | **Self-Correction & Test-Time Compute** | 자가 교정, 추론 시간 연산, RL 기반 학습 |
+| 5 | **Agentic RAG & Graph RAG** | 지식 그래프, 그래프 RAG, 능동적 검색 |
+| 6 | **General** | 위 5개에 해당하지 않는 에이전트 아키텍처/서베이/기타 |
 
 ## 핵심 파일 안내
 

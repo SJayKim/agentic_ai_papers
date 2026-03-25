@@ -116,7 +116,13 @@
 
 `agent_memory_papers.md`에 새 논문을 추가한다.
 
-1. 논문이 속하는 카테고리를 판단 (기존 카테고리 중 택1, 또는 새 카테고리 생성)
+1. 논문이 속하는 카테고리를 판단 — 아래 6개 중 택1:
+   - **1. Memory Management** — 메모리 저장/검색/구조화/진화
+   - **2. Tool Use & MCP** — 외부 도구 호출, function calling, MCP
+   - **3. Planning & Task Decomposition** — 작업 분할, 계획 수립, 오케스트레이션
+   - **4. Self-Correction & Test-Time Compute** — 자가 교정, 추론 시간 연산, RL 기반 학습
+   - **5. Agentic RAG & Graph RAG** — 지식 그래프, 그래프 RAG, 능동적 검색
+   - **6. General** — 위 5개에 해당하지 않는 에이전트 아키텍처/서베이/기타
 2. 해당 카테고리 테이블에 새 행 추가 (5열 구조):
    ```
    | **{논문약칭}** | {발표 날짜} | {학회/발표기관} | {1저자} | {핵심 아이디어 1줄 요약} |
