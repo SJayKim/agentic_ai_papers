@@ -1,0 +1,826 @@
+=== PAGE 1 ===
+DELTA: A NONLINE DOCUMENT -LEVEL TRANSLA -
+TION AGENT BASED ON MULTI -LEVEL MEMORY
+Yutong Wang1∗Jiali Zeng2Xuebo Liu1†Derek F. Wong3Fandong Meng2Jie Zhou2Min Zhang1
+1Institute of Computing and Intelligence, Harbin Institute of Technology, Shenzhen, China
+2Pattern Recognition Center, WeChat AI, Tencent Inc, China
+3NLP2CT Lab, Department of Computer and Information Science, University of Macau
+wangyutong@stu.hit.edu.cn, {liuxuebo,zhangmin2021 }@hit.edu.cn
+{lemonzeng,fandongmeng,withtomzhou }@tencent.com ,derekfw@um.edu.com
+ABSTRACT
+Large language models (LLMs) have achieved reasonable quality improvements
+in machine translation (MT). However, most current research on MT-LLMs
+still faces significant challenges in maintaining translation consistency and ac-
+curacy when processing entire documents. In this paper, we introduce D ELTA,
+aDocument-lev EL T ranslation Agent designed to overcome these limitations.
+DELTA features a multi-level memory structure that stores information across var-
+ious granularities and spans, including Proper Noun Records, Bilingual Summary,
+Long-Term Memory, and Short-Term Memory, which are continuously retrieved
+and updated by auxiliary LLM-based components. Experimental results indicate
+that D ELTA significantly outperforms strong baselines in terms of translation con-
+sistency and quality across four open/closed-source LLMs and two representative
+document translation datasets, achieving an increase in consistency scores by up
+to 4.58 percentage points and in COMET scores by up to 3.16 points on average.
+DELTA employs a sentence-by-sentence translation strategy, ensuring no sentence
+omissions and offering a memory-efficient solution compared to the mainstream
+method. Furthermore, D ELTA improves pronoun and context-dependent transla-
+tion accuracy, and the summary component of the agent also shows promise as a
+tool for query-based summarization tasks. The code and data of our approach are
+released at https://github.com/YutongWang1216/DocMTAgent .
+1 I NTRODUCTION
+Large language models (LLMs) such as GPT-4 (OpenAI, 2023) have recently demonstrated rea-
+sonable performance on the machine translation (MT) task within the natural language processing
+domain (Garcia & Firat, 2022; Hendy et al., 2023; Zhang et al., 2023; Siu, 2023; Jiao et al., 2023).
+Numerous studies have been carried out to further unleash LLMs’ potential for MT (Ghazvininejad
+et al., 2023; Peng et al., 2023; Zeng et al., 2024; He et al., 2024; Sun et al., 2024; Wang et al.,
+2024c; Liu et al., 2024). However, the majority of these researches mainly focus on sentence-level
+translation, operating under the strong assumption that source sentences are independent of one an-
+other. This isolated approach may fail to model the discourse structure and overlook the coherence
+in continuous document texts (Scarton & Specia, 2015; Bawden et al., 2018).
+Document-level machine translation (DocMT) systems have been receiving growing focus in recent
+years, which involves the whole document or some part of it to capture more context information to
+guide the translation process (Kim et al., 2019; Maruf et al., 2021). Researchers find that modeling
+discourse phenomena (Bawden et al., 2018) while translating the whole document helps increase the
+coherence and consistency in the generated translation (Maruf & Haffari, 2018; Wang et al., 2017;
+Zhang et al., 2018; Tan et al., 2019). Recently, a few studies have proposed to introduce LLMs to
+the DocMT task, utilizing their inherent context information modeling and long text processing ca-
+pabilities (Wang et al., 2023b; Wu & Hu, 2023; Wu et al., 2024a). However, existing DocMT-LLMs
+∗Work was done when Yutong Wang was interning at Pattern Recognition Center, WeChat AI, Tencent Inc.
+†Xuebo Liu is the corresponding author.
+1arXiv:2410.08143v2  [cs.CL]  5 Mar 2025
+
+=== PAGE 2 ===
+still suffer from critical issues such as occasional content omissions and terminology translation in-
+consistency (Karpinska & Iyyer, 2023). These issues seriously affect the reliability of the developed
+system, especially when accurate document translations are required.
+LLM-based autonomous agents equipped with specially designed memory components can effi-
+ciently store and retrieve key information embedded in the environment. These data assist the
+inference process of LLMs, facilitating the handling of complex tasks and environments through
+self-directed planning and actions (Wang et al., 2024a; 2023a; Park et al., 2023; Lee et al., 2024).
+Inspired by this, we propose DELTA, an online Document-lev EL T ranslation Agent based on multi-
+level memory components. Specifically, we store information in four memory components: Proper
+Noun Records, Bilingual Summary, Long-Term Memory, and Short-term Memory, and utilize LLMs
+to update and retrieve them. Proper Noun Records maintain a repository of previously encountered
+proper nouns and their initial translations within the document, ensuring consistency by reusing the
+same translation for each subsequent occurrence of the same proper noun. The Bilingual Summary
+contains summaries of both the source and target texts, capturing the core meanings and genre char-
+acteristics of the documents to enhance translation coherence. Long-Term Memory and Short-Term
+Memory store contextual sentences over broader and narrower scopes, respectively. Long-Term
+Memory is accessed by LLMs to retrieve sentences most relevant to the current source sentence,
+while Short-Term Memory provides instant context to support the translation process. During trans-
+lation, sentence pairs are drawn from the Long-Term and Short-Term memory as the exemplars for
+few-shot learning demonstration, and the proper noun translation records and bilingual summaries
+are also integrated into the prompt for DocMT-LLMs as auxiliary information.
+Experimental results indicate that D ELTA achieves improvements in both translation consistency
+and quality. For translation consistency, D ELTA achieves an average improvement of 4.36 percent-
+age points across four translation directions from English and 4.58 percentage points across four
+directions into English. In terms of translation quality, D ELTA yields an average improvement of
+3.14 COMET points for four translation directions from English and 3.16 COMET points for four
+directions into English. Moreover, D ELTA translate documents in a sentence-by-sentence manner
+(following an online approach) to avoid content omissions, ensuring sentence-level alignment of
+target documents with source documents. This manner also prevents memory bloat caused by data
+accumulation, making it more suitable for practical application scenarios.
+Our main contributions are summarized as follows:
+• We develop DELTA, an online DocMT agent employing a multi-level memory structure,
+which stores information across different granularities and spans.
+• We demonstrate that D ELTA substantially improves the consistency and quality of doc-
+ument translations. Additionally, the summary component of D ELTA can function as an
+independent tool for query-based summarization tasks.
+• We certificate that the sentence-wise translation approach employed by D ELTA incurs a
+lower memory cost compared to existing document translation methods.
+• We observe that D ELTA is particularly effective in maintaining translation consistency over
+expended spans. Moreover, it enhances the pronoun translation accuracy in the document.
+2 R ELATED WORK
+Document-Level Machine Translation In recent years, studies on DocMT have achieved rich
+results (Kim et al., 2019; Maruf et al., 2021; Fernandes et al., 2021). These studies can be separated
+into two categories. Studies of the first group employ a document-to-sentence (Doc2Sent) approach,
+where the source-side context sentences are encoded to generate the current target sentence (Wang
+et al
+
+=== PAGE 3 ===
+Window LTCR-1 LTCR-1 f#Missing Sents sCOMET dCOMET
+1 75.09 88.24 0 84.04 6.62
+5 80.49 88.15 0 84.30 6.70
+10 79.65 90.81 2 84.27 6.65
+30 83.08 95.83 8 83.88 6.69
+50 86.94 95.90 10 83.70 6.66
+Table 1: Translation results with different translation window sizes. “#Missing Sents” represents the
+number of missing target sentences in the translated document.
+Autonomous Agents LLM-based autonomous agents have recently achieved remarkable perfor-
+mance in various NLP tasks. Park et al. (2023); Wang et al. (2023a); Lee et al. (2024) deal with
+long-context understanding and processing tasks by introducing carefully designed memory and re-
+trieval workflows. Xu et al. (2024); Wang et al. (2024c); Feng et al. (2024) prompt LLMs to evaluate
+their own outputs and conduct refinement accordingly to improve the quality of the outputs. Li et al.
+(2023a); Liang et al. (2024); Li et al. (2024); Wu et al. (2024b) enhance the performance of LLMs
+on specific tasks by multi-agent interaction.
+Our method in this paper represents a Doc2Sent approach implemented through an LLM-based
+automatic agent. Instead of simply encoding source-side context to generate target sentences, our
+method directs LLMs to retrieve key information across varying granularities and spans, and store
+this data in memory components. During document translation, relevant information is incorporated
+into the prompts for DocMT-LLMs to assist the translation process.
+3 M OTIVATION
+3.1 M AINCHALLENGES FOR DOCMT-LLM S
+Due to the maximum context limitation inherent in LLMs, translating a lengthy document in a
+single pass becomes unfeasible. A conventional strategy involves segmenting the document into
+smaller translation windows and translating them sequentially. In our study, we initially leverage
+theGPT-3.5-turbo-0125 model to translate the IWSLT2017 En ⇒Zh test set, comprising 12
+documents sourced from TED talks. We employ a window of size lto facilitate document translation,
+where lsource sentences are simultaneously processed to generate lhypothesis sentences. Once all
+source sentences are translated, they are concatenated to form the complete target document. The
+primary challenges associated with DocMT-LLMs arise from the following two aspects.
+Translation Inconsistency Given a source document Ds= (s1, s2, . . . , s N)and its correspond-
+ing target document Dt= (t1, t2, . . . , t N), if there exists a proper noun p∈P(Pdenotes the set
+of all proper nouns in Ds, including names of people, locations, and organizations), and pappears
+multiple times in Ds, we expect that all occurrences of its translation in Dtshould be consistent.
+Lyu et al. (2021) propose the Lexical Translation Consistency Ratio (LTCR), a metric that quantifies
+the proportion of consistent translation pairs among all proper noun translation pairs in the target
+document. However, we argue that the translations of the proper nouns are supposed to not only
+maintain consistency throughout the document but also align their first appearance. This consid-
+eration is particularly important for enhancing the reading experience of audiences. Therefore, we
+introduce the LTCR-1 metric for the DocMT-LLMs, which calculates the proportion of proper noun
+translations that are consistent with the initial translation within the document:
+LTCR-1 (Ds,Dt) =P
+p∈PPkp
+i=21(Ti(p) =T1(p))P
+p∈P(kp−1)(1)
+Ti(p)represents the i-th translation of pinDt, and kpdenotes the number of occurrences of pin
+the document. The indicator function 1(Ti(p) =T1(p))returns 1if the translations Ti(p)andT1(p)
+are identical, and 0otherwise. The numerator is the number of times the proper nouns appear again
+and their translation remains the same as their first appearance, and the denominator represents
+the sum of all occurrences except the first one of all proper nouns. To compute this metric, we
+3
+
+=== PAGE 4 ===
+initially annotate all proper nouns in the source document using spaCy1. Subsequently, we utilize
+the token align tool awesome-align (Dou & Neubig, 2021)2to determine the translations of these
+proper nouns in the target document. To mitigate the impact of errors from the alignment tool, we
+introduce a fuzzy match version of this metric, where two proper noun translations are considered
+consistent when one is a substring of the other:
+LTCR-1 f(Ds,Dt) =P
+p∈PPkp
+i=21(Ti(p)⊆ T 1(p)∨ T 1(p)⊆ Ti(p))P
+p∈P(kp−1)(2)
+As shown in Table 1, translating every sentence separately (window size = 1) causes poor translation
+consistency. An example is illustrated in Appendix A. Increasing the window size consistently leads
+to higher scores across all three consistency metrics. This suggests that when more sentences are
+processed within a single translation pass, the LLM is better able to model discourse phenomena
+and maintain consistent translation of proper nouns throughout the document. However, due to the
+inherent limitations in the context length of LLMs, resolving translation inconsistencies cannot be
+achieved solely by indefinitely expanding the window size.
+Translation Inaccuracy When employing a large window size for document translation, LLMs
+tend to process the input source sentences as cohesive documents rather than as individual sentences.
+As a result, the model prioritizes maintaining the general meaning of the text and loses track of the
+detailed information in each sentence. This can lead to undertranslation issues and a decline in
+translation quality (Karpinska & Iyyer, 2023; Wu et al., 2024a). We utilize two neural metrics to as-
+sess the quality of document translation. The first is the sentence-level COMET (sCOMET) score3,
+for which we utilize the model Unbabel/wmt22-comet-da to obtain the scores. The second metric
+is the document-level COMET (dCOMET) score4proposed by Vernikos et al. (2022), for which
+we use wmt21-comet-qe-mqm5to derive reference-free scores. In calculating this document-level
+metric, the model encodes previous sentences as context rather than encoding only the hypothesis,
+making this approach more accurate for evaluating document translations.
+As illustrated in Table 1, an increase in window size correlates with a higher tendency for the LLM
+to omit sentences from the source document, resulting in missing translations in the target document.
+An example of this undertranslation issue is presented in Appendix A. Additionally, quality metrics
+such as sCOMET and dCOMET do not demonstrate a consistent improvement with larger translation
+windows. Therefore, we conclude that translating documents in batches of several sentences at
+a time may introduce translation inaccuracy issues. These concerns are particularly significant in
+contexts where precise translations are essential, such as in technical manuals or official documents.
+3.2 W HYUSING A D OC2SENT APPROACH ?
+Previous experiments indicate that translating a document by processing multiple sentences at once
+may occasionally result in sentence omissions. Although human translators often translate entire
+paragraphs simultaneously, which can also lead to occasional omissions, their underlying transla-
+tion mechanism is fundamentally distinct from that of DocMT-LLMs. DocMT-LLMs are prone to
+omitting source sentences due to hallucination issues or limited capabilities in handling long texts
+effectively. Therefore, we argue that, at this moment, a Doc2Sent approach offers a more promis-
+ing alternative for DocMT-LLMs to produce precise and high-quality document translations. In
+our study, we provide LLMs with contextual information from the document while asking them
+to translate each source sentence separately. Once all sentences are translated, we concatenate the
+target sentences to form the final target document.
+1https://spacy.io/
+2https://github.com/neulab/awesome-align/
+3https://github.com/Unbabel/COMET/
+4https://github.com/amazon-science/doc-mt-metrics/
+5http
+
+=== PAGE 5 ===
+Proper 
+Noun
+RecordsProper Noun
+ExtractorDocument
+TranslatorSource
+DocumentTarget
+Document
+Source
+SummaryTarget
+Summary
+Long -Term Memory
+Short -Term MemorySource Sum -
+mary WriterTarget Sum -
+mary Writer
+Retriever
+······
+Figure 1: Framework of D ELTA. The modules outlined with dashed lines represent the multi-level
+memory components, while those outlined with solid lines denote the LLM-based components.
+Memories closer to the top are more global, abstract, and densely packed with information. During
+translation, memory information is retrieved and incorporated into the translator LLM’s prompt.
+After the translation of each sentence, the LLM-based components extract key information from
+both the source and target documents and update the multi-level memory components.
+4 D ELTA: D OCMT A GENT BASED ON MULTI -LEVEL MEMORY
+Considering the multi-granularity and multi-scale of key information in the document during transla-
+tion, we introduce DELTA, an online DocMT agent. D ELTA employs a multi-level memory stream
+that captures and preserves critical information encountered throughout the translation process. This
+memory stream accommodates a wide range of perspectives, spanning from recent to historical, con-
+crete to abstract, and coarse-grained to fine-grained details. D ELTA translate the source document in
+a sentence-by-sentence manner while updating its memory in real-time. This approach addresses the
+context limitations of large language models and ensures the generation of a sentence-level aligned
+target document, thereby preserving both the quality and rigorousness of the translation. The main
+framework of D ELTA is illustrated in Figure 1, the algorithm of D ELTA is detailed in Algorithm 1,
+and the prompts used for each module are given in Appendix C.
+Proper Noun Records The first level of the agent’s memory component we introduce is a dictio-
+nary called the Proper Noun Records Rto store proper nouns pin the document along with their
+translations upon first encounter T1(p)within the document: R(i)={(p,T1(p))|p∈sj,1≤j <
+i}, where R(i)represents the state of Rbefore translating the i-th sentence, and the same applies to
+other components. When translating the subsequent sentence si, the agent consults R(i)to obtain all
+recorded proper nouns that are also contained in si:ˆR(i)={(p,T1(p))|p∈si,(p,T1(p))∈ R(i)}.
+The Proper Noun Records are continuously updated by an LLM-based component known as
+the Proper Noun Extractor LExtract . After each sentence is translated, it extracts newly en-
+countered proper nouns from the source sentence and their translations from the target sentence
+LExtract (si, ti) ={(p,Tj(p))|p∈si,Tj(p)∈ti,∀(p′,Tk(p))∈ R(i), p̸=p′}and add them to R.
+Bilingual Summary Unlike previous studies (Wang et al., 2023a; Lee et al., 2024), our research
+implements a bilingual summary approach as the second level of the agent’s memory component to
+address the challenges of extensive context on both the source and target sides. We maintain a pair
+of summaries throughout the translation process to enhance accuracy and fluency. The Source-Side
+Summary Asencapsulates the main content, domain, style, and tone of the previously translated
+sections of the document. This summary serves to preserve a coherent understanding of the text’s
+overall context, thereby aiding the LLMs in producing more accurate translations. Conversely, the
+Target-Side Summary Atfocuses solely on the main content of the previously translated target text.
+The pair of summaries are generated by two LLM-based components of the agent: the Source
+Summary Writer LWriteS and the Target Summary Writer LWriteT . These summaries are updated
+every msentences through a two-step process. Initially, the writers generate segment summaries
+for the last msentences from both the source and target texts: ˜A(i+1)
+s =LWriteS(si−m+1, . . . , s i),
+5
+
+=== PAGE 6 ===
+Algorithm 1: The Overall Framework of D ELTA
+input : Source document Ds={s1, . . . , s N}, Large Language Model L, Proper Noun
+Records R=∅, Source-Side Summary As=∅, Target-Side Summary At=∅,
+Short-Term Memory M=∅, Long-Term Memory N=∅
+output: Target document Dt={t1, . . . , t N}
+Dt← ∅
+fori= 1toNdo
+/* Retrieve memory */
+ˆR ← { (p,T1(p))|p∈si,(p,T1(p))∈ R} /* Search Proper Noun Records */
+ˆN ← L Retrieve (si,N)/* Match nrelative sentences from Long-Term Memory */
+/* Translate with hybrid memory information */
+ti← L Translate (si,ˆR,ˆN,As,At,M)
+Dt←Dt∪ {ti} /* Add hypothesis to target document */
+/* Update memory */
+R ← R ∪ L Extract (si, ti) /* Extract new proper nouns and add to records */
+N ← N [−l+ 1 :]∪ {(si, ti)} /* Last lsentences as Long-Term Memory */
+M ← M [−k+ 1 :]∪ {(si, ti)} /* Last ksentences as Short-Term Memory */
+ifimodm= 0 /* Update Bilingual Summary every msentences */
+then
+/* Generate source and target segment summaries */
+˜As← L WriteS(si−m+1, . . . , s i)˜At← L WriteT (ti−m+1, . . . , t i)
+/* Merge segment summaries into document summaries */
+As← L MergeS (As,˜As) At← L MergeT (At,˜At)
+end
+end
+˜A(i+1)
+t =LWriteT (ti−m+1, . . . , t i). Subsequently, these segment summaries are merged with the
+previous overall summaries for both sides to summary mergers to obtain new overall summaries:
+A(i+1)
+s =LMergeS (A(i)
+s,˜A(i+1)
+s),A(i+1)
+t =LMergeT (A(i)
+t,˜A(i+1)
+t). This process is repeated itera-
+tively until all sentences in the source document have been read.
+Long-Term & Short-Term Memory The last two levels of the agent’s memory component are
+the Long-Term Memory and the Short-Term Memory, respectively. These two components are
+designed to address the requisite coherence across document-level translations. The Short-Term
+Memory Mretains the last ksource sentences along with their corresponding translations, where
+krepresents a relatively small number: M(i)={(si−k, ti−k), . . . , (si−1, ti−1)}. This component
+is specifically designed to capture immediate contextual information in adjacent sentences, which is
+then seamlessly integrated into the translation prompt, serving as the context for the current sentence.
+Similarly, the Long-Term Memory Ncomponent preserves a broader range of context by maintain-
+ing a window of the last lsentences from the source document, with lbeing significantly greater
+thank, storing extended coherent information throughout the document. Before translating a given
+source sentence, an LLM-based component called the Memory Retriever LRetrieve chooses nsource
+sentences that are most relevant to the current translation query: ˆN(i)=LRetrieve (si, N(i)). These
+msentences with their translations are subsequently employed as demonstration exemplars.
+Document Translator We utilize an LLM-based component called Document Translator LTranslate
+to perform the final translation process. Information from the multi-level memory is integrated
+into the prompt to support the translator in producing high-quality and consistent translations:
+ti=LTranslate (si,ˆR(i),ˆN(i),A(i)
+s,A(i)
+t,M(i)). The sentence-by-sentence approach ensures that
+the resulting target document is consistently aligned with the source document at the sentence level,
+effectively minimizing the risk of missing target sentences. Additionally, this method allows for
+straightforward evaluation of translation quality using sentence-level metrics such as sCOMET.
+5 E XPERIMENTS
+5.1 S ETTINGS
+Datasets & Metrics We conduct our experiments on the two test sets. The first is the tst2017
+test sets from the IWSLT2017 translation task6(Akiba et al., 2004), which consists of parallel doc-
+uments sourced from TED talks, covering 12 language pairs. Our experiments are conducted on
+eight language pairs: En ⇔Zh, De, Fr, and Ja. There are 10 to 12 sentence-level aligned parallel
+6https://wit3.fbk.eu/2017-01-d/
+6
+
+=== PAGE 7 ===
+SystemEn⇒Xx Xx ⇒En
+sCOMET dCOMET LTCR-1 LTCR-1 fsCOMET dCOMET LTCR-1 LTCR-1 f
+NLLB 82.11 6.36 74.56 81.87 84.10 6.98 79.03 90.76
+GOOGLE 80.41 5.83 81.38 84.72 80.17 5.96 81.43 90.81
+GPT-3.5-Turbo
+Sentence 84.80 6.58 77.06 82.81 84.47 7.05 81.98 91.86
+Context 85.40 6.70 77.34 83.12 84.97 7.15 85.03 95.27
+Doc2Doc – 6.62 79.12 86.39 – 6.96 85.17 92.98
+DELTA 85.58 6.73 82.96 88.83 84.95 7.15 86.53 96.26
+GPT-4o-mini
+Sentence 81.51 6.35 78.59 85.07 84.01 6.99 81.42 91.34
+Context 84.78 6.65 80.01 86.99 84.95 7.15 84.40 94.34
+Doc2Doc – 6.75 80.54 85.39 – 7.01 83.50 93.39
+DELTA 85.85 6.80 81.80 86.33 85.26 7.24 85.25 95.89
+Qwen2-7B-Instruct
+Sentence 80.03 5.96 73.91 79.54 77.10 6.48 76.39 87.94
+Context 80.84 6.08 79.59 85.35 83.09 6.84 81.48 92.56
+Doc2Doc – 5.83 77.32 84.59 – 6.59 85.03 93.68
+DELTA 81.02 6.07 80.09 87.78 83.36 6.84 82.05 93.30
+Qwen2-72B-Instruct
+Sentence 78.53 5.97 79.54 85.09 80.53 6.73 82.25 92.05
+Context 80.79 6.22 79.14 85.40 83.27 6.99 82.86 92.21
+Doc2Doc – 6.45 73.58 78.64 – 6.87 83.00 90.74
+DELTA 84.99 6.66 81.66 88.34 85.19 7.21 86.53 96.48
+Average
+Sentence 81.22 6.21 77.27 83.13 81.53 6.81 80.51 90.80
+Context 82.95 6.41 79.02 85.21 84.07 7.03 83.44 93.59
+Doc2Doc – 6.41 77.64 83.75 – 6.86 84.18 92.70
+DELTA 84.36 6.57 81.63 87.82 84.69 7.11 85.09 95.48
+Table 2: Test results on the IWSLT2017 dataset. Since the translations produced by the Doc2Doc
+method are not aligned at the sentence level with the source text, we do not report the sCOMET
+scores for this method. The highest score in each block is highlighted in bold font The results in the
+“Average” block represent the mean scores across the four backbone models.
+documents with approximately 1.5K sentences for each language pair. The second is Guofeng Web-
+novel7(Wang et al., 2023c; 2024b), a high-quality and discourse-level corpus of web fiction. We
+conduct our experiments on the Guofeng V1 TEST 2 set in the Zh ⇒En direction. The detailed
+dataset statistics are demonstrated in Appendix B. We employ LTCR-1 and LTCR-1 ffor proper noun
+translation consistency evaluation and adopt sCOMET and dCOMET as translation quality metrics,
+which are all introduced in §3.1.
+Models and Hyperparameters In this work, we utilize two versions of GPT models,
+GPT-3.5-Turbo-0125 and GPT-4o-mini , as our base models. We get access to these
+models through the official API provided by OpenAI8. We also introduce the open-source
+Qwen2-7B-Instruct9andQwen2-72B-Instruct10in our experiments. The maxnewtokens is
+set to 2048 and other hyper-parameters remain default. The updating window of Bilingual summary
+mand length of Long-Term Memory lare set to 20. The number of retrieved relative sentences from
+Long-Term Memory nis set to 2. The length of Short-Term Memory kis set to 3.
+Baseline Methods We include the following three approaches as our baselines: a) Sentence : We
+employ the same LLMs but conduct a sentence-level translation process to obtain the baseline re-
+sults. b) Context : We follow Wu et al. (2024a) to provide the LLMs with three previously obtained
+source-target sentence pairs to integrate more contextual information and adapt LLMs for document-
+level translation tasks. c) Doc2Doc : We reproduce the approach proposed by Wang et al. (2023b),
+translating 10 sentences in a single conversation turn and processing the entire document within a
+7https://github.com/longyuewangdcu/GuoFeng-Webnovel/
+8https://platform.openai.com/docs/guides/text-generation/
+9https://huggingface.co/Qwen/Qwen2-7B-Instruct/
+10https://huggingface.co/Qwen/Qwen2-72B-Instruct/
+7
+
+=== PAGE 8 ===
+System sCOMET dCOMET LTCR-1 LTCR-1 fsCOMET dCOMET LTCR-1 LTCR-1 f
+GPT-3.5-Turbo GPT-4o-mini
+Sentence 77.62 3.07 61.58 78.82 77.87 3.10 58.82 70.59
+Context 78.57 3.19 70.10 81.37 78.56 3.19 64.32 74.37
+Doc2Doc – 2.82 77.46 89.02 – 2.96 82.04 91.62
+DELTA 78.45 3.17 85.57 96.52 78.77 3.34 88.94 96.48
+Qwen2-7B-Instruct Qwen2-72B-Instruct
+Sentence 73.65 2.62 37.00 50.00 75.15 2.98 58.00 71.50
+Context 76.54 3.01 52.82 61.54 77.87 3.20 58.21 70.15
+Doc2Doc – 2.69 73.25 84.08 – 2.77 80.79 90.07
+DELTA 76.95 3.10 85.50 94.00 78.32 3.31 86.93 95.98
+Table 3: Test results on the Guofeng dataset.
+single chat box, thereby leveraging LLMs’ long-term modeling ability. In computing the metric
+scores for the Doc2Doc results, we first perform sentence alignment using Bleualign11to obtain
+aligned source-target documents, then we calculate the involved metrics. Furthermore, we also in-
+troduce the results of NLLB-3.3B (Costa-juss `a et al., 2022) and GoogleTrans12for comparison.
+5.2 R ESULTS
+Test Results on IWSLT2017 The main experiment results on the IWSLT2017 test set are demon-
+strated in Table 2. For more detailed scores, please refer to Appendix D. It is evident that D ELTA
+outperforms baseline approaches on LTCR-1 and LTCR-1 fmetric scores across nearly all translation
+directions and models. This indicates that our approach yields significant enhancements in proper
+noun translation consistency for document-level translation. Furthermore, D ELTA significantly im-
+proves the overall quality of document translation, as evidenced by consistently higher sCOMET and
+dCOMET scores. The superior dCOMET scores indicate that D ELTA effectively captures contex-
+tual information to support the translation process. Translation consistency is improved significantly
+in the En ⇒Zh direction, while gains in directions like En ⇒De are modest. For instance, with
+GPT-3.5-Turbo , LTCR-1 improves by 6.17 percentage points (86.44 vs. 80.27) for En ⇒Zh, but
+only 1.40 points (93.46 vs. 92.06) for En ⇒De (see Table 13 of Appendix D). This disparity stems
+from linguistic differences: English proper nouns require conversion into Chinese characters, posing
+challenges for maintaining consistency, whereas in German, they can be directly copied due to the
+shared alphabet. Despite this, a reasonable LTCR-1 improvement in En ⇒De still demonstrates
+our method’s effectiveness. The p-values of t-tests for D ELTA vs Sentence/Context in translation
+quality are less than 0.05 for En ⇔Xx, whereas that in translation consistency are less than 0.05 in
+En⇔Zh. We also test D ELTA on the low-resource language pair, as demonstrated in Appendix F.
+Test Results on Guofeng The test results on Guofeng are illustrated in Table 3. Our ap-
+proach achieves superior results across almost all metrics and backbone models, demonstrating
+its robustness to data of the novel domain. Notably, stronger models, such as GPT-4o-mini and
+Qwen2-72B-Instruct , achieve greater improvements in translation consistency and quality metrics.
+This suggests that the stronger the backbone models are, the more substantial the gains achieved by
+DELTA. The Guofeng test set poses particular challenges for maintaining translation consistency
+due to the prevalence of proper nouns (mainly names) in the source text. Nevertheless, D ELTA
+demonstrates significant improvements in the relevant metrics, with an increase in LTCR-1 of up to
+48.50 percentage points (85.50 vs. 37.00). This indicates that D ELTA represents a strong tool for
+addressing translation inconsistency issues and holds great potential for novel translation, as it ef-
+fectively reduces inconsistent noun translations, thereby minimizing potential confusion for readers.
+6 A NALYSIS
+Ablation Study Table 4 presents an ablation study in the En ⇒Zh direction using
+GPT-3.5-Turbo-0125 as the backbone model. For more detailed ablation studies of each memory
+11https://github.com/rsennrich/Bleualign/
+12https://py-googletrans.readthedocs.io/
+8
+
+=== PAGE 9 ===
+Id Setting sCOMET dCOMET LTCR-1 LTCR-1 f
+1 Sentence-level 83.78 6.55 80.27 88.78
+2 1 + Short-Term Memory 84.50 6.68 77.89 87.41
+3 2 + Long-Term Memory 84.54 6.67 79.23 89.44
+4 3 + Source Summary 84.61 6.68 76.09 91.25
+5 3 + Target Summary 84.70 6.72 82.14 92.86
+6 3 + Bilingual Summary 84.72 6.74 82.49 93.60
+76 + Record (D ELTA) 84.70 6.72 86.44 95.25
+Table 4: Ablation Study.
+component and the effects of hyper-parameters, please refer to Appendix E. When provided with
+context sentences (Model 2), the model exhibits improved translation quality scores, but no signif-
+icant enhancement in translation consistency is observed. The introduction of long-term memory
+contributes to more consistent translations (Model 3). Incorporating bilingual summaries (Model
+6) led to an increase in COMET scores as well as consistency metrics, indicating that this compo-
+nent not only enhances translation quality but also reinforces translation consistency. When proper
+noun records are introduced (Model 7), a slight decrease in sCOMET and dCOMET scores is ob-
+served, likely due to the perturbation introduced by incorporating additional information. However,
+translation consistency improves significantly, with LTCR-1 increasing by 3.95 points and LTCR-1 f
+increasing by 1.65 points compared to Model 6. Moreover, it is evident that the bilingual summary
+has a superior impact on both translation quality and consistency compared to using a summary
+on either the source side or the target side alone. Among Models 4, 5, and 6, Bilingual Summary
+achieves the highest scores across all four metrics.
+0.70.80.9% of Consistent TranslationConsistent Translations of Different Distances
+Sentence Context Doc2Doc DELTA
+1-3 4-10 11-20 21-50 51+
+Sentence-Wise Distance0.70.80.9% of Consistent Translation
+Figure 2: Proportions of consistent transla-
+tions in different sentence-wise distances.Consistency Distance One significant challenge in
+document-level translation is maintaining long-term
+consistency. To evaluate whether our approach ad-
+dresses this challenge, we divide the sentence-wise
+distance between each proper noun’s translation and its
+first occurrence into several intervals. We then report
+the proportion of consistent translations in each inter-
+val in En ⇒Xx (upper) and Xx ⇒En (lower) in Figure
+2. We observe that our approach almost outperforms
+the Sentence and Context methods in achieving proper
+noun translation consistency across all distance inter-
+vals. Notably, our approach excels when the distances
+exceed 50 sentences, yielding a larger proportion of
+consistent translations than the baseline methods. This
+demonstrates the effectiveness of our approach in en-
+hancing long-context translation consistency.
+Metric Sentence Context Doc2Doc DELTA
+APT 59.96 60.84 56.11 61.07
+Table 5: Evaluation results of pronoun
+translation accuracy (APT).
+Metric Sentence DELTA
+Generative Accuracy (%) 29.7 51.0
+Table 6: Evaluation results of context-
+dependent translation.Pronoun & Context-Dependent Translation We
+follow Miculicich et al. (2018); Tan et al. (2019);
+Lyu et al. (2021) to evaluate the accuracy of pro-
+noun translation (APT) of our system in En ⇒Zh
+using the reference-based metric proposed by Mi-
+culicich Werlen & Popescu-Belis (2017). We also
+evaluate our system on the first 1000 instances in
+the En ⇒De subset “mini.gender.opensubtitles” of a
+context-dependent translation benchmark called CTX-
+PRO Wicks & Post (2023). The results achieved by
+GPT-3.5-Turbo-0125 are demonstrated in Table 5 and
+Table 6. D ELTA improves the performance of pronoun
+translation compared to the Sentence and Context baselines, and enhances translations where con-
+text information is explicitly needed. These results indicate that the multi-level memory in D ELTA
+is beneficial to resolving coreference and discourse issues in the document.
+9
+
+=== PAGE 10 ===
+System ROUGE-L Length
+READAENT 21.50 67.86
+DELTA 23.60 82.28
+Table 7: QMSum test results of ReadA-
+gent and D ELTA. “Length” denotes the
+word-wise length of the response.DELTA as a Summarize Writer To assess the effec-
+tiveness of our summary component, we conduct an exper-
+iment on QMSum (Zhong et al., 2021), a benchmark for
+query-based summarization, where systems are required
+to generate summaries of the meeting transcripts in re-
+sponse to a specified query. In our experiment, the query
+is incorporated into the prompts for both summary gener-
+ation and the merging process. We compare our results with those of Lee et al. (2024), who paginate
+the document, generate summaries for each page, and then perform a lookup process on these sum-
+maries according to the query. The results are shown in Table 7. Our system’s segment-by-segment
+summarization approach enables us to effectively locate relevant portions of the document and syn-
+thesize the information through the summary merging process. This demonstrates that the summary
+component of D ELTA is also well-suited for general summarization tasks.
+0 200 400 600 800 1000 1200
+#Processed Instances120130140150160Occupied Memory (GB)OOMMemory Cost of Two Approaches
+Doc2Doc
+DELTA
+Figure 3: Memory cost of the Doc2Doc
+approach and our approach.Memory Costs Our agent system consumes less mem-
+ory than LLM-based Doc2Doc methods, such as those
+described by Wang et al. (2023b), where the whole
+document is translated within a single chat box, suf-
+fering from significant memory costs. As shown in
+Figure 3, we compared the memory usage by utilizing
+Qwen2-72B-Instruction to translate a document in En
+⇒Zh on a device with 2 NVIDIA A800 80GB GPUs.
+Our method demonstrates relatively slow memory growth
+as the number of processed sentences increases, primarily
+due to the increasing length of the summaries. In contrast,
+the memory usage of the Doc2Doc method increases significantly as the number of processed sen-
+tences grows, ultimately leading to memory exhaustion when the count reaches 490. This indicates
+that our approach is more memory-efficient and cost-effective for deployment on local devices.
+7 C ONCLUSION
+In this paper, we analyze two critical challenges for DocMT-LLMs: translation inconsistency and
+inaccuracy. We design an online document-level translation agent equipped with a multi-level mem-
+ory component to tackle them. This memory structure retrieves and stores key information to assist
+the translation process, significantly enhancing translation consistency and quality. Notably, the ef-
+fectiveness in maintaining proper noun translation consistency is particularly pronounced in novel
+translation, and our approach is still able to maintain consistency even when there is a large dis-
+tance between the occurrences of a proper noun pair. The sentence-by-sentence online translation
+method avoids sentence omissions and reduces GPU memory consumption, in contrast to main-
+stream Doc2Doc approaches. Further analysis indicates that our framework can model document
+discourse structures to improve pronoun translation and context-dependent translation accuracy and
+the summarizer component in our agent is also capable of the query-based summarization task.
+LIMITATIONS
+In this work, we present a framework for the DocMT agent, without prioritizing its inference ef-
+ficiency. Given the complexity of D ELTA’s inference process, LLMs are frequently invoked dur-
+ing document translation, leading to prolonged runtime. To address this issue, we identify several
+potential directions for improvement. First, by explicitly marking sentence boundaries with spe-
+cial boundary tags, we can enforce sentence-level alignment within generated paragraphs, allowing
+LLMs to process multiple sentences concurrently and thereby reduce invocation frequency. Second,
+employing more precise alignment tools and scripts to extract proper nouns and their translations,
+rather than relying on LLMs, can further enhance the effi
+
+=== PAGE 11 ===
+ACKNOWLEDGMENTS
+This work was supported in part by the National Natural Science Foundation of China
+(Grant No. 62206076), Guangdong Basic and Applied Basic Research Foundation
+(Grant No. 2024A1515011491), Shenzhen Science and Technology Program (Grant Nos.
+ZDSYS20230626091203008, KQTD2024072910215406, KJZD20231023094700001). Derek F.
+Wong was supported in part by the Science and Technology Development Fund of Macau SAR
+(Grant Nos. 0007/2024/AKP, FDCT/0070/2022/AMJ, FDCT/060/2022/AFJ), and the UM and
+UMDF (Grant Nos. MYRG-GRG2023-00006-FST-UMDF, MYRG-GRG2024-00165-FST-UMDF,
+EF2024-00185-FST, EF2023-00151-FST, EF2023-00090-FST). We would like to thank the anony-
+mous reviewers and meta-reviewer for their insightful suggestions.
+REFERENCES
+Yasuhiro Akiba, Marcello Federico, Noriko Kando, Hiromi Nakaiwa, Michael Paul, and Jun’ichi
+Tsujii. Overview of the IWSLT evaluation campaign. In Proceedings of the First International
+Workshop on Spoken Language Translation: Evaluation Campaign , Kyoto, Japan, 2004. URL
+https://aclanthology.org/2004.iwslt-evaluation.1 .
+Guangsheng Bao, Yue Zhang, Zhiyang Teng, Boxing Chen, and Weihua Luo. G-transformer for
+document-level machine translation. In Chengqing Zong, Fei Xia, Wenjie Li, and Roberto Navigli
+(eds.), Proceedings of the 59th Annual Meeting of the Association for Computational Linguistics
+and the 11th International Joint Conference on Natural Language Processing (Volume 1: Long
+Papers) , pp. 3442–3455, Online, 2021. Association for Computational Linguistics. doi: 10.18653/
+v1/2021.acl-long.267. URL https://aclanthology.org/2021.acl-long.267 .
+Rachel Bawden, Rico Sennrich, Alexandra Birch, and Barry Haddow. Evaluating discourse phenom-
+ena in neural machine translation. In Marilyn Walker, Heng Ji, and Amanda Stent (eds.), Proceed-
+ings of the 2018 Conference of the North American Chapter of the Association for Computational
+Linguistics: Human Language Technologies, Volume 1 (Long Papers) , pp. 1304–1313, New Or-
+leans, Louisiana, 2018. Association for Computational Linguistics. doi: 10.18653/v1/N18-1118.
+URL https://aclanthology.org/N18-1118 .
+Marta R Costa-juss `a, James Cross, Onur C ¸ elebi, Maha Elbayad, Kenneth Heafield, Kevin Heffernan,
+Elahe Kalbassi, Janice Lam, Daniel Licht, Jean Maillard, et al. No language left behind: Scaling
+human-centered machine translation. ArXiv preprint , abs/2207.04672, 2022. URL https://
+arxiv.org/abs/2207.04672 .
+Zi-Yi Dou and Graham Neubig. Word alignment by fine-tuning embeddings on parallel corpora.
+In Paola Merlo, Jorg Tiedemann, and Reut Tsarfaty (eds.), Proceedings of the 16th Conference
+of the European Chapter of the Association for Computational Linguistics: Main Volume , pp.
+2112–2128, Online, 2021. Association for Computational Linguistics. doi: 10.18653/v1/2021.
+eacl-main.181. URL https://aclanthology.org/2021.eacl-main.181 .
+Zhaopeng Feng, Yan Zhang, Hao Li, Wenqiang Liu, Jun Lang, Yang Feng, Jian Wu, and Zuozhu
+Liu. Improving llm-based machine translation with systematic self-correction. ArXiv preprint ,
+abs/2402.16379, 2024. URL https://arxiv.org/abs/2402.16379 .
+Patrick Fernandes, Kayo Yin, Graham Neubig, and Andr ´e F. T. Martins. Measuring and increasing
+context usage in context-aware machine translation. In Chengqing Zong, Fei Xia, Wenjie Li, and
+Roberto Navigli (eds.), Proceedings of the 59th Annual Meeting of the Association for Computa-
+tional Linguistics and the 11th International Joint Conference on Natural Language Processing
+(Volume 1: Long Papers) , pp. 6467–6478, Online, 2021. Association for Computational Linguis-
+tics. doi: 10.18653/v1/2021.acl-long.505. URL https://aclanthology.org/2021.acl-long.
+505.
+Xavier Garcia and Orhan Firat. Using natural language prompts for machine translation. ArXiv
+preprint , abs/2202.11822, 2022. URL https://arxiv.org/abs/2202.11822 .
+Marjan Ghazvininejad, Hila Gonen, and Luke Zettlemoyer. Dictionary-based phrase-level prompt-
+ing of large language models for machine translation. ArXiv preprint
+
+=== PAGE 12 ===
+Zhiwei He, Tian Liang, Wenxiang Jiao, Zhuosheng Zhang, Yujiu Yang, Rui Wang, Zhaopeng Tu,
+Shuming Shi, and Xing Wang. Exploring human-like translation strategy with large language
+models. Transactions of the Association for Computational Linguistics , 12:229–246, 2024. doi:
+10.1162/tacl a00642. URL https://aclanthology.org/2024.tacl-1.13 .
+Amr Hendy, Mohamed Abdelrehim, Amr Sharaf, Vikas Raunak, Mohamed Gabr, Hitokazu Mat-
+sushita, Young Jin Kim, Mohamed Afify, and Hany Hassan Awadalla. How good are gpt models
+at machine translation? a comprehensive evaluation. ArXiv preprint , abs/2302.09210, 2023. URL
+https://arxiv.org/abs/2302.09210 .
+Wenxiang Jiao, Wenxuan Wang, Jen-tse Huang, Xing Wang, Shuming Shi, and Zhaopeng Tu. Is
+chatgpt a good translator? yes with gpt-4 as the engine. ArXiv preprint , abs/2301.08745, 2023.
+URL https://arxiv.org/abs/2301.08745 .
+Marzena Karpinska and Mohit Iyyer. Large language models effectively leverage document-level
+context for literary translation, but critical errors persist. In Philipp Koehn, Barry Haddow, Tom
+Kocmi, and Christof Monz (eds.), Proceedings of the Eighth Conference on Machine Translation ,
+pp. 419–451, Singapore, 2023. Association for Computational Linguistics. doi: 10.18653/v1/
+2023.wmt-1.41. URL https://aclanthology.org/2023.wmt-1.41 .
+Yunsu Kim, Duc Thanh Tran, and Hermann Ney. When and why is document-level context useful
+in neural machine translation? In Andrei Popescu-Belis, Sharid Lo ´aiciga, Christian Hardmeier,
+and Deyi Xiong (eds.), Proceedings of the Fourth Workshop on Discourse in Machine Translation
+(DiscoMT 2019) , pp. 24–34, Hong Kong, China, 2019. Association for Computational Linguis-
+tics. doi: 10.18653/v1/D19-6503. URL https://aclanthology.org/D19-6503 .
+Kuang-Huei Lee, Xinyun Chen, Hiroki Furuta, John Canny, and Ian Fischer. A human-inspired
+reading agent with gist memory of very long contexts. In Ruslan Salakhutdinov, Zico Kolter,
+Katherine Heller, Adrian Weller, Nuria Oliver, Jonathan Scarlett, and Felix Berkenkamp (eds.),
+Proceedings of the 41st International Conference on Machine Learning , volume 235 of Pro-
+ceedings of Machine Learning Research , pp. 26396–26415. PMLR, 21–27 Jul 2024. URL
+https://proceedings.mlr.press/v235/lee24c.html .
+Guohao Li, Hasan Hammoud, Hani Itani, Dmitrii Khizbullin, and Bernard Ghanem. CAMEL:
+communicative agents for ”mind” exploration of large language model society. In Alice
+Oh, Tristan Naumann, Amir Globerson, Kate Saenko, Moritz Hardt, and Sergey Levine
+(eds.), Advances in Neural Information Processing Systems 36: Annual Conference on Neu-
+ral Information Processing Systems 2023, NeurIPS 2023, New Orleans, LA, USA, Decem-
+ber 10 - 16, 2023 , 2023a. URL http://papers.nips.cc/paper files/paper/2023/hash/
+a3621ee907def47c1b952ade25c67698-Abstract-Conference.html .
+Junkai Li, Siyu Wang, Meng Zhang, Weitao Li, Yunghwei Lai, Xinhui Kang, Weizhi Ma, and Yang
+Liu. Agent hospital: A simulacrum of hospital with evolvable medical agents. ArXiv preprint ,
+abs/2405.02957, 2024. URL https://arxiv.org/abs/2405.02957 .
+Yachao Li, Junhui Li, Jing Jiang, Shimin Tao, Hao Yang, and Min Zhang. P-transformer: Towards
+better document-to-document neural machine translation. IEEE/ACM Transactions on Audio,
+Speech, and Language Processing , 2023b. URL https://ieeexplore.ieee.org/abstract/
+document/10255243/ .
+Tian Liang, Zhiwei He, Wenxiang Jiao, Xing Wang, Yan Wang, Rui Wang, Yujiu Yang, Shuming
+Shi, and Zhaopeng Tu. Encouraging divergent thinking in large language models through multi-
+agent debate. In Yaser Al-Onaizan, Mohit Bansal, and Yun-Nung Chen (eds.), Proceedings of
+the 2024 Conference on Empirical Methods in Natural Language Processing , pp. 17889–17904,
+Miami, Florida, USA, November 2024. Association for Computational Linguistics. doi: 10.
+18653/v1/2024.emnlp-main.992. URL https://aclanthology.org/2024.emnlp-main.992/ .
+Liangxin Liu, Xuebo Liu, Derek F. Wong, Dongfang Li, Ziyi Wang, Baotian Hu, and Min Zhang.
+SelectIT: Selective instru
+
+=== PAGE 13 ===
+Yinhan Liu, Jiatao Gu, Naman Goyal, Xian Li, Sergey Edunov, Marjan Ghazvininejad, Mike
+Lewis, and Luke Zettlemoyer. Multilingual denoising pre-training for neural machine trans-
+lation. Transactions of the Association for Computational Linguistics , 8:726–742, 2020. doi:
+10.1162/tacl a00343. URL https://aclanthology.org/2020.tacl-1.47 .
+Lorenzo Lupo, Marco Dinarelli, and Laurent Besacier. Focused concatenation for context-aware
+neural machine translation. In Philipp Koehn, Lo ¨ıc Barrault, Ond ˇrej Bojar, Fethi Bougares, Rajen
+Chatterjee, Marta R. Costa-juss `a, Christian Federmann, Mark Fishel, Alexander Fraser, Markus
+Freitag, Yvette Graham, Roman Grundkiewicz, Paco Guzman, Barry Haddow, Matthias Huck,
+Antonio Jimeno Yepes, Tom Kocmi, Andr ´e Martins, Makoto Morishita, Christof Monz, Masaaki
+Nagata, Toshiaki Nakazawa, Matteo Negri, Aur ´elie N ´ev´eol, Mariana Neves, Martin Popel, Marco
+Turchi, and Marcos Zampieri (eds.), Proceedings of the Seventh Conference on Machine Trans-
+lation (WMT) , pp. 830–842, Abu Dhabi, United Arab Emirates (Hybrid), 2022. Association for
+Computational Linguistics. URL https://aclanthology.org/2022.wmt-1.77 .
+Xinglin Lyu, Junhui Li, Zhengxian Gong, and Min Zhang. Encouraging lexical translation consis-
+tency for document-level neural machine translation. In Marie-Francine Moens, Xuanjing Huang,
+Lucia Specia, and Scott Wen-tau Yih (eds.), Proceedings of the 2021 Conference on Empirical
+Methods in Natural Language Processing , pp. 3265–3277, Online and Punta Cana, Dominican
+Republic, 2021. Association for Computational Linguistics. doi: 10.18653/v1/2021.emnlp-main.
+262. URL https://aclanthology.org/2021.emnlp-main.262 .
+Sameen Maruf and Gholamreza Haffari. Document context neural machine translation with memory
+networks. In Iryna Gurevych and Yusuke Miyao (eds.), Proceedings of the 56th Annual Meeting
+of the Association for Computational Linguistics (Volume 1: Long Papers) , pp. 1275–1284, Mel-
+bourne, Australia, 2018. Association for Computational Linguistics. doi: 10.18653/v1/P18-1118.
+URL https://aclanthology.org/P18-1118 .
+Sameen Maruf, Fahimeh Saleh, and Gholamreza Haffari. A survey on document-level neural ma-
+chine translation: Methods and evaluation. ACM Computing Surveys (CSUR) , 54(2):1–36, 2021.
+URL https://dl.acm.org/doi/abs/10.1145/3441691 .
+Lesly Miculicich, Dhananjay Ram, Nikolaos Pappas, and James Henderson. Document-level neural
+machine translation with hierarchical attention networks. In Ellen Riloff, David Chiang, Julia
+Hockenmaier, and Jun’ichi Tsujii (eds.), Proceedings of the 2018 Conference on Empirical Meth-
+ods in Natural Language Processing , pp. 2947–2954, Brussels, Belgium, 2018. Association for
+Computational Linguistics. doi: 10.18653/v1/D18-1325. URL https://aclanthology.org/
+D18-1325 .
+Lesly Miculicich Werlen and Andrei Popescu-Belis. Validation of an automatic metric for the
+accuracy of pronoun translation (APT). In Bonnie Webber, Andrei Popescu-Belis, and J ¨org
+Tiedemann (eds.), Proceedings of the Third Workshop on Discourse in Machine Translation ,
+pp. 17–25, Copenhagen, Denmark, 2017. Association for Computational Linguistics. doi:
+10.18653/v1/W17-4802. URL https://aclanthology.org/W17-4802 .
+OpenAI. Gpt-4 technical report, 2023. URL https://arxiv.org/pdf/2303.08774 .
+Joon Sung Park, Joseph O’Brien, Carrie Jun Cai, Meredith Ringel Morris, Percy Liang, and
+Michael S Bernstein. Generative agents: Interactive simulacra of human behavior. In Proceedings
+of the 36th annual acm symposium on user interface software and technology , pp. 1–22, 2023.
+URL https://dl.acm.org/doi/abs/10.1145/3586183.3606763 .
+Keqin Peng, Liang Ding, Qihuang Zhong, Li Shen, Xuebo Liu, Min Zhang, Yuanxin Ouyang,
+and Dacheng Tao. Towards making the most of ChatGPT for machine translation. In Houda
+Bouamor, Juan Pino, and Kalika Bali (eds.), Findings of the Association for Computational Lin-
+guistics: EMNLP 2023 , pp. 5622–5633, Singapore, 2023. Association for Computational Lin-
+guistics. doi: 1
+
+=== PAGE 14 ===
+Sai Cheong Siu. Chatgpt and gpt-4 for professional translators: Exploring the potential of large
+language models in translation. Available at SSRN 4448091 , 2023. URL https://papers.
+ssrn.com/sol3/papers.cfm?abstract id=4448091 .
+Zengkui Sun, Yijin Liu, Fandong Meng, Jinan Xu, Yufeng Chen, and Jie Zhou. LCS: A language
+converter strategy for zero-shot neural machine translation. In Lun-Wei Ku, Andre Martins, and
+Vivek Srikumar (eds.), Findings of the Association for Computational Linguistics: ACL 2024 , pp.
+9201–9214, Bangkok, Thailand, August 2024. Association for Computational Linguistics. doi:
+10.18653/v1/2024.findings-acl.547. URL https://aclanthology.org/2024.findings-acl.
+547/ .
+Zewei Sun, Mingxuan Wang, Hao Zhou, Chengqi Zhao, Shujian Huang, Jiajun Chen, and Lei Li.
+Rethinking document-level neural machine translation. In Smaranda Muresan, Preslav Nakov,
+and Aline Villavicencio (eds.), Findings of the Association for Computational Linguistics: ACL
+2022 , pp. 3537–3548, Dublin, Ireland, 2022. Association for Computational Linguistics. doi:
+10.18653/v1/2022.findings-acl.279. URL https://aclanthology.org/2022.findings-acl.
+279.
+Xin Tan, Longyin Zhang, Deyi Xiong, and Guodong Zhou. Hierarchical modeling of global con-
+text for document-level neural machine translation. In Kentaro Inui, Jing Jiang, Vincent Ng,
+and Xiaojun Wan (eds.), Proceedings of the 2019 Conference on Empirical Methods in Natural
+Language Processing and the 9th International Joint Conference on Natural Language Process-
+ing (EMNLP-IJCNLP) , pp. 1576–1585, Hong Kong, China, 2019. Association for Computational
+Linguistics. doi: 10.18653/v1/D19-1168. URL https://aclanthology.org/D19-1168 .
+Xin Tan, Longyin Zhang, and Guodong Zhou. Coupling context modeling with zero pronoun re-
+covering for document-level natural language generation. In Marie-Francine Moens, Xuanjing
+Huang, Lucia Specia, and Scott Wen-tau Yih (eds.), Proceedings of the 2021 Conference on
+Empirical Methods in Natural Language Processing , pp. 2530–2540, Online and Punta Cana,
+Dominican Republic, 2021. Association for Computational Linguistics. doi: 10.18653/v1/2021.
+emnlp-main.197. URL https://aclanthology.org/2021.emnlp-main.197 .
+Giorgos Vernikos, Brian Thompson, Prashant Mathur, and Marcello Federico. Embarrassingly easy
+document-level MT metrics: How to convert any pretrained metric into a document-level metric.
+In Philipp Koehn, Lo ¨ıc Barrault, Ond ˇrej Bojar, Fethi Bougares, Rajen Chatterjee, Marta R. Costa-
+juss`a, Christian Federmann, Mark Fishel, Alexander Fraser, Markus Freitag, Yvette Graham, Ro-
+man Grundkiewicz, Paco Guzman, Barry Haddow, Matthias Huck, Antonio Jimeno Yepes, Tom
+Kocmi, Andr ´e Martins, Makoto Morishita, Christof Monz, Masaaki Nagata, Toshiaki Nakazawa,
+Matteo Negri, Aur ´elie N ´ev´eol, Mariana Neves, Martin Popel, Marco Turchi, and Marcos Zampieri
+(eds.), Proceedings of the Seventh Conference on Machine Translation (WMT) , pp. 118–128, Abu
+Dhabi, United Arab Emirates (Hybrid), 2022. Association for Computational Linguistics. URL
+https://aclanthology.org/2022.wmt-1.6 .
+Bing Wang, Xinnian Liang, Jian Yang, Hui Huang, Shuangzhi Wu, Peihao Wu, Lu Lu, Zejun Ma,
+and Zhoujun Li. Enhancing large language model with self-controlled memory framework. ArXiv
+preprint , abs/2304.13343, 2023a. URL https://arxiv.org/abs/2304.13343 .
+Lei Wang, Chen Ma, Xueyang Feng, Zeyu Zhang, Hao Yang, Jingsen Zhang, Zhiyuan Chen, Ji-
+akai Tang, Xu Chen, Yankai Lin, et al. A survey on large language model based autonomous
+agents. Frontiers of Computer Science , 18(6):186345, 2024a. URL https://link.springer.
+com/article/10.1007/s11704-024-40231-1 .
+Longyue Wang, Zhaopeng Tu, Andy Way, and Qun Liu. Exploiting cross-sentence context for neural
+machine translation. In Martha Palmer, Rebecca Hwa, and Sebastian Riedel (eds.), Proceedings
+of the 2017 Conference on Empirical Methods in Natural Language Processing , pp. 2826–2831,
+Copenhagen, Denmark, 2017. Association for Computational Linguistics.
+
+=== PAGE 15 ===
+Language Processing , pp. 16646–16661, Singapore, 2023b. Association for Computational Lin-
+guistics. doi: 10.18653/v1/2023.emnlp-main.1036. URL https://aclanthology.org/2023.
+emnlp-main.1036 .
+Longyue Wang, Zhaopeng Tu, Yan Gu, Siyou Liu, Dian Yu, Qingsong Ma, Chenyang Lyu, Lit-
+ing Zhou, Chao-Hong Liu, Yufeng Ma, Weiyu Chen, Yvette Graham, Bonnie Webber, Philipp
+Koehn, Andy Way, Yulin Yuan, and Shuming Shi. Findings of the WMT 2023 shared task on
+discourse-level literary translation: A fresh orb in the cosmos of LLMs. In Philipp Koehn, Barry
+Haddow, Tom Kocmi, and Christof Monz (eds.), Proceedings of the Eighth Conference on Ma-
+chine Translation , pp. 55–67, Singapore, 2023c. Association for Computational Linguistics. doi:
+10.18653/v1/2023.wmt-1.3. URL https://aclanthology.org/2023.wmt-1.3 .
+Longyue Wang, Siyou Liu, Minghao Wu, Wenxiang Jiao, Xing Wang, Jiahao Xu, Zhaopeng Tu,
+Liting Zhou, Yan Gu, Weiyu Chen, Philipp Koehn, Andy Way, and Yulin Yuan. Findings of
+the wmt 2024 shared task on discourse-level literary translation. In Proceedings of the Ninth
+Conference on Machine Translation , 2024b.
+Yutong Wang, Jiali Zeng, Xuebo Liu, Fandong Meng, Jie Zhou, and Min Zhang. TasTe: Teach-
+ing large language models to translate through self-reflection. In Lun-Wei Ku, Andre Martins,
+and Vivek Srikumar (eds.), Proceedings of the 62nd Annual Meeting of the Association for Com-
+putational Linguistics (Volume 1: Long Papers) , pp. 6144–6158, Bangkok, Thailand, August
+2024c. Association for Computational Linguistics. doi: 10.18653/v1/2024.acl-long.333. URL
+https://aclanthology.org/2024.acl-long.333 .
+Rachel Wicks and Matt Post. Identifying context-dependent translations for evaluation set pro-
+duction. In Philipp Koehn, Barry Haddow, Tom Kocmi, and Christof Monz (eds.), Proceed-
+ings of the Eighth Conference on Machine Translation , pp. 452–467, Singapore, December
+2023. Association for Computational Linguistics. doi: 10.18653/v1/2023.wmt-1.42. URL
+https://aclanthology.org/2023.wmt-1.42 .
+Minghao Wu, Thuy-Trang Vu, Lizhen Qu, George Foster, and Gholamreza Haffari. Adapting large
+language models for document-level machine translation. ArXiv preprint , abs/2401.06468, 2024a.
+URL https://arxiv.org/abs/2401.06468 .
+Minghao Wu, Yulin Yuan, Gholamreza Haffari, and Longyue Wang. (perhaps) beyond human
+translation: Harnessing multi-agent collaboration for translating ultra-long literary texts. ArXiv
+preprint , abs/2405.11804, 2024b. URL https://arxiv.org/abs/2405.11804 .
+Yangjian Wu and Gang Hu. Exploring prompt engineering with GPT language models for
+document-level machine translation: Insights and findings. In Philipp Koehn, Barry Haddow,
+Tom Kocmi, and Christof Monz (eds.), Proceedings of the Eighth Conference on Machine
+Translation , pp. 166–169, Singapore, 2023. Association for Computational Linguistics. doi:
+10.18653/v1/2023.wmt-1.15. URL https://aclanthology.org/2023.wmt-1.15 .
+Wenda Xu, Daniel Deutsch, Mara Finkelstein, Juraj Juraska, Biao Zhang, Zhongtao Liu,
+William Yang Wang, Lei Li, and Markus Freitag. LLMRefine: Pinpointing and refining large
+language models via fine-grained actionable feedback. In Kevin Duh, Helena Gomez, and
+Steven Bethard (eds.), Findings of the Association for Computational Linguistics: NAACL 2024 ,
+pp. 1429–1445, Mexico City, Mexico, 2024. Association for Computational Linguistics. URL
+https://aclanthology.org/2024.findings-naacl.92 .
+Jiali Zeng, Fandong Meng, Yongjing Yin, and Jie Zhou. Teaching large language models to translate
+with comparison. Proceedings of the AAAI Conference on Artificial Intelligence , 38(17):19488–
+19496, Mar. 2024. doi: 10.1609/aaai.v38i17.29920. URL https://ojs.aaai.org/index.php/
+AAAI/article/view/29920 .
+Biao Zhang, Barry Haddow, and Alexandra Birch. Prompting large language model for machine
+translation: A case study. In Andreas Krause, Emma Brunskill, Kyunghyun Cho, Barbara Engel-
+hardt, Sivan Sabato, and Jonathan Scarlett (eds.), International Conference on Machine Learning,
+I
+

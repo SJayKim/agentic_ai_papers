@@ -1,0 +1,820 @@
+=== PAGE 1 ===
+Can LLMs Correct Themselves? A Benchmark of
+Self-Correction in LLMs
+Guiyao Tie1∗, Zenghui Yuan1∗, Zeli Zhao1∗, Chaoran Hu1, Tianhe Gu1,
+Ruihang Zhang1,Sizhe Zhang1,Junran Wu1, Xiaoyue Tu1, Ming Jin2,
+Qingsong Wen3, Lixing Chen4†, Pan Zhou1†, Lichao Sun5
+1Huazhong University of Science and Technology2Griffith University
+3Squirrel Ai Learning4Shanghai Jiaotong University5Lehigh University
+{tgy,zenghuiyuan,zhaozeli,huchaoran,gtianhe,ruihang_zhang}@hust.edu.cn
+{zhangsizhe,junranw,xiaoyuetu,panzhou}@hust.edu.cn,
+{mingjinedu,qingsongedu}@gmail.com,lxchen@sjtu.edu.cn,lis221@lehigh.edu
+Abstract
+Self-correction of large language models (LLMs) emerges as a critical component
+for enhancing their reasoning performance. Although various self-correction meth-
+ods have been proposed, a comprehensive evaluation of these methods remains
+largely unexplored, and the question of whether LLMs can truly correct themselves
+is a matter of significant interest and concern. In this study, we introduceCor-
+rectBench, a benchmark developed to evaluate the effectiveness of self-correction
+strategies, including intrinsic, external, and fine-tuned approaches, across three
+tasks: commonsense reasoning, mathematical reasoning, and code generation.
+Our findings reveal that: 1) Self-correction methods can improve accuracy, espe-
+cially for complex reasoning tasks; 2) Mixing different self-correction strategies
+yields further improvements, though it reduces efficiency; 3) Reasoning LLMs
+have limited optimization under additional self-correction methods and have high
+time costs. Interestingly, a comparatively simple chain-of-thought (CoT) baseline
+demonstrates competitive accuracy and efficiency. These results underscore the
+potential of self-correction to enhance LLM’s reasoning performance while high-
+lighting the ongoing challenge of improving their efficiency. Consequently, we
+advocate for further research focused on optimizing the balance between reasoning
+capabilities and operational efficiency. Project Page: https://correctbench.github.io/
+1 Introduction
+The rapid advancement of large language models (LLMs), exemplified by GPT-3.5 [ 72] and LLaMA
+3 [16], has precipitated a transformative shift in artificial intelligence (AI), yielding state-of-the-
+art performance across diverse tasks [ 56]. Specifically, these tasks include content generation [ 1],
+natural language understanding [ 31], and complex decision-making [ 67], all of which have been
+revolutionized by the extensive pretraining and sophisticated architectures of LLMs. Notably, the
+introduction of frameworks like Chain-of-Thought (CoT) [ 61] has further expanded LLM’s capacity
+for multi-step reasoning, enabling them to tackle more intricate tasks.
+Despite these advancements, ensuring the reliability and accuracy of model outputs, especially for
+reasoning-intensive tasks, remains a formidable challenge. In response, recent works have focused
+on self-correction strategies aimed at refining LLMs’ decision-making processes [ 29,34] through
+iterative revision. Pioneering approaches such as RARR [ 20], Refiner [ 44], and CRITIC [ 21] illustrate
+the potential of integrating feedback loops and corrective components into model architectures.
+∗Equal contributions.†Corresponding authors: Pan Zhou and Lixing Chen.
+39th Conference on Neural Information Processing Systems (NeurIPS 2025) Track on Datasets and Benchmarks.arXiv:2510.16062v2  [cs.CL]  22 Oct 2025
+
+=== PAGE 2 ===
+ CS-QAGPQA
+GSM8K
+AQUA
+MATHHumanEval0.20.40.60.8
+HotpotQABase (Baseline)
+ CS-QAGPQA
+GSM8K
+AQUA
+MATHHumanEval0.20.40.60.8
+HotpotQAS1 (Intrinsic Correction)
+ CS-QAGPQA
+GSM8K
+AQUA
+MATHHumanEval0.20.40.60.8
+HotpotQAS2 (External Correction)
+LLaMA3.1-8B-Instruct
+LLaMA3.1-70B-InstructQwen2.5-7B-Instruct
+Qwen2.5-72B-InstructClaude3.5-Sonnet
+GPT-3.5GPT-4o
+QWQ-32B-InstructDeepSeek-V3
+DeepSeek-R1o3-miniFigure 1: Comparison of different LLMs across various self-correction types and task scenarios.
+However, these approaches often yield inconsistent gains across different tasks, prompting deeper
+questions about their capability of correction and generalizability. This observation motivates the
+central question:Can LLMs truly correct themselves?Moreover, it remains unclear whether more
+intricate self-correction schemes necessarily translate into superior overall performance.
+To address these issues, this paper presentsCorrectBench, a systematic benchmark for investigating
+how self-correction methods affect LLMs performance across multiple tasks. Building on a recent
+survey of self-correction approaches [ 29], we categorize such methods into three primary categories
+(i.e.,intrinsic correction,external correctionandfine-tuned correction), and select 11 representative
+methods from them. Additionally, we establish comparative baselines using both the widely adopted
+CoT [61] and a standard prompting strategy denoted as ‘Base’ (detailed in Appendix G.1).
+For a rigorous and comprehensive assessment, we construct two curated datasets:CorrectBench-
+base, which integrates diverse subtasks with 3,825 question-answer pairs drawn from 7 distinct
+subdatasets, andCorrectBench-test, a curated collection of question-answer pairs specifically tailored
+for correction-oriented experiments. These subdatasets cover three principal tasks: commonsense
+reasoning [ 47], mathematical reasoning [ 23], and code generation [ 7]. We then apply these subdatasets
+to both instruction-based LLMs (e.g., LLaMA 3.1-8B-Instruct [ 40], Qwen 2.5-7B-Instruct [ 70], GPT-
+4o [26], Claude 3.5-Sonnet [ 2]) and reasoning LLMs2(e.g., DeepSeek-V3 [ 12]). Figure 1 compares
+the baseline (‘Base’) performance with the mean performances of intrinsic and external correction
+methods separately, revealing that self-correction bolsters overall accuracy (detailed in Figure 8).
+Key insights.First, self-correction methods substantially enhance accuracy, particularly in complex
+reasoning tasks. Meanwhile, mixing multiple methods, while improving accuracy, incurs higher
+computational costs and reduced efficiency. For reasoning LLMs, these methods offer only marginal
+gains with increased time usage. Interestingly, the CoT [ 61] strategy demonstrates a favorable
+trade-off between operational efficiency and overall accuracy, challenging the prevailing assumption
+that more sophisticated correction frameworks inherently produce superior outcomes.
+To summarize, our work provides three key contributions:
+•A Comprehensive Benchmark.We propose CorrectBench, the first benchmark devised
+to systematically evaluate the impact of self-correction on LLMs inference. Spanning
+multiple tasks and model categories, CorrectBench offers a robust, reproducible platform
+for methodological comparisons.
+•Two Datasets.We present CorrectBench-base and CorrectBench-test, both meticulously
+constructed to encompass a broad range of question-answer formats and reasoning scenarios,
+facilitating thorough assessments of different correction methods.
+•Insights and Implications.Our empirical findings show that self-correction substantially
+advances LLMs’ performance, especially on tasks demanding extensive reasoning. However,
+the increased computational load of mixing multiple correction strategies must be weighed
+against potential accuracy gains. Moreover, for reasoning LLMs, additional correction
+2This paper defines “reasoning LLMs” as those models that are specifically enhanced with complex reasoning
+capabilities through a post-training 
+
+=== PAGE 3 ===
+methods provide limited improvements, emphasizing critical cost-efficiency concerns for
+practical applications.
+2 CorrectBench: A Benchmark of Self-Correction in LLMs
+CorrectBench is a systematically designed benchmark that quantifies the extent to which various
+correction methods improve model outputs in reasoning-intensive scenarios. As illustrated in Figure 2,
+CorrectBench characterizes self-correction along three principal dimensions:Task Scenario,Self-
+Correction Type, andLLM Type. The evaluation pipeline begins with selecting a specific task scenario
+and dataset, followed by applying a chosen correction method, and concludes with assessing the
+model’s iterative self-correction process across diverse LLMs.
+Question :Which ofthefollowing is
+thelargest planet inoursolar system ?
+A)Earth B)Mars C)Jupiter D)Venus?
+T1:Commonsense Reasoning
+Answer: C.
+T2:Mathematical Reasoning
+Question :Natalia sold clips to48of
+herfriends inApril, andthen shesold
+half asmany clips inMay.How many
+clips did Natalia sell altogether in
+April andMay?
+Answer: 72.
+T3:Code Generation
+Question :Write aPython function
+that takes two integers asinput and
+returns their sum.
+Answer :
+defadd_numbers (a,b):
+return a+bBase LLM
+Feedback LLMRefine LLM
+Generated Feedback ResponseFine-tuned Refine LLM
+Search Engine
+Code ExecutorSearch…
+Fine-
+tuningS1: Intrinsic 
+CorrectionS2: External 
+CorrectionS3: Fine -tuned 
+Correction
+Data Flow
+Extra Data Flow
+M1: Instruction -based LLM M2: Reasoning LLM
+Figure 2: An overview of the CorrectBench framework.
+Iterative Self-Correction Paradigm.In a standard LLM evaluation, the model generates an initial
+response r0to a question qgiven an initial prompt p0, formally r0=M(q, p 0), where Mdenotes
+the LLM. While this process becomes iterative in the self-correction paradigm. Specifically, for the
+k-th iteration, pk=pk−1∪rk−1, rk=M(q, p k), where pkis the updated prompt that includes
+the previous response rk−1. After Kiterations, the final output rKreflects the model’scorrected
+response. This iterative mechanism enables the model to continually refine its output based on newly
+revealed errors or inconsistencies.
+Question
+Initial 
+ResponseResponse 1
+ Response n−1Response 𝑛
+Correction Method Addition
+ Iteration
+Figure 3: Mixture of different correction methods.Mixture Framework.While individual self-
+correction methods can improve model responses,
+it is plausible that integrating multiple methods
+may yield further improvements in accuracy. To
+examine these potential synergies, we propose
+the mixture framework, illustrated in Figure 3.
+The response of one correction method serves as
+input to the next, forming a dynamic pipeline of
+iterative refinements. This setup enables us to
+analyze how distinct self-correction methods in-
+teract, thereby guiding the development of optimal configurations for improving LLM’s performance.
+2.1 Self-Correction Method
+CorrectBench comprehensively evaluates three distinct categories of self-correction methods:
+S1: Intrinsic Correction.This category focuses on the LLMs’ capacity to internally identify and
+correct errors without external tools. Methods such as RCI [ 30], Self-Refine [ 38], CoVe [ 13], and
+Reflexion [ 54] enable the LLMs to re-evaluate its prior reasoning steps and resolve inconsistencies
+based on its internal knowledge.
+3
+
+=== PAGE 4 ===
+S2: External Correction.In contrast toS1,S2(e.g., Reflexion [ 54], RARR [ 20], RATT [ 74],
+CRITIC [ 21]) leverages external resources, such as knowledge bases or Google search tools, to
+address gaps in the internal representation. This external support can correct factual inaccuracies or
+logical oversights, though it may constrain the model’s capacity for divergent reasoning.
+S3: Fine-tuned Correction.Fine-tuned correction methods including DCoT [ 45], SCORE [ 76],
+and SuperCorrect [ 69] enhance LLMs’ self-correction performance through targeted fine-tuning.
+Although potentially effective, these methods require substantial training and are often limited by the
+scope and quality of the fine-tuning data.
+2.2 Task Scenario
+CorrectBench investigates self-correction methods across three representative task scenarios:
+T1: Commonsense Reasoning.This scenario probes the model’s capacity to address factual or logical
+inconsistencies within everyday knowledge domains. Relevant datasets include HotpotQA [ 71],
+CommonsenseQA [ 47]3, and the more challenging GPQA[ 50], which emphasizes complex reasoning.
+T2: Mathematical Reasoning.Datasets in this task scenario emphasize the detection and cor-
+rection of errors in mathematical derivations, algebraic manipulations, and multi-step reasoning.
+Representative datasets include GSM8K [11], AQUA [8], and MATH [23].
+T3: Code Generation.This scenario assesses the LLM’s ability to generate functionally correct and
+logically consistent code from natural language prompts. For instance, HumanEval [ 7] measures the
+LLM’s ability to detect and correct syntax errors, logical flaws, and other coding mistakes.
+2.3 LLM Type
+To ensure a broad and realistic appraisal, CorrectBench encompasses two categories of LLMs:
+M1: Instruction-Based LLMs.LLMs are designed to follow user-provided instructions to generate
+relevant outputs, making them highly versatile across diverse tasks. This category includes both open-
+source and closed-source LLMs, distinguished by their accessibility and design paradigms. Open-
+source LLMs, such as Qwen 2.5-7B/70B-Instruct [ 70], as well as LLaMA 3.1-8B/70B-Instruct [ 40],
+offer transparency and flexibility for modification, enabling detailed analysis and fine-tuning. Con-
+versely, closed-source LLMs, including OpenAI’s GPT-3.5 [ 42], GPT-4o [ 26], and Anthropic’s
+Claude 3.5-Sonnet [ 2], excel in real-world tasks due to proprietary optimizations, but restrict direct
+access and customization for research purposes.
+M2: Reasoning LLMs.Reasoning LLMs are models specifically enhanced with advanced reasoning
+capabilities through targeted post-training optimization processes. These models are designed to
+excel in tasks requiring multi-step logical reasoning, often incorporating integrated self-correction
+mechanisms to refine their outputs. Representative examples include QWQ-32B-Instruct [ 66],
+o3-mini and DeepSeek-R1 [ 12]. DeepSeek-V3 [ 12], in particular, adopts an innovative approach
+to distilling reasoning capabilities from long chain-of-thought models, leveraging its predecessor.
+By integrating verification and reflection patterns from R1, DeepSeek-V3 achieves substantial
+improvements in reasoning accuracy while maintaining precise control over output style and length.
+2.4 Research Question
+This study aims to elucidate the effectiveness of different self-correction methods in enhancing LLMs’
+performance, addressing the following core research questions:
+[RQ1]To what extent can LLMs achieve accurate results by leveraging intrinsic (S1) and external
+(S2) self-correction methods4without requiring further intervention?
+[RQ2]How does mixing multiple self-correction methods influence model accuracy and robustness,
+and what are the associated computational trade-offs?
+[RQ3]For reasoning LLMs with built-in correction mechanisms, to what extent can the above
+self-correction methods provide additional benefits?
+3CommonsenseQA is represented as CS-QA in the following.
+4S3is analyzed separately due
+
+=== PAGE 5 ===
+Table 1: Main results on CorrectBench for the average of multiple LLMs. Values in () indicate the
+change from the baseline. Blue signifies improvements, and orange indicates declines, where darker
+shades reflect larger magnitudes. Further details are given in Appendix H.
+Type Method HotpotQA(↑) CS-QA(↑) GPQA(↑) GSM8K(↑) AQUA(↑) MATH(↑) HumanEval(↑)
+-Base 80.76 79.96 18.56 86.46 61.23 75.12 72.71
+CoT 83.29 ( +2.53 ) 78.03 ( -1.93 ) 16.52 ( -2.04 ) 91.96 ( +5.50 ) 60.24 ( -0.99 ) 72.59 ( -2.53 ) 60.10 ( -12.61 )
+S1RCI 79.67 ( -1.09 ) 76.29 ( -3.67 ) 19.98 ( +1.42 ) 87.00 ( +0.54 ) 67.12 ( +5.89 ) 74.92 ( -0.20 ) 67.46 ( -5.25 )
+CoVe 83.04 ( +2.28 ) 78.54 ( -1.42 ) 37.41 ( +18.85 ) 92.23 ( +5.77 ) 71.12 ( +9.89 ) 79.30 ( +4.18 ) 76.96 ( +4.25 )
+Self-Refine 85.49 ( +4.73 ) 81.06 ( +1.10 ) 40.69 ( +22.13 ) 91.74 ( +5.28 ) 69.46 ( +8.23 ) 81.77 ( +6.65 ) -
+Reflexion-v1 69.52 ( -11.24 ) 63.89 ( -16.07 ) 19.25 ( +0.69 ) 67.64 ( -18.82 ) 48.33 ( -12.90 ) 65.01 ( -10.11 ) -
+S2Reflexion-v2 87.98 ( +7.22 ) 82.21 ( +2.25 ) 26.85 ( +8.29 ) 89.87 ( +3.41 ) 68.23 ( +7.00 ) 81.36 ( +6.24 ) -
+RARR 85.47 ( +4.71 ) 80.57 ( +0.61 ) 36.82 ( +18.26 ) 88.92 ( +2.46 ) 66.81 ( +5.58 ) 82.78 ( +7.66 ) 77.35 ( +4.64 )
+RATT 79.59 ( -1.17 ) 80.81 ( +0.85 ) 25.90 ( +7.34 ) 88.08 ( +1.62 ) 68.06 ( +6.83 ) 80.74 ( +5.62 ) 73.44 ( +0.73 )
+CRITIC - 81.77 ( +1.81 ) - 77.46 ( -9.00 ) - - -
+- Average 83.54 ( +2.78 ) 80.18 ( +0.22 ) 31.28 ( +12.72 ) 85.04 ( -1.42 ) 68.47 ( +7.24 ) 80.15 ( +5.03 ) 73.80 ( +1.09 )
+3 Experiment Settings
+Dataset Preparation.To ensure consistency and reproducibility, we employCorrectBench-test
+for experimental evaluations. For each dataset within CorrectBench-test, we randomly select 100
+samples and subsequently refine this selection by excluding a minimal number of outliers or irrelevant
+instances, thereby ensuring a more precise representation of error patterns. Comprehensive details
+regarding the datasets and preprocessing steps are provided in Appendix B.1, thereby promoting
+transparency and reproducibility for subsequent research.
+Task and Model Selection.CorrectBench adopts a hierarchical strategy to evaluate self-correction
+across diverse task scenarios and LLM types. Specific datasets are selected to match the characteristics
+and objectives of each self-correction method, ensuring that the benchmark captures comprehensive
+error types and correction challenges. Further specifications regarding selections of datasets and
+LLMs are included in Appendix B.2, ensuring full reproducibility of the evaluation methodology.
+Evaluation Metrics.We employ both task-specific and judgment-based metrics to evaluate the
+self-correction capabilities of diverse tasks:1) Task-Specific Metrics.These metrics are tailored
+to evaluate model performance across different tasks. ForT1, accuracy is computed as: ACC =
+1
+NPN
+i=1I(ˆyi=yi), where Nis the total number of samples, yiis the ground truth, ˆyiis the predicted
+answer, and I(·)is the indicator function. ForT2, the solve rate represents the percentage of problems
+correctly solved by the model out of the total number of problems. ForT3, pass@k evaluates whether
+at least one of the kgenerated solutions for a problem passes all test cases. The final pass@k score is
+calculated as the average pass rate across all problems.2) Judgment-Based Metrics.In cases where
+the model’s response is ambiguous or incomplete, we conduct human evaluations, where human
+evaluators apply stringent criteria to ensure an impartial and thorough assessment of the judgments.
+Additionally, we employ GPT-4o as anLLM-as-a-Judgeparadigm, providing an automated yet
+consistent scoring mechanism for large-scale experimental runs.
+4 Empirical Results and Analysis
+4.1 Main Results
+Table 1 summarizes the average performance improvements attained by various self-correction
+methods over the ‘Base’. The results reveal that each self-correction method demonstrates perfor-
+mance improvements over the ‘Base’ to varying degrees, with particularly p
+
+=== PAGE 6 ===
+HotpotQA CS-QA GPQA AQUA GSM8K MATH HumanEval
+Dataset15
+10
+5
+0510152025 (%)
+LLaMA3.1-8B
+LLaMA3.1-70B
+Qwen2.5-7B
+Qwen2.5-72B
+Claude3.5
+GPT-3.5
+GPT-4o
+QWQ-32B
+DeepSeek-V3
+Open LLM
+Closed LLM
+Reasoning LLM
+Baseline (=0)
+Figure 4: Average performance improvements achieved byS1across multiple LLMs.
+HotpotQA CS-QA GPQA AQUA GSM8K MATH HumanEval
+Dataset15
+10
+5
+0510152025 (%)
+LLaMA3.1-8B
+LLaMA3.1-70B
+Qwen2.5-7B
+Qwen2.5-72B
+Claude3.5
+GPT-3.5
+GPT-4o
+QWQ-32B
+DeepSeek-V3
+Open LLM
+Closed LLM
+Reasoning LLM
+Baseline (=0)
+Figure 5: Average performance improvements achieved byS2across multiple LLMs.
+designed to leverage external tools for enhanced correction, but Reflexion-v1, stripped of these tools,
+lacks optimization. This leaves weaker LLMs prone to getting "stuck," producing persistent incorrect
+outputs and lowering the average score. Finally,S3generally lags behind these methods, likely due
+to smaller model sizes and narrower training objectives (Details in Section 4.5).
+4.2 Results of Intrinsic Correction
+Figure 4 illustrates the mean performance gains realized by allS1methods across nine LLMs and
+multiple datasets, wherey=0denotes the baseline. For detailed results of each method, refer to
+Appendix E.1. AlthoughS1improves accuracy overall, the degree of improvement varies across
+instruction-based and reasoning LLMs.1) Instruction-based LLMs.Closed-source LLMs exhibit
+uneven performance gains. For instance, LLaMA3.1-8B-Instruct shows significant declines on AQUA
+and HumanEval, whereas Qwen2.5-7B-Instruct demonstrates modest gains. These discrepancies
+likely stem from smaller parameter sizes and weaker instruction-following capabilities. In contrast,
+open-source LLMs offer more consistent and stable performance improvements. Notably, GPT-4o
+shows substantial gains on GPQA, whereas Claude3.5 achieves similar enhancements, highlighting
+the robust instruction-following adaptability of open-source architectures.2) Reasoning LLMs.
+DeepSeek-V3’s performance remains close to the baseline across most tasks. While it demonstrates
+slight improvements on datasets such as CS-QA, GPQA, and MATH, it exhibits marginal declines on
+others. To further investigate this phenomenon, we conducted additional experiments (see Section 4.8),
+revealing that DeepSeek-V3’s built-in correction mechanism delivers a strong baseline performance.
+This high initial performance likely limits the impact of other correction methods. Conversely, QWQ
+attains considerable improvements on most datasets except CS-QA and MATH, likely reflecting the
+constraints posed by its smaller parameter size.
+4.3 Results of External Correction
+Figure 5 illustrates the average performance improvements achieved by each LLM utilizing external
+correction methods (S2) across various datasets. The trends observed align closely with those depicted
+in Figure 4, indicating a consistent enhancement in overall performance. Notably, external correction
+methods demonstrate greater stability, which can be attributed to their reliance on authoritative
+6
+
+=== PAGE 7 ===
+external resources. By referencing these resources,S2effectively mitigates the occurrence of
+incorrect responses. However, this reliance on external inputs may also limit the LLM’s capacity for
+divergent or creative reasoning, resulting in steadier but less flexible performance compared to intrinsic
+correction methods. For comprehensive results for each method, please refer to Appendix E.2.
+[RQ1]To what extent can LLMs achieve accurate results by leveraging intrinsic (S1) and
+external (S2) self-correction methods without requiring further intervention?
+Conclusion:BothS1andS2enable significant performance gains, particularly for complex
+tasks requiring multi-step reasoning or domain-specific knowledge. By iteratively refining
+responses, these methods effectively correct themselves even without additional fine-tuning.
+LLaMA3.1-8BLLaMA3.1-70BQwen2.5-7BQwen2.5-72BClaude3.5GPT-3.5GPT-4o
+QWQ-32B
+DeepSeek-V3020406080100Percentage (%)a) GPQA (F1)
+LLaMA3.1-8BLLaMA3.1-70BQwen2.5-7BQwen2.5-72BClaude3.5GPT-3.5GPT-4o
+QWQ-32B
+DeepSeek-V3b) MATH (F1)
+LLaMA3.1-8BLLaMA3.1-70BQwen2.5-7BQwen2.5-72BClaude3.5GPT-3.5GPT-4o
+QWQ-32B
+DeepSeek-V3c) GPQA (F2)
+LLaMA3.1-8BLLaMA3.1-70BQwen2.5-7BQwen2.5-72BClaude3.5GPT-3.5GPT-4o
+QWQ-32B
+DeepSeek-V3d) MATH (F2)
+Base Intrinsic Correction External Correction
+Figure 6: Comparison of different LLMs with mixture methods.
+4.4 Results of Mixture Method
+We further explored whether mixing multiple self-correction methods results in additive or synergistic
+performance improvements. Specifically, the responses generated by the baseline method (Base) are
+utilized as auxiliary prompts for an intrinsic method (S1), an external method (S2), or a mixture of
+both (S1+S2). As shown in Figure 6, we evaluated two representative configurations (e.g., F1: ‘Base
+toS1toS2’ and F2: ‘Base toS2toS1’) on two benchmark tasks: GPQA and MATH. The results
+revealed two key findings. Firstly, applying one or more correction methods consistently improves
+model performance to varying degrees. Secondly,S2generally yields larger performance gains
+compared toS1. Notably, complex reasoning tasks, such as GPQA, benefit the most from these mixed
+methods. However, these mixtures often introduce additional computational overhead. To address the
+associated efficiency and accuracy trade-offs, we conducted a complementary analysis of response
+times under different correction methods and model configurations, as detailed in Section 4.7.
+4.5 Results of Fine-tuned Correction
+Table 2: Performance of fine-tuned methods on selected
+datasets.
+Fine-tuned LLM Method CS-QA(↑) GSM8K(↑)
+- Base 31.40 56.75
+LLaMA2-7B-hf DCoT 29.65(-1.75) 41.20(-15.55)
+Gemma-7B-it SCORE 43.26(+11.86) 75.30(+18.55)
+LLaMA2-13B-chat SCORE 41.45(+10.05) 72.10(+15.35)
+Qwen2.5-Math-7B-Instruct SuperCorrect 46.25(+14.85) 84.30(+27.55)
+MATH(↑) HumanEval(↑)
+- Base 41.71 26.25
+Qwen2.5-Math-7B-Instruct SuperCorrect 70.16(+28.45) 39.30(+13.05)Table 2 summarizes the performance of
+fine-tuned correction methods (S3), reveal-
+ing two main observations. First,S3(e.g.,
+DCoT) often exhibits inconsistent out-
+comes across diverse tasks. This variability
+stems from their reliance on fine-tuning
+with narrowly focused datasets, which re-
+stricts their broader applicability. Second,
+domain-specific fine-tuning proves espe-
+cially promising for models tailored to spe-
+cialized tasks. For example, SuperCorrect, fine-tuned on Qwen2.5-Math-7B-Instruct, demonstrates
+marked improvements in mathematical reasoning (e.g., on GSM8K and MATH), outperforming other
+methods by a wide margin. This underscores the effectiveness of leveraging task-aligned models,
+particularly when fine-tuning objectives closely align with the target domain requirements.
+7
+
+=== PAGE 8 ===
+4.6 Results of Correction and Misjudgment
+Table 3: Performance of correction rate and misjudg-
+ment rate.
+Method Rate GPQA AQUA HotpotQA Overall
+CoveCR 31.6 36.0 52.1 40.8
+MR 8.1 8.0 6.7 7.5
+RARRCR 30.7 49.3 51.3 47.1
+MR 5.5 4.3 4.5 4.5In order to further assess the correction
+ability, we divide the responses of differ-
+ent models to questions in the three most
+challenging tasks (GPQA, AQUA, and
+HotpotQA) into error-based dataset and
+correction-based dataset, corresponding to
+the wrong and correct question-response
+pairs, respectively. We select CoVe and
+RARR fromS1andS2respectively to eval-
+uate on Claude 3.5-Sonnet. We hereby define two new metrics:Correction Rate (CR)indicates the
+proportion of incorrect responses that are successfully corrected, andMisjudgment Rate (MR)refers
+to the proportion of correct responses that are misjudged to be corrected wrongly. The results shown
+in Table 3 reflects that both methods achieve high CRs and low MRs, which shows that self-correction
+methods can effectively correct the wrong examples with less misjudgment.
+4.7 Results of Response Time
+BaseCoT RCICoVe
+SelfreflineRefexionRARR RATT
+Self-correction Methods0100200300400Time (s)LLaMA3.1-70B
+GPT-4o
+DeepSeek-V3
+Figure 7: Average response times for LLaMA3.1-70B,
+GPT-4o, and DeepSeek-V3. Intrinsic (S1) and external
+(S2) methods generally increase inference duration rela-
+tive to Base and CoT.Figure 7 compares the average response
+times across representative models (e.g.,
+LLaMA3.1-70B and GPT-4o fromM1,
+DeepSeek-V3 fromM2) under various cor-
+rection methods. In general, both intrin-
+sic and external methods extend inference
+times relative to baseline approaches (Base
+and CoT), largely due to increased rea-
+soning complexity or reliance on exter-
+nal services (especially for RATT). More-
+over, reasoning LLMs, such as DeepSeek-
+V3, exhibit notably longer execution times
+than instruction-based models, likely at-
+tributable to their built-in correction mech-
+anisms. In contrast, the baseline CoT
+method achieves notably shorter response
+times while maintaining a reasonable accu-
+racy (combined with Table 1). This observation underscores that more complex correction strategies
+do not always yield superior outcomes, highlighting the critical trade-off between model accuracy and
+computational efficiency. As shown in Table 4, RARR offers a balanced trade-off between efficiency
+and accuracy, with only 533 tokens and 2 API calls. Reflexion-v2 and RATT achieve the highest
+accuracies, reflecting the benefit of external retrieval or code execution, while their overhead remains
+manageable (below 15% additional search tokens). Bootstrap-based confidence intervals for these
+results are reported in Appendix B.3.
+[RQ2]How does mixing multiple self-correction methods influence model accuracy and robust-
+ness, and what are the associated computational trade-offs?
+Conclusion:Mixing self-correction methods typically results in accuracy improvements, though
+at the cost of increased computational overhead. Such mixtures are particularly beneficial for
+high-precision tasks where the trade-off of more runtime is justifiable.
+4.8 Results of Reasoning LLMs
+To further investigate why DeepSeek-V3 shows limited improvement from self-correction, we
+compare instruction-based LLMs and reasoning LLMs on theBasealone. Table 5 shows that
+DeepSeek-V3 consistently achieves top-2 or even top-1 performance across all datasets. Combined
+with the results of Section 4.2, we find that this may be because reasoning LLMs already incorporate
+robust intrinsic correction mechanisms, limiting additional gains from external correction steps. In
+particular, DeepSeek-V3 integrates advanced reflection modules and comprehensive error-detection
+8
+
+=== PAGE 9 ===
+Table 4: Comprehensive resource cost analysis on the MATH dataset (150 samples). Values ingreen
+indicate the best trade-off between cost and accuracy, whileredhighlights the least efficient results.
+“Efficiency Rank” represents the ratio of Accuracy / (Token Count × API Calls).
+Method Type Avg. Tokens API Calls Search Tokens (%) Accuracy (%) Efficiency Rank
+Base - 791 1.0 0 (0%) 68.5 0.0866
+CoT - 1804 1.0 0 (0%) 69.5 0.0385
+CoVe S1 2019 1.0 0 (0%) 75.0 0.0371
+RCI S1 1780 1.2 0 (0%) 70.2 0.0328
+Reflexion-v1 S1 1460 3.5 0 (0%) 72.8 0.0143
+Reflexion-v2 S2 1712 4.0 154 (8.25%) 74.5 0.0109
+RARR S2 533 2.0 89 (14.31%) 76.3 0.0716
+RATT S2 2185 3.0 162 (6.9%) 78.7 0.0120
+Table 5: Comparison of baseline performance among instruction-based and reasoning LLMs. Per-
+column maxima arebolded; per-column minima are underlined . Per-row maxima are highlighted
+with blue; per-row minima are highlighted with orange.
+Type LLM HotpotQA CS-QA GPQA GSM8K AQUA MATH HumanEval
+Open-sourceLLaMA3.1-8B-Instruct 75.80 76.16 9.74 81.55 53.88 74.37 73.44
+LLaMA3.1-70B-Instruct 81.28 81.88 15.62 90.63 62.65 78.21 62.18
+Qwen2.5-7B-Instruct 74.05 74.75 7.53 90.23 47.50 74.28 79.11
+Qwen2.5-72B-Instruct 83.63 81.92 9.85 91.11 57.58 66.91 86.13
+Closed-sourceClaude3.5-Sonnet 88.29 80.25 32.34 95.81 81.2683.51 84.69
+GPT-3.5 82.94 77.92 27.29 79.14 55.15 70.44 80.29
+GPT-4o 89.16 80.65 22.49 91.15 65.82 69.54 77.04
+ReasoningQWQ-32B 62.43 82.78 10.85 63.41 52.42 73.78 19.86
+DeepSeek-V389.29 83.35 31.35 95.12 74.7985.02 91.67
+DeepSeek-R1 88.92 79.93 41.15 92.63 80.23 84.21 89.06
+o3-mini 81.24 74.28 27.17 92.45 78.26 67.97 85.75
+routines distilled from its earlier R1 series, enabling thorough multi-step reasoning at the outset. This
+high baseline effectively reduces the scope for further improvement through additional self-correction.
+Consequently, attempts to augment DeepSeek-V3 with further self-correction methods produce
+minimal net gains while incurring additional computational overhead.
+[RQ3]For reasoning LLMs with built-in correction mechanisms, to what extent can the above
+self-correction methods provide additional benefits?
+Conclusion:Reasoning LLMs (e.g., DeepSeek-V3) already embed sophisticated error-detection
+and correction processes. As a result, additional self-correction methods confer only marginal
+gains and may increase computational overhead, highlighting a performance ceiling in highly
+reasoning LLMs.
+4.9 Failure Mode Taxonomy and Case Analysis
+To better understand why different self-correction strategies succeed or fail, we conducted a supple-
+mental failure-mode analysis on the GPQA (250 samples) and MATH (500 samples) datasets. Six
+major categories of failure were identified, alongside a residual “Other” category, as summarized
+in Table 6. Logical Oversight (32.9%) and Factual Inaccuracy (22.0%) dominate, implying that
+intrinsic corrections (S1) are suitable for reasoning-related errors, while external corrections (S2)
+excel at factual validation. These findings motivate our adaptive correction controller (Sec. 6), which
+dynamically selects correction strategies based on detected failure types.
+5 Related Work
+Self-Correction Methods.With the continuous development of self-correction techniques [ 62,65,
+18,32,63], researchers have proposed various approaches to enhance the performance of large
+language models. Intrinsic methods, such as CoVe [ 13] and RCI [ 30], improve the precision and
+9
+
+=== PAGE 10 ===
+Table 6: Error taxonomy of LLM self-correction failures across GPQA and MATH. Logical and
+factual errors dominate, suggesting distinct correction strategies (S1 vs. S2).
+Failure Mode Pro. (%) Description Suggested Correction
+Logical Oversight 32.9 Reasoning step errors (e.g., misapplied formula) S1: CoT, RCI
+Factual Inaccuracy 22.0 Outdated or incorrect retrieved evidence S2: RARR, RATT
+Over-Reliance on Tools 14.6 Excessive external API calls causing inefficiency S2 (bounded)
+Ambiguous Output 14.2 Incomplete or vague final answer S1 refinement
+Contextual Misunderstanding 10.8 Misinterpreted question or missing context S1+S2 hybrid
+Computational Error 3.5 Faulty code execution or symbolic computation S2 verification
+Other 2.0 Miscellaneous or formatting issues -
+consistency of generated content through self-supervised mechanisms within the model. At the same
+time, extrinsic methods, such as CRITIC [ 21], RATT [ 74], and RARR [ 20], rely on an external tool
+to evaluate and provide feedback on the generated outputs, guiding the model towards optimization.
+Fine-tuned methods, such as DCoT [ 45], Supercorrect [ 69], and SCORE [ 76], further enhance the
+performance of the model by fine-tuning it for specific tasks, enabling more accurate and efficient
+handling of complex tasks. The continuous evolution of these methods provides diverse options and
+techniques for self-correction. Detailed discussions on the related word are provided in Appendix C.
+Correction Benchmarks.Benchmarking the LLMs’ self-correction ability [ 57,15,77,14,5,79,
+53,37] has prompted the development of specialized benchmarks for different tasks. For instance,
+CriticBench [ 34] evaluates critique ability using discrimination results, but it struggles with task-
+specific fine-grained metrics and reliance on costly human annotations or potentially biased GPT-4
+outputs. In the realm of vision-language models, VISCO [ 64] focuses on self-correction in multimodal
+tasks, while Beyond Correctness [ 78] specifically targets self-correction in large models for code
+generation. Our CorrectBench focused on striking a trade-off between reasoning capability and
+efficiency, proposing more generalized and nuanced evaluation methods for complex reasoning tasks.
+6 Future Improvements in Self-Correction
+Looking ahead, several promising directions can further enhance the robustness and adaptability
+of self-correction in large language models. (1)Dynamic Adjustment:reinforcement learning or
+meta-controller mechanisms could dynamically select among correction strategies (S1–S3) based
+on task complexity or confidence levels, reducing redundant computation through early stopping.
+(2)Task-Specific Optimization:domain-oriented fine-tuning, such as the 10.2% improvement
+achieved by SUPERCORRECTon MATH, suggests the value of adaptive pipelines that align with
+domain reasoning depth and structure. (3)Human-in-the-Loop Integration:in sensitive fields like
+medicine or law, coupling automated correction with limited expert feedback could improve factual
+reliability and ensure accountable model behavior. (4)Meta-Controller Framework:developing a
+lightweight controller to detect and correct intermediate reasoning inconsistencies may help refine the
+chain-of-thought process and prevent logical drift. Further analysis and discussions of these future
+directions are provided in Appendix D.
+7 Conclusion
+This paper presentsCorrectBench, a comprehensive and extensible benchmark for evaluating the
+self-correction capabilities of large language models (LLMs) across diverse reasoning-intensive tasks,
+including commonsense inference, mathematical problem-solving, and code generation. Through
+systematic evaluation, we demonstrate that modern LLMs are increasingly capable of genuine self-
+correction, with reasoning-oriented models such as DEEPSEEK-R1 achieving substantial baseline
+accuracy and showing consistent improvement through iterative refinement. CorrectBench not only
+reveals the effectiveness of vario
+
+=== PAGE 11 ===
+Acknowledgments
+This work is supported by National Natural Science Foundation of China (NSFC) under grant No.
+62476107.
+References
+[1]Alexandre Agossah, Frédérique Krupa, Matthieu Perreira da Silva, and Patrick Le Callet. Llm-
+based interaction for content generation: A case study on the perception of employees in an
+it department.Proceedings of the 2023 ACM International Conference on Interactive Media
+Experiences, 2023.
+[2] Claude Ahtropic. Claude. [Online]. Available:https://www.anthropic.com/claude, 2024.
+[3]Yuntao Bai, Saurav Kadavath, Sandipan Kundu, Amanda Askell, et al. Constitutional ai:
+Harmlessness from ai feedback.ArXiv, abs/2212.08073, 2022.
+[4]Su Lin Blodgett, Solon Barocas, Hal Daum’e, and Hanna M. Wallach. Language (technology)
+is power: A critical survey of “bias” in nlp.ArXiv, abs/2005.14050, 2020.
+[5]Yihan Cao, Siyu Li, Yixin Liu, Zhiling Yan, Yutong Dai, Philip Yu, and Lichao Sun. A survey
+of ai-generated content (aigc).ACM Computing Surveys, 57(5):1–38, 2025.
+[6]Canyu Chen and Kai Shu. Can llm-generated misinformation be detected?ArXiv,
+abs/2309.13788, 2023.
+[7]Mark Chen, Jerry Tworek, Heewoo Jun, Qiming Yuan, et al. Evaluating large language models
+trained on code.ArXiv, abs/2107.03374, 2021.
+[8]Michael Chen, Mike D’Arcy, Alisa Liu, Jared Fernandez, and Doug Downey. Aqua: An
+adversarially authored question-answer dataset for common sense. 2019.
+[9]Yuxuan Chen, Rongpeng Li, Xiaoxue Yu, Zhifeng Zhao, and Honggang Zhang. Adaptive layer
+splitting for wireless llm inference in edge computing: A model-based reinforcement learning
+approach.arXiv preprint arXiv:2406.02616, 2024.
+[10] Ethan Chern, Steffi Chern, Shiqi Chen, Weizhe Yuan, Kehua Feng, Chunting Zhou, Junxian
+He, Graham Neubig, and Pengfei Liu. Factool: Factuality detection in generative ai - a tool
+augmented framework for multi-task and multi-domain scenarios.ArXiv, abs/2307.13528, 2023.
+[11] Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser,
+Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, Christopher Hesse, and John
+Schulman. Training verifiers to solve math word problems.ArXiv, abs/2110.14168, 2021.
+[12] DeepSeek-AI, Aixin Liu, Bei Feng, Bing Xue, Bing-Li Wang, Bochao Wu, et al. Deepseek-v3
+technical report. 2024.
+[13] Shehzaad Dhuliawala, Mojtaba Komeili, Jing Xu, Roberta Raileanu, Xian Li, Asli Celikyilmaz,
+and Jason Weston. Chain-of-verification reduces hallucination in large language models.ArXiv,
+abs/2309.11495, 2023.
+[14] Jinhao Duan, Shiqi Wang, James Diffenderfer, Lichao Sun, Tianlong Chen, Bhavya Kailkhura,
+and Kaidi Xu. Reta: Recursively thinking ahead to improve the strategic reasoning of large
+language models. InProceedings of the 2024 Conference of the North American Chapter of the
+Association for Computational Linguistics: Human Language Technologies (Volume 1: Long
+Papers), pages 2232–2246, 2024.
+[15] Jinhao Duan, Renming Zhang, James Diffenderfer, Bhavya Kailkhura, Lichao Sun, Elias
+Stengel-Eskin, Mohit Bansal, Tianlong Chen, and Kaidi Xu. Gtbench: Uncovering the strategic
+reasoning capabilities of llms via game-theoretic evaluations.Advances in Neural Information
+Processing Systems, 37:28219–28253, 2024.
+[16] Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Abhishek Kadian, Ahmad Al-Dahle, et al.
+The llama 3 herd of models.ArXiv, abs/2407.21783, 2024.
+11
+
+=== PAGE 12 ===
+[17] Esin Durmus, He He, and Mona T. Diab. Feqa: A question answering evaluation framework for
+faithfulness assessment in abstractive summarization.ArXiv, abs/2005.03754, 2020.
+[18] Chenrui Fan, Ming Li, Lichao Sun, and Tianyi Zhou. Missing premise exacerbates overthinking:
+Are reasoning models losing critical thinking skill?arXiv preprint arXiv:2504.06514, 2025.
+[19] Shangbin Feng, Chan Young Park, Yuhan Liu, and Yulia Tsvetkov. From pretraining data to
+language models to downstream tasks: Tracking the trails of political biases leading to unfair
+nlp models. InAnnual Meeting of the Association for Computational Linguistics, 2023.
+[20] Luyu Gao, Zhuyun Dai, Panupong Pasupat, Anthony Chen, Arun Tejasvi Chaganty, Yicheng
+Fan, Vincent Zhao, N. Lao, Hongrae Lee, Da-Cheng Juan, and Kelvin Guu. Rarr: Researching
+and revising what language models say, using language models. InAnnual Meeting of the
+Association for Computational Linguistics, 2022.
+[21] Zhibin Gou, Zhihong Shao, Yeyun Gong, Yelong Shen, Yujiu Yang, Nan Duan, and Weizhu
+Chen. Critic: Large language models can self-correct with tool-interactive critiquing.ArXiv,
+abs/2305.11738, 2023.
+[22] Caglar Gulcehre, Tom Le Paine, Srivatsan Srinivasan, Ksenia Konyushkova, Lotte Weerts,
+Abhishek Sharma, Aditya Siddhant, Alexa Ahern, Miaosen Wang, Chenjie Gu, Wolfgang
+Macherey, A. Doucet, Orhan Firat, and Nando de Freitas. Reinforced self-training (rest) for
+language modeling.ArXiv, abs/2308.08998, 2023.
+[23] Dan Hendrycks, Collin Burns, Saurav Kadavath, Akul Arora, Steven Basart, Eric Tang, Dawn Xi-
+aodong Song, and Jacob Steinhardt. Measuring mathematical problem solving with the math
+dataset.ArXiv, abs/2103.03874, 2021.
+[24] Jiaxin Huang, Shixiang Shane Gu, Le Hou, Yuexin Wu, Xuezhi Wang, Hongkun Yu, and Jiawei
+Han. Large language models can self-improve.ArXiv, abs/2210.11610, 2022.
+[25] Jie Huang, Xinyun Chen, Swaroop Mishra, Huaixiu Steven Zheng, Adams Wei Yu, Xinying
+Song, and Denny Zhou. Large language models cannot self-correct reasoning yet.ArXiv,
+abs/2310.01798, 2023.
+[26] Aaron Hurst, Adam Lerer, Adam P Goucher, Adam Perelman, Aditya Ramesh, Aidan Clark,
+AJ Ostrow, Akila Welihinda, Alan Hayes, Alec Radford, et al. Gpt-4o system card.arXiv
+preprint arXiv:2410.21276, 2024.
+[27] Dongwei Jiang, Jingyu Zhang, Orion Weller, Nathaniel Weir, Benjamin Van Durme, and Daniel
+Khashabi. Self-[in]correct: Llms struggle with discriminating self-generated responses. 2024.
+[28] Ryo Kamoi, Sarkar Snigdha Sarathi Das, Renze Lou, Jihyun Janice Ahn, Yilun Zhao, Xiaoxin
+Lu, Nan Zhang, Yusen Zhang, Ranran Haoran Zhang, Sujeeth Reddy Vummanthala, Salika
+Dave, Shaobo Qin, Arman Cohan, Wenpeng Yin, and Rui Zhang. Evaluating llms at detecting
+errors in llm responses.ArXiv, abs/2404.03602, 2024.
+[29] Ryo Kamoi, Yusen Zhang, Nan Zhang, Jiawei Han, and Rui Zhang. When can llms actually
+correct their own mistakes? a critical survey of self-correction of llms.Transactions of the
+Association for Computational Linguistics, 12:1417–1440, 2024.
+[30] Geunwoo Kim, Pierre Baldi, and Stephen Marcus McAleer. Language models can solve
+computer tasks.ArXiv, abs/2303.17491, 2023.
+[31] Jiayi Kuang, Jingyou Xie, Haohao Luo, Ronghao Li, Zhe Xu, Xianfeng Cheng, Yinghui Li,
+Xika Lin, and Ying Shen. Natural language understanding and inference with mllm in visual
+question answering: A survey.ArXiv, abs/2411.17558, 2024.
+[32] Yuting Li, Lai Wei, Kaipeng Zheng, Jingyuan Huang, Linghe Kong, Lichao Sun, and Weiran
+Huang. Vision matters: Simple visual perturbations can boost multimodal math reasoning.
+arXiv preprint arXiv:2506.09736, 2025.
+12
+
+=== PAGE 13 ===
+[33] Bill Yuchen Lin, Yicheng Fu, Karina Yang, Faeze Brahman, Shiyu Huang, Chandra Bhagavatula,
+Prithviraj Ammanabrolu, Yejin Choi, and Xiang Ren. Swiftsage: A generative agent with fast
+and slow thinking for complex interactive tasks.Advances in Neural Information Processing
+Systems, 36, 2024.
+[34] Zicheng Lin, Zhibin Gou, Tian Liang, Ruilin Luo, Haowei Liu, and Yujiu Yang. Criticbench:
+Benchmarking llms for critique-correct reasoning. InAnnual Meeting of the Association for
+Computational Linguistics, 2024.
+[35] Dancheng Liu, Amir Nassereldine, Ziming Yang, Chenhui Xu, Yuting Hu, Jiajie Li, Utkarsh
+Kumar, Changjae Lee, and Jinjun Xiong. Large language models have intrinsic self-correction
+ability.ArXiv, abs/2406.15673, 2024.
+[36] Guang-Da Liu, Haitao Mao, Bochuan Cao, Zhiyu Xue, Kristen Marie Johnson, Jiliang Tang,
+and Rongrong Wang. On the intrinsic self-correction capability of llms: Uncertainty and latent
+concept.ArXiv, abs/2406.02378, 2024.
+[37] Yixin Liu, Yonghui Wu, Denghui Zhang, and Lichao Sun. Agentic autosurvey: Let llms survey
+llms.arXiv preprint arXiv:2509.18661, 2025.
+[38] Aman Madaan, Niket Tandon, Prakhar Gupta, Skyler Hallinan, Luyu Gao, Sarah Wiegreffe,
+Uri Alon, Nouha Dziri, Shrimai Prabhumoye, Yiming Yang, Sean Welleck, Bodhisattwa Prasad
+Majumder, Shashank Gupta, Amir Yazdanbakhsh, and Peter Clark. Self-refine: Iterative
+refinement with self-feedback.ArXiv, abs/2303.17651, 2023.
+[39] Yu Meng, Jiaxin Huang, Yu Zhang, and Jiawei Han. Generating training data with language
+models: Towards zero-shot language understanding.ArXiv, abs/2202.04538, 2022.
+[40] Meta. Meta Llama 3. https://llama.meta.com/docs/model-cards-andprompt-formats/
+meta-llama-3/, 2024.
+[41] Abhika Mishra, Akari Asai, Vidhisha Balachandran, Yizhong Wang, Graham Neubig, Yulia
+Tsvetkov, and Hannaneh Hajishirzi. Fine-grained hallucination detection and editing for
+language models.ArXiv, abs/2401.06855, 2024.
+[42] Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll Wainwright, Pamela Mishkin,
+Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, et al. Training language models to
+follow instructions with human feedback.Advances in neural information processing systems,
+35:27730–27744, 2022.
+[43] Jing-Cheng Pang, Pengyuan Wang, Kaiyuan Li, Xiong-Hui Chen, Jiacheng Xu, Zongzhang
+Zhang, and Yang Yu. Language model self-improvement by reinforcement learning contempla-
+tion.ArXiv, abs/2305.14483, 2023.
+[44] Debjit Paul, Mete Ismayilzada, Maxime Peyrard, Beatriz Borges, Antoine Bosselut, Robert
+West, and Boi Faltings. Refiner: Reasoning feedback on intermediate representations. In
+Conference of the European Chapter of the Association for Computational Linguistics, 2023.
+[45] Haritz Puerto, Tilek Chubakov, Xiaodan Zhu, Harish Tayyar Madabushi, and Iryna Gurevych.
+Fine-tuning with divergent chains of thought boosts reasoning through self-correction in lan-
+guage models.ArXiv, abs/2407.03181, 2024.
+[46] Zac Pullar-Strecker, Katharina Dost, Eibe Frank, and Jörg Wicker. Hitting the target: stopping
+active learning at the cost-based optimum.Machine Learning, 113(4):1529–1547, 2024.
+[47] Rifki Afina Putri, Faiz Ghifari Haznitrama, Dea Adhista, and Alice Oh. Can llm generate cul-
+turally relevant commonsense qa data? case study in indonesian and sundanese. InConference
+on Empirical Methods in Natural Language Processing, 2024.
+[48] Biqing Qi, Xinquan Chen, Junqi Gao, Dong Li, Jianxing Liu, Ligang Wu, and Bowen Zhou.
+Interactive continual learning: Fast and slow thinking. InProceedings of the IEEE/CVF
+Conference on Computer Vision and Pattern Recognition, pages 12882–12892, 2024.
+13
+
+=== PAGE 14 ===
+[49] Maribeth Rauh, John F. J. Mellor, Jonathan Uesato, Po-Sen Huang, Johannes Welbl, Laura
+Weidinger, Sumanth Dathathri, Amelia Glaese, Geoffrey Irving, Iason Gabriel, William S. Isaac,
+and Lisa Anne Hendricks. Characteristics of harmful text: Towards rigorous benchmarking of
+language models.ArXiv, abs/2206.08325, 2022.
+[50] David Rein, Betty Li Hou, Asa Cooper Stickland, Jackson Petty, Richard Yuanzhe Pang, Julien
+Dirani, Julian Michael, and Samuel R. Bowman. Gpqa: A graduate-level google-proof q&a
+benchmark.ArXiv, abs/2311.12022, 2023.
+[51] Carl Orge Retzlaff, Srijita Das, Christabel Wayllace, Payam Mousavi, Mohammad Afshari,
+Tianpei Yang, Anna Saranti, Alessa Angerschmid, Matthew E Taylor, and Andreas Holzinger.
+Human-in-the-loop reinforcement learning: A survey and position on requirements, challenges,
+and opportunities.Journal of Artificial Intelligence Research, 79:359–415, 2024.
+[52] Thomas Scialom, Paul-Alexis Dray, Patrick Gallinari, Sylvain Lamprier, Benjamin Piwowarski,
+Jacopo Staiano, and Alex Wang. Questeval: Summarization asks for fact-based evaluation. In
+Conference on Empirical Methods in Natural Language Processing, 2021.
+[53] Jiawen Shi, Zenghui Yuan, Yinuo Liu, Yue Huang, Pan Zhou, Lichao Sun, and Neil Zhenqiang
+Gong. Optimization-based prompt injection attack to llm-as-a-judge. InProceedings of the
+2024 on ACM SIGSAC Conference on Computer and Communications Security, pages 660–674,
+2024.
+[54] Noah Shinn, Federico Cassano, Beck Labash, Ashwin Gopinath, Karthik Narasimhan, and
+Shunyu Yao. Reflexion: language agents with verbal reinforcement learning. InNeural
+Information Processing Systems, 2023.
+[55] Chuanneng Sun, Songjun Huang, and Dario Pompili. Llm-based multi-agent reinforcement
+learning: Current and future directions.arXiv preprint arXiv:2405.11106, 2024.
+[56] Guiyao Tie, Zeli Zhao, Dingjie Song, Fuyang Wei, Rong Zhou, Yurou Dai, Wen Yin, Zhejian
+Yang, Jiangyue Yan, Yao Su, et al. A survey on post-training of large language models.arXiv
+e-prints, pages arXiv–2503, 2025.
+[57] Guiyao Tie, Xueyang Zhou, Tianhe Gu, Ruihang Zhang, Chaoran Hu, Sizhe Zhang, Mengqu
+Sun, Yan Zhang, Pan Zhou, and Lichao Sun. Mmmr: Benchmarking massive multi-modal
+reasoning tasks.arXiv preprint arXiv:2505.16459, 2025.
+[58] Gladys Tyen, Hassan Mansoor, Peter Chen, Tony Mak, and Victor Carbune. Llms cannot find
+reasoning errors, but can correct them! InAnnual Meeting of the Association for Computational
+Linguistics, 2023.
+[59] Alex Wang, Kyunghyun Cho, and Mike Lewis. Asking and answering questions to evaluate the
+factual consistency of summaries.ArXiv, abs/2004.04228, 2020.
+[60] Yifei Wang, Yuyang Wu, Zeming Wei, Stefanie Jegelka, and Yisen Wang. A theoretical
+understanding of self-correction through in-context alignment.ArXiv, abs/2405.18634, 2024.
+[61] Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Ed H. Chi, F. Xia, Quoc Le, and
+Denny Zhou. Chain of thought prompting elicits reasoning in large language models.ArXiv,
+abs/2201.11903, 2022.
+[62] Lai Wei, Yuting Li, Chen Wang, Yue Wang, Linghe Kong, Weiran Huang, and Lichao Sun. Unsu-
+pervised post-training for multi-modal llm reasoning via grpo.arXiv preprint arXiv:2505.22453,
+2025.
+[63] Lai Wei, Yuting Li, Kaipeng Zheng, Chen Wang, Yue Wang, Linghe Kong, Lichao Sun, and
+Weiran Huang. Advancing multimodal reasoning via reinforcement learning with cold start.
+arXiv preprint arXiv:2505.22334, 2025.
+[64] Xueqing Wu, Yuheng Ding, Bingxuan Li, Pan Lu, Da Yin, Kai-Wei Chang, and Nanyun Peng.
+Visco: Benchmarking fine-grained critique and correction towards self-improvement in visual
+reasoning.ArXiv, abs/2412.02172, 2024.
+14
+
+=== PAGE 15 ===
+[65] Guowei Xu, Peng Jin, Ziang Wu, Hao Li, Yibing Song, Lichao Sun, and Li Yuan. Llava-cot:
+Let vision language models reason step-by-step.arXiv preprint arXiv:2411.10440, 2024.
+[66] An Yang, Baosong Yang, Binyuan Hui, et al. Qwen2 technical report.arXiv preprint
+arXiv:2407.10671, 2024.
+[67] Chang Yang, Xinrun Wang, Junzhe Jiang, Qinggang Zhang, and Xiao Huang. Evaluating world
+models with llm for decision making.ArXiv, abs/2411.08794, 2024.
+[68] Hanqing Yang, Marie Siew, and Carlee Joe-Wong. An llm-based digital twin for optimizing
+human-in-the loop systems.arXiv preprint arXiv:2403.16809, 2024.
+[69] Ling Yang, Zhaochen Yu, Tianjun Zhang, Minkai Xu, Joseph E. Gonzalez, Bin Cui, and
+Shuicheng Yan. Supercorrect: Supervising and correcting language models with error-driven
+insights.ArXiv, abs/2410.09008, 2024.
+[70] Qwen An Yang, Baosong Yang, Beichen Zhang, et al. Qwen2.5 technical report. 2024.
+[71] Zhilin Yang, Peng Qi, Saizheng Zhang, Yoshua Bengio, William W. Cohen, Ruslan Salakhut-
+dinov, and Christopher D. Manning. Hotpotqa: A dataset for diverse, explainable multi-hop
+question answering. InConference on Empirical Methods in Natural Language Processing,
+2018.
+[72] Junjie Ye, Xuanting Chen, Nuo Xu, Can Zu, Zekai Shao, Shichun Liu, Yuhan Cui, Zeyang Zhou,
+Chao Gong, Yang Shen, Jie Zhou, Siming Chen, Tao Gui, Qi Zhang, and Xuanjing Huang. A
+comprehensive capability analysis of gpt-3 and gpt-3.5 series models.ArXiv, abs/2303.10420,
+2023.
+[73] E. Zelikman, Yuhuai Wu, and Noah D. Goodman. Star: Bootstrapping reasoning with reasoning.
+2022.
+[74] Jinghan Zhang, Xiting Wang, Weijieying Ren, Lu Jiang, Dongjie Wang, and Kunpeng Liu. Ratt:
+A thought structure for coherent and correct llm reasoning.ArXiv, abs/2406.02746, 2024.
+[75] Muru Zhang, Ofir Press, William Merrill, Alisa Liu, and Noah A. Smith. How language model
+hallucinations can snowball.ArXiv, abs/2305.13534, 2023.
+[76] Yunxiang Zhang, Muhammad Khalifa, Lajanugen Logeswaran, Jaekyeom Kim, Moontae Lee,
+Honglak Lee, and Lu Wang. Small language models need strong verifiers to self-correct
+reasoning. InAnnual Meeting of the Association for Computational Linguistics, 2024.
+[77] Haojie Zheng, Tianyang Xu, Hanchi Sun, Shu Pu, Ruoxi Chen, and Lichao Sun. Thinking
+before looking: Improving multimodal llm reasoning via mitigating visual hallucination.arXiv
+preprint arXiv:2411.12591, 2024.
+[78] Jiasheng Zheng, Boxi Cao, Zhengzhao Ma, Ruotong Pan, Hongyu Lin, Yaojie Lu, Xianpei Han,
+and Le Sun. Beyond correctness: Benchmarking multi-dimensional code generation for large
+language models.ArXiv, abs/2407.11470, 2024.
+[79] Ce Zhou, Qian Li, Chen Li, Jun Yu, Yixin Liu, Guangjing Wang, Kai Zhang, Cheng Ji, Qiben
+Yan, Lifang He, et al. A comprehensive survey on pretrained foundation models: A history from
+bert to chatgpt.International Journal of Machine Learning and Cybernetics, pages 1–65, 2024.
+15
+

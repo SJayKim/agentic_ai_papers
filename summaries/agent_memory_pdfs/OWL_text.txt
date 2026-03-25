@@ -1,0 +1,728 @@
+=== PAGE 1 ===
+arXiv:2505.23885v2  [cs.AI]  11 Jun 2025
+OWL: Optimized Workforce Learning for General
+Multi-Agent Assistance in Real-World Task Automation
+Mengkang Hu1,2,4*,Yuhang Zhou1*,Wendong Fan2,4,Yuzhou Nie3,Bowei Xia1,2,Tao Sun2,4,Ziyu
+Ye5,Zhaoxuan Jin2,4,6,Yingru Li7,Qiguang Chen1,Zeyu Zhang2,4,8,Yifeng Wang2,4,Qianshuo
+Ye2,4,9,Bernard Ghanem2,10,Ping Luo1,Guohao Li2,4†
+1The University of Hong Kong2CAMEL-AI.org3UCSB4Eigent.AI5The University of Chicago
+6Northwestern University7CUHK8ANU9University of Cambridge10KAUST
+∗Equal Contribution ,†Corresponding author
+Abstract
+Large Language Model (LLM)-based multi-agent systems show promise for automating real-world tasks
+but struggle to transfer across domains due to their domain-specific nature. Current approaches face two
+critical shortcomings: they require complete architectural redesign and full retraining of all components
+when applied to new domains. We introduce WORKFORCE , a hierarchical multi-agent framework that
+decouples strategic planning from specialized execution through a modular architecture comprising: (i)a
+domain-agnostic Planner for task decomposition, (ii)aCoordinator for subtask management, and (iii)
+specialized Workers with domain-specific tool-calling capabilities. This decoupling enables cross-domain
+transferability during both inference and training phases: During inference, WORKFORCE seamlessly
+adapts to new domains by adding or modifying worker agents; For training, we introduce OPTIMIZED
+WORKFORCE LEARNING (OWL ), which improves generalization across domains by optimizing a
+domain-agnostic planner with reinforcement learning from real-world feedback. To validate our approach,
+we evaluate WORKFORCE on the GAIA benchmark, covering various realistic, multi-domain agentic
+tasks. Experimental results demonstrate WORKFORCE achieves open-source state-of-the-art performance
+(69.70% ), outperforming commercial systems like OpenAI’s Deep Research by 2.34% . More notably, our
+OWL-trained 32B model achieves 52.73% accuracy ( +16.37% ) and demonstrates performance comparable
+to GPT-4o on challenging tasks. To summarize, by enabling scalable generalization and modular domain
+transfer, our work establishes a foundation for the next generation of general-purpose AI assistants.
+Date: May 26, 2025
+Correspondence: Guohao Li at guohao.li@eigent.ai
+Project Page: https://github.com/camel-ai/owl
+1
+
+=== PAGE 2 ===
+1 Introduction
+Large Language Models (LLMs) have undergone a period of rapid advancement, evolving from simple text
+predictors into powerful autonomous agents capable of planning, tool use, and multi-step reasoning [ 1,21].
+Recently, multi-agent systems (MAS) have emerged as a promising approach for complex real-world tasks,
+demonstrating that dividing tasks among specialized agents can enhance performance [16, 27, 38].
+Although current MAS have yielded impressive results, their designs are typically domain-specific, severely
+restricting cross-domain transferability . This shortcoming appears in two forms: (i)First, on the inference
+side, deploying a system in a new domain often entails a full redesign; for instance, MetaGPT [ 13] depends
+on Standard Operating Procedures tailored to software engineering, hindering its extension to other fields. (ii)
+Second, on the training side, existing works often optimize every agent. MALT [ 20], for example, follows a
+fixed generator-verifier-refiner pipeline, necessitating separate training for every component. Consequently,
+migrating such systems demands retraining the entire agent ensemble, sharply reducing flexibility. These
+drawbacks underscore the need for a generalized, modular multi-agent architecture that can be rapidly adapted
+to diverse domains with minimal retraining and redesign.
+Building upon these observations, firstly, we introduce WORKFORCE , a hierarchical multi-agent inference
+framework that decouples strategic planning from domain-specific execution. As is shown in Figure 2, This
+modular design comprises three core components: (i)Domain-agnostic Planner : Generates abstract task
+decompositions based on high-level goals. (ii)Coordinator : Assigns subtasks to appropriate workers. (ii)
+Domain-specific Worker Nodes : A set of specialized agents that perform tool calls to accomplish each
+subtasks. The decoupling of these components enables plug-and-play extensibility, allowing WORKFORCE
+to be seamlessly adapted to new domains by simply replacing or adding worker nodes. Furthermore, this
+modular architecture facilitates OPTIMIZED WORKFORCE LEARNING (OWL ), a novel multi-agent training
+paradigm. OWL focuses on enhancing MAS’s cross-domain transferability by training a generalizable
+domain-agnostic planner. Specifically, we employ a two-stage training strategy: Supervised Fine-Tuning
+(SFT) for planner initialization, followed by Reinforcement Learning [ 29] to further enhance the model’s
+generalization capabilities.
+We evaluate our approach on the GAIA benchmark, a rigorous suite for generalist AI assistants that spans
+diverse domains and demands multimodal reasoning, code execution, and live web search [ 18].WORKFORCE
+attains an accuracy of 69.70% , surpassing strong commercial proprietary baselines like OpenAI’s Deep
+Research [ 22] (55.15%). To demonstrate the effectiveness of OWL , we further post-trained a strategic planner
+020406080100OpenAI Deep ResearchGAIA Score (%)Workforce (Ours)
+Level 1 Level 2 Level 3 AveragePrev. Open-sourced SOTA
+55.867.469.7
+30.858.0
+42.353.573.2
+68.684.9
+78.7
+71.7
+020406080100Qwen2.5-32B OWL-trained Qwen2.5-32B (Ours) Qwen2.5-72B
+Level 1 Level 2 Level 3 Average60.30
+51.16
+19.2319.2349.09 49.05
+33.7251.16
+36.3667.92
+26.9252.73GAIA Score (%)
+Figure 1 Performance comparison of W ORKFORCE and OWL with other baselines on GAIA benchmark [18].
+2
+
+=== PAGE 3 ===
+Coordinator
+...
+Training  Data In  Domain
+New Domain  AdaptationChainCentralized Decentralized
+69GAIA Score
+Model
+67
+55Workforce
+Model
+52GAIA Score36
+Need  Re-train!!...Domain
+Agent 2
+Domain
+Agent 3
+Domain -Agnostic 
+Planner
+Worker 
+Nodes
+Task 
+Channel
+Domain -
+Agnostic Planner
+...Domain
+Agent  1
+Domain
+Agent 2
+Domain
+Agent 3
+Task 
+Channel
+Coordinator
+Worker 
+Nodes
+Optimized Workforce Learning
+Task 3
+Task 2
+Task 1
+ TrainPrevious  Inference
+Previous  Training
+Train
+Domain
+Agent  1
+Task -
+Independent  
+Context  1Task -
+Independent  
+Context  2Task -
+Independent  
+Context  3
+Agent  1
+ Agent  2
+Multi -Agent  System
+Agent  …
+ Agent  N
+Figure 2 Overview of W ORKFORCE and O PTIMIZED WORKFORCE LEARNING .
+initialized by Qwen2.5-32B-Instruct [ 44] on a custom-curated training dataset without using any GAIA data.
+After training, the model reaches 52.73% score ( +16.37% ), outperforming models like GPT-4o-mini [ 21]
+(47.27%) and Qwen2.5-72B-Instruct (49.09%). These results confirm that our modular training strategy
+generalizes across domains while requiring minimal retraining.
+Our key contributions are fourfold:
+1. A New Flexible and Modular Multi-Agent Architecture. We propose WORKFORCE that is modular and
+scalable in both inference and training, enhancing cross-domain transferability.
+2. State-of-the-Art Performance. Our system achieves open-source state-of-the-art performance on the
+GAIA benchmark, even surpassing proprietary systems like OpenAI’s Deep Research.
+3. Efficient and Effective Training Paradigm. OWL significantly enhances model capabilities with minimal
+overhead, enabling Qwen2.5-32B-Instruct to achieve a 16.37% performance gain and reach comparable
+performance to GPT-4o on challenging tasks.
+4. Fully Open-Source. We release all code, models, and data to support open research.
+2 Preliminary
+Large Language Model (LLM)-based Agents are autonomous systems that perceive, reason, and act in
+various environments [ 42]. These agents operate in a perception-reasoning-action loop, where they observe
+their environment, process information through the language model, determine appropriate actions, and
+execute them to achieve goals.
+Multi-Agent Systems extend this paradigm by enabling multiple LLM-based agents to collaborate on complex
+3
+
+=== PAGE 4 ===
+Task Channel
+Task State :
+Assignee :<web_agent_id >
+Task State :
+Assignee :<web_agent_id >
+Task State :OPEN
+Assignee :<reasoning_agent_id >Planner (1) Task Planning
+Apaper about AIregulation ...Which ofthese
+words isused todescribe atype ofsociety ina
+Physics andSociety article submitted toarXiv .org
+onAugust 11,2016 ?(2) Task Solving
+Coordinator
+Subtask 2should beassigned to<web_agent_id>
+Worker Pool
+Document 
+AgentReasoning
+Agent
+Subtask 2:Search forthePhysics andSociety article
+andidentify keywords used todescribe atype ofsociety .
+User
+Subtask 1:Search forthecorrect
+paper about AIregulation ...
+Subtask 2:Search forthePhysics
+andSociety article ...
+Subtask 3:Compare thelabel words
+from theAIregulation ...
+Subtask 4:Transform theoriginal
+problemintoaspecialformat...
+DONE
+RUNING
+OPENSubtask 2:Search forthePhysics
+andSociety article submitted to...
+Subtask 1:Search forthecorrect
+paper about AIregulation ...
+Subtask 3:Compare thelabel
+words from theAIregulation ...
+Task State :OPEN
+Assignee :NoneOPENSubtask 4:Transform theorigin -
+alproblem intoaspecial format ...
+Search Results:
+{
+"title" : "Phase transition from.." , 
+"description" : "... [Submitted on 11 Aug 2016]. Title:Phase
+transition from egalitarian to hierarchical societies..." , 
+"url": "https:// arxiv.org /abs/1608.03637"
+},
+...
+Web
+Agent
+Figure 3 Overview of the WORKFORCE framework. The system consists of a Planner Agent for task decomposition, a
+Coordinator Agent for orchestrating subtasks, and multiple specialized Worker Nodes equipped with domain-specific
+toolkits to execute assigned tasks.
+tasks. Frameworks such as CAMEL [ 16] and MetaGPT [ 13] have demonstrated that collaborative approaches
+can outperform single-agent systems on tasks requiring diverse expertise. However, existing multi-agent
+frameworks are typically constrained by domain-specific designs that limit their broader applicability. This
+paper aims to develop scalable and generalizable multi-agent frameworks WORKFORCE through strategic
+planning and task execution decoupling, enabling efficient coordination across diverse domains. (See complete
+formalization in Appendix C and more related works in Section 6.)
+Generalist AI Assistant was first introduced by GAIA [ 18]. These systems are designed to handle a diverse
+range of complicated tasks across multiple domains and modalities. As the first question answering benchmark
+evaluating generalist AI assistants, GAIA proposes to enable LLM-based agents to gather information in
+real-world contexts, testing fundamental capabilities including multi-modal understanding, web browsing,
+reasoning, and complex problem-solving. Recently, numerous companies have released generalist AI assistant
+products (e.g., OpenAI’s Deep Research [ 22]). While open-source frameworks have made significant progress
+(e.g., Huggingface’s Open Deep Research [ 30]), they still lag behind commercial solutions. In this paper,
+we aim to close the gap between open-source and commercial proprietary agent frameworks. The proposed
+WORKFORCE surpasses OpenAI’s Deep Research by 2.34%, while our training method OWL significantly
+improves Qwen2.5-32B-Instruct’s performance by 16.37%.
+3 Multi-Agent Inference: W ORKFORCE
+3.1 W ORKFORCE
+Motivation. Contemporary multi-agent systems are critically limited by domain specificity and architectural
+rigidity, requiring complete redesign and retraining for each new application domain. We introduce WORK-
+FORCE , which addresses this fundamental challenge through modular architecture, particularly the separation
+of domain-agnostic planning from domain specific execution. More details about WORKFORCE can be found
+in Appendix D.
+Architecture. As illustrated in Figure 3, WORKFORCE comprises three core components: (i)Planner
+4
+
+=== PAGE 5 ===
+Agent analyzes incoming tasks and decomposes them into subtasks based on worker capability registry; (ii)
+Coordinator Agent serves as the central orchestration mechanism, managing worker assignments and task
+dependencies while integrating intermediate results; (iii)Worker Nodes consist of one or more specialized
+agents equipped with specific capabilities and toolkits that execute assigned subtasks and post results. This
+modular architecture provides inherent flexibility, allowing the framework to be deployed across diverse
+applications by simply modifying the worker nodes while maintaining its core planning and coordinating
+mechanism.
+Communication Mechanism. Communication in WORKFORCE operates through a shared task channel that
+serves as a central hub. The coordinator posts tasks and assignments to this channel. Upon completion,
+workers post only their final results back to the channel, while the detailed execution context of tool calls
+remains isolated within each subtask’s scope. This maintains a clean context for each worker, who only has
+access to the current subtask details and concise previous subtask results. This centralized approach simplifies
+system management and enhances scalability by eliminating direct agent-to-agent messaging.
+Task Flow. The task processing workflow within WORKFORCE follows a structured pipeline: (i)The Planner
+analyzes incoming overall tasks and then decomposes them into a set of subtasks according to the capabilities
+of available worker nodes and the overall task’s complexity; (ii)The Coordinator assesses the capabilities of
+available worker nodes and dispatches subtasks accordingly; (iii)The Worker Nodes perform the assigned
+subtasks using their specialized tools; (iv)Results from worker nodes are posted to the shared task channel ;
+(v)The Coordinator manages task dependencies and integrates results, ultimately forwarding them to the
+Planner; (vi)The Planner analyzes the results of each subtask and synthesizes the final output.
+Replanning Mechanism. During task execution, workers self-assess whether the assigned subtask is failed.
+When a worker determines that a subtask has failed, it posts failure information to the task channel. The
+task channel then detects this failure, and the planner will be prompted to generate new subtasks based on
+the feedback information. This replanning mechanism enables test-time scaling by dynamically adjust its
+approach to increasingly complex tasks, which is validated in Section 5.
+3.2 Generalist Multi-Agent Assistance
+To construct a generalist multi-agent assistant capable of processing diverse real-world tasks, we instantiated
+WORKFORCE with three worker agents, each equipped with domain-specific toolkits: (i)AWeb Agent ,
+capable of performing web searches, extracting webpage content, and simulating browser actions; (ii)A
+Document Processing Agent , designed to process documents and multimodal data, including text, images,
+audio, video, spreadsheets, and various file formats; and (iii)AReasoning/Coding Agent , which handles
+analytical reasoning and code execution tasks. The details of worker agents and corresponding toolkits could
+be found in Appendix D.3.
+3.3 Experiments
+Baselines. We selected a comprehensive set of baseline systems, categorized into four main groups: (i)
+Proprietary frameworks establish upper-bound commercial performance, including commercial agentic
+systems like OpenAI’s Deep Research [ 22], h2oGPTe Agent [ 12], etc. (ii)Open-source frameworks reveal
+the community progress, including strong baselines like HuggingFace’s Open Deep Research [ 30], Trase
+Agent [ 36], etc. (iii)ASingle Agent baseline utilizing multi-step tool calling. (iv)Role Playing [16]
+5
+
+=== PAGE 6 ===
+comprising two agents (user agent and assistant agent) that collaborate through structured dialogue to
+accomplish tasks. Note that to control experimental variables, both the Single Agent and Role Playing
+baselines utilize identical tool sets to W ORKFORCE .
+Implementation Details. For our implementation, we access all models via APIs, eliminating the need for
+GPUs. To ensure reproducibility, we configure API inference with greedy decoding. The default replanning
+threshold is set to 2. For evaluation methodology, we employ pass@3 sampling for WORKFORCE with
+GPT-4o [ 21] and pass@1 for WORKFORCE with Claude-3.7-sonnet [ 1]. Since some gold answers from GAIA
+had been leaked online, we blocked several websites to ensure fair comparison [22].
+Main Results. Several conclusions could be drawn from Table 1:
+(i)Workforce achieves state-of-the-art performance among open-source frameworks. OurWORKFORCE
+achieves 69.70% , consistently outperforming previous open-source frameworks across all difficulty levels.
+Under strictly controlled settings with the same model and toolkits, our GPT-4o-based WORKFORCE achieves
+60.61% accuracy - 23.03% higher than the Single Agent and 6.06% higher than the multi-agent baseline
+Role Playing.
+(ii)Workforce demonstrates comparable or even superior performance relative to commercial pro-
+prietary frameworks. While previous open-source frameworks have exhibited a substantial performance
+gap compared to closed-source alternatives, WORKFORCE considerably narrows this divide. To our knowl-
+edge, WORKFORCE is the first open-source system to exceed OpenAI’s Deep Research, achieving a 2.34%
+improvement, and also establishes a new Level 1 best by outperforming Langfun Agent v2.1 by 1.89% .
+4 Multi-Agent Training: O PTIMIZED WORKFORCE LEARNING
+4.1 Training Strategy
+Motivation. The WORKFORCE architecture separates domain-agnostic planning from domain-specific
+execution, allowing us to adapt to new domains by simply adding or replacing Worker Nodes while preserving
+the core planning mechanism. We introduce OPTIMIZED WORKFORCE LEARNING (OWL) , which focuses
+on enhancing a generalizable Planner Agent capable of handling diverse real-world scenarios. This design
+significantly reduces training overhead since only the Planner Agent requires intensive optimization, while
+Worker Nodes can leverage existing domain-specific tools with minimal adaptation. This “stable core, variable
+periphery” approach enables efficient knowledge transfer across domains and eliminates the need to retrain
+entire systems for new applications, substantially reducing computational costs while maintaining consistent
+performance.
+Implementation. More specifically, we adopt a two-phase training paradigm: (i)In the first phase, we employ
+supervised fine-tuning (SFT) to initialize the Planner Agent with fundamental task decomposition skills
+derived from expert demonstrations. (ii)Subsequently, we utilize reinforcement learning to further optimize
+the SFT-initialized Planner Agent. We select Direct Preference Optimization (DPO) [ 29] as our optimization
+0†Indicates systems that use multiple models, and only the primary model is listed.
+∗Indicates frameworks that have released an early version but have not provided the latest version that can replicate these results.
+‡Indicates an optimized version of role-playing where we introduced an LLM-based classifier that switches to O3-mini when tasks
+require more reasoning and coding, and uses GPT-4o otherwise.
+6
+
+=== PAGE 7 ===
+Table 1 Performance comparison of agent frameworks on GAIA [ 18] validation set with accuracy score (%) as the
+evaluation metric. Scores of open-source and proprietary frameworks were obtained from the official leaderboard. The
+best-performing proprietary and open-source frameworks are highlighted in bold .
+Agent Name Base Model Level 1 Level 2 Level 3 Average
+Proprietary Frameworks
+DRP-val-v.1.0 - 56.60 48.84 15.38 46.06
+omne O1-Preview†60.38 44.19 23.08 46.06
+Barcelona v0.1 Claude-3.5-Sonnet†62.26 50.00 26.92 50.30
+Ormind v0.1 Claude†69.81 54.65 26.92 55.15
+desearch GPT-4o 71.70 58.14 23.08 56.97
+Anges Claude†66.04 65.12 30.77 60.00
+h2oGPTe Agent v1.6.8 [12] Claude-3.5-Sonnet 67.92 67.44 42.31 63.64
+Deep Research [22] O3 78.66 73.21 58.03 67.36
+Trase Agent v0.3 [36] Claude†83.02 69.77 46.15 70.30
+Langfun Agent v2.1∗[9] Claude-3.7-Sonnet†83.02 68.60 57.69 71.52
+Open-Source Frameworks
+FRIDAY [41] GPT-4-Turbo 45.28 34.88 11.54 34.55
+Multi-Agent Exp v0.1 [19] GPT-4-Turbo 54.72 38.37 11.54 39.39
+HuggingFace Agents [31] GPT-4o 58.49 43.02 19.23 44.24
+Magnetic-One [7] O1†56.60 46.51 23.08 46.06
+AutoAgent [35] Claude-3.5-Sonnet 71.70 53.49 26.92 55.15
+Open Deep Research [30] O1 67.92 53.49 34.62 55.15
+TapeAgents [2] Claude-3.7-Sonnet 71.70 53.49 30.77 55.76
+Single Agent GPT-4o 52.83 34.88 15.38 37.58
+Role Playing [16] GPT-4o 75.47 52.33 19.23 54.55
+Role Playing‡[16] GPT-4o†81.14 54.65 23.08 58.18
+Ours
+WORKFORCE GPT-4o 81.14 58.14 26.92 60.61
+WORKFORCE Claude-3.7-Sonnet 84.91 68.60 42.31 69.70
+algorithm of choice, as this phase enhances the quality of decomposition strategies beyond mere imitation of
+demonstrations, enabling the Planner to develop more sophisticated decision-making capabilities.
+4.2 Task Curriculum
+Motivation. The core innovation of WORKFORCE is its architectural separation of domain-agnostic planning
+from domain-specific execution. For this design to be effective, the Planner Agent must possess robust
+generalization capabilities across diverse problem domains. This creates a fundamental tension: the Planner
+must simultaneously maintain a deep understanding across disparate domains while avoiding overfitting
+to specific task patterns or domains. To address this challenge, we developed a strategically balanced task
+curriculum that deliberately spans multiple capability dimensions required for general intelligence. Our
+curriculum design is guided by two key principles: (i)Capability Coverage : Exposing the Planner to
+diverse reasoning patterns and problem structures. (ii)Transfer Learning : Prioritizing tasks that develop
+complementary cognitive skills which can transfer across domains, rather than domain-specific knowledge.
+Implementation. More specifically, as is shown in Table 2, we carefully selected four datasets, each targeting
+7
+
+=== PAGE 8 ===
+Table 2 The statistics of the dataset. We use icons to represent different
+agent capabilities:
+ Web Browsing;
+ Reasoning;
+ Document Processing;
+Coding;
+ Multimodal Handling. More details of training data can be
+found in Appendix D.4.
+Dataset # Total # SFT Filtering # DPO Filtering Agent Capabilities
+HotpotQA 998 495 354
+WikiTableQuestions 869 577 311
+Math-related 1100 487 297
+Infinity-MM 499 40 47
+Total/Average 3466 1599 1009
+304050Average Score (%)With Filtering (OWL)
+Without Filtering
+Base ModelSFT SFT+DPO36.3641.21Base Model (Qwen2.5-32B-Instruct)
+52.73
+35.1546.06
+(a)Ablation study on trajectory filtering
+distinct agent cognitive capabilities dimensions: (i)HotpotQA [46]: This dataset requires multi-hop reasoning
+based on online information, challenging the Planner to orchestrate complex information-seeking behaviors.
+(ii)WikiTableQuestions [24]: This dataset requires the Planner to formulate strategies for navigating,
+filtering, and operating over tabular information. (iii)Math-related Problems : This is a custom-curated
+collection of mathematical problems that require reasoning or coding to solve, covering various mathematical
+domains. They help the Planner develop skills in logical reasoning and computational problem-solving. (iv)
+Infinity-MM [10]: As a multimodal dataset, Infinity-MM challenges the Planner to orchestrate multimodal
+information processing., including vision, text, and structured data.
+4.3 Trajectory Synthesis
+Supervised Fine-tuning. We employed our WORKFORCE approach (§3.1) with GPT-4o-mini to synthesize
+expert trajectories, which consist of planner-generated subtasks and worker-generated execution traces.
+To filter out low-quality data, we applied different evaluation metrics across datasets: For HotpotQA and
+WikiTableQuestions, we used accuracy metrics; For Infinity-MM, we used text cosine similarity with a
+0.7 threshold between ground truth and generated answers; For math-related problems, we implemented
+LLM-as-a-judge to compare ground truth answers with workforce-generated solutions. Ultimately, as shown
+in Table 2 and 6, we obtained 1,599 filtered trajectories for supervised fine-tuning, with each trajectory
+containing an average of 3.41 subtasks.
+Reinforcement Learning. We use the SFT-initialized model to generate pair-wise trajectories for DPO [ 29].
+Specifically, for each question in our collected dataset, we roll out n=4distinct trajectories. The evaluation
+of these generated trajectories is the same as in the SFT stage. Then, we construct preference pairs from the
+ntrajectories generated for each question based on their evaluation outcomes. For Math, HotpotQA, and
+WikiTableQuestions tasks, trajectories that are correct are labeled as “chosen”, while incorrect answers are
+labeled as “rejected”. For Infinity-MM dataset, trajectories whose final text cosine similarity scores exceeded
+the same threshold as in the SFT stage (0.7) are labeled as “chosen”, while those below the threshold are
+labeled as “rejected”. As shown in Table 2, we collect 1009 filtered trajectories pairs.
+4.4 Experiments
+Baselines. We compare our approach against multiple proprietary and open-source models as baselines,
+including the GPT-4o series [ 21], Claude-3.7-Sonnet [ 1], and the Qwen2.5 series [ 44]. These models represent
+8
+
+=== PAGE 9 ===
+Table 3 Performance comparison between different planners. Each result is based on the Workforce framework with
+GPT-4o as the worker foundation model.
+Planner Level 1 Level 2 Level 3 Average
+GPT-4o-mini [21] 64.15 45.34 19.23 47.27
+Qwen2.5-72B-Instruct [44] 60.30 51.16 19.23 49.09
+Claude-3.7-Sonnet [1] 81.13 53.49 34.61 59.39
+GPT-4o [21] 81.14 58.14 26.92 60.61
+Qwen2.5-32B-Instruct [44] 49.05 33.72 19.23 36.36
+w.OWL (SFT) 56.60 +7.55 39.53 +5.81 15.38 -3.85 41.21 +4.85
+w.OWL (SFT + DPO) 67.92 +18.87 51.16 +17.44 26.92 +7.69 52.73 +16.37
+the current state-of-the-art in language model capabilities across different scales and architectures.
+Implementation Details. Our model training is conducted on a computing cluster equipped with 8 NVIDIA
+H100 GPUs. We use the LlamaFactory [ 49] framework for managing and executing our training procedures.
+Specifically, for all the models we trained, the input sequences are truncated to a maximum length of 32,768
+tokens and the learning rate is set to 10−5. All models are trained for a total of two epochs. To optimize
+memory usage and training efficiency, we use bfloat16 mixed-precision training. The effective batch size is
+12, achieved through 1 per-device batch size combined with 12 gradient accumulation steps.
+Main Results. Table 3 reveals multiple important findings:
+(i)OWL significantly enhances planner capabilities, enabling open-source models to outperform propri-
+etary alternatives. The OWL-trained Qwen2.5-32B-Instruct model demonstrates remarkable improvements
+with a substantial 16.37% gain. OWL enables open-source model reaches 52.73% performance, surpassing
+both the proprietary GPT-4o-mini (47.27%) and the larger Qwen2.5-72B-Instruct (49.09%). While GPT-4o
+(60.61%) still maintains an advantage, our OWL-trained model achieves comparable performance to GPT-4o
+(26.92%) on the more challenging Level 3 tasks.
+(ii)Reinforcement learning significantly boosts planner generalization. While supervised fine-tuning
+(SFT) alone improves performance on simpler tasks (Level 1 and 2), it shows a regression on the most complex
+tasks (Level 3), with performance dropping by 3.85%. However, when combined with DPO, our approach not
+only recovers this performance but significantly exceeds the base model across all difficulty levels, with a
+7.69% improvement on Level 3 tasks.
+Ablation Study. We evaluated the impact of trajectory filtering on model performance.
+As shown in Figure 3a, models trained on filtered trajectories consistently outperform those trained on
+unfiltered data, which underscores that data quality is more critical than quantity for effective planner
+training.
+5 Analysis
+Performance Across Capability Types. Each evaluation case may require one or more types of agent
+capabilities (e.g., Web Browsing, Coding, Multimodal Processing). As shown in Figure 4(a), our experimental
+results demonstrate that: (i)TheWORKFORCE approach consistently outperforms both Role Playing and
+9
+
+=== PAGE 10 ===
+00.10.20.30.40.50.60.70.80.91Single Agent - GPT-4o Role Playing - GPT-4o
+Workforce - Qwen2.5-32B-Instruct - w. OWLAverage Score (%)
+Web Browsing
+Multi-Modality
+Diverse Filetype Reading
+Reasoning
+CodingWorkforce - GPT-4o
+Workforce - Qwen2.5-32B-Instruct
+0.40.450.50.550.60.650.70.75Average Score (%)Claude-3.7-Sonnet GPT-4o
+Replanning Count0 1 2
+(b) Test-time scaling (a) Performance by Capability0.430.540.60
+0.510.600.69Figure 4 Left: Average scores on GAIA validation categorized by different agent capabilities. Blue compares different
+agent frameworks, while brown compares different planner models. Right : Changes in Workforce performance as the
+number of replanning iterations increases.
+Single Agent approaches across different capabilities. (ii)After OWL training, we observe consistent
+improvements across all capability types.
+Test-time Scaling. As discussed in Section 3.1, we introduced a replanning mechanism, which enables
+test-time scaling in multi-agent systems. As shown in Figure 4(b), both GPT-4o and Claude-3.7-Sonnet
+workforces demonstrate improved performance as the number of replanning iterations increases. Notably, the
+models have no access to ground truth in this process, which indicates that the workforce possesses inherent
+self-correction and self-evolving capabilities during test time.
+Robustness Across Capability Requirements. We analyzed robustness by grouping tasks based on required
+capabilities (1, 2, or ≥3). Figure 5(b) shows that baselines degrade significantly on multi-capability tasks
+(Role Playing drops from 62.3% to 34.6%), while WORKFORCE maintains consistent performance across all
+complexity levels. This stability comes from our modular design, where specialized workers handle focused
+subtasks, making complex tasks more manageable than when a single agent must handle everything. Other
+robustness metrics can be found in Appendix I.1.
+Planner vs. Worker Training. Our ablation study in Figure 5(c) reveals that training only the planner (45.45%)
+significantly outperforms training only workers (31.51%). Training both components together offers minimal
+additional gains (46.68%) while substantially increasing computational costs. This confirms our design choice
+to prioritize planner optimization, as effective task decomposition is more crucial than enhancing individual
+worker capabilities.
+Error Analysis. To deeply investigate the failure modes of WORKFORCE , we conducted a manual error
+analysis on Claude-3.7-Sonnet results. As shown in Table 7, approximately half of the errors stem from
+limitations in the foundation models themself or from tool-related issues. Among agent-specific errors, the
+highest proportion is attributed to planner failures (21.15%), further highlighting the significance of planner
+optimization. Examples for each error category and detailed error distribution can be found in Appendix E.
+We also provide more qualitative analysis in Appendix F.
+10
+
+=== PAGE 11 ===
+21.2%
+9.6%
+32.7%7.7%9.6%19.2%19.2%
+1.9%
+9.6%
+13.5%
+1.9% 17.3%3.9%3.8%9.6%1.9%5.8%11.5%Limited Coding 
+Capability
+Context 
+Exceed
+Hallucination
+Web Toolkit 
+Failure
+Document 
+Toolkit FailureMultimodal 
+Toolkit FailureResponse 
+FormatReasoning 
+ErrorLanguage/Question
+ AmbiguityIncorrect Plan
+Subtask
+ Ambiguity
+Tool Selection 
+ErrorWorker Error
+Responding ErrorPlanner Error Limited Tool Capability
+Language/Question Ambiguity
+Limited Model Capability
+3040506070Average Score (%)Single Agent Role Playing
+(b) Performance across different capability requirements1 2 ≥3Number of 
+Capabilities35.1438.36
+34.6263.01
+51.1459.46
+(a) Failure Modes on the GAIA Benchmark62.34 55.56
+44.44Workforce (Ours)
+010203040506070Qwen2.5-32B-Instruct w. Worker w. Planner (Ours)Average Score (%)
+(c) Performance comparason between different training configurationw. Both
+Level 1 Level 2 Level 3 AverageFigure 5 Manual error analysis and performance comparison of our multi-agent system.
+6 Related Work
+LLM-based Multi-Agent Systems. Recent work has explored architectures where multiple LLM-based
+agents cooperate, each with specialized roles, to tackle complex tasks beyond the ability of a single model [ 4,
+11,25,37,45]. Early two-agent role-play systems such as CAMEL [ 16] showed that dialog between agents
+can elicit step-wise reasoning. Recent frameworks extend this idea by assigning explicit roles to multiple
+agents: MetaGPT [ 13] and ChatDev [ 27] replicate software-engineering pipelines with manager, designer, and
+coder agents; Other works like Magnetic-One [ 8] and AG2 [ 38] introduce a central orchestrator that assign
+tasks to workers. While effective, these systems hard-code role sets, limiting cross-domain transfer. In [ 23],
+the authors find that major failure pattern of those works stem from system design issues .WORKFORCE
+instead decouples strategic planning, coordination, and task execution into independent agents, so new workers
+can be swapped in without touching the planner. The scalability and flexibility enables seamless domain
+transfer.
+Post-Training for Agentic LLMs. Researchers have extensively explored post-training methods to enhance
+the performance of agentic systems. Prior works optimize the model on tool-augmented trajectories by
+supervised fine-tuning [ 3,5,14,28,48] or reinforcement learning [ 6,15,15,26,39,40,47,50,51] Although
+effective, full-trajectory training scales poorly and can over-fit the agent to a fixed tool suite. Another
+coccurent work MPO [ 43] sidesteps weight updates by iteratively refining high-level plans but still assumes
+task-specific reward design. In contrast, OWL trains only the domain-agnostic planner via reinforcement
+learning, enabling strong domain transferability.
+Multi-Agent Training. Recent research has explored training methods where multiple LLM-based agents
+learn to collaborate through specialized roles and interactions [ 17,32,33]. For example, MALT divides the
+reasoning process among a generator, verifier, and refiner agent, and fine-tunes each role with off-policy reward
+propagation[ 20]. Similarly, [ 34] propose a multiagent fine-tuning approach where LLMs initialized from
+11
+
+=== PAGE 12 ===
+the same base model are specialized through debate-driven data, enabling diverse reasoning and collective
+self-improvement beyond single-agent capabilities. Unlike these approaches that train domain-specific multi-
+agent systems where each agent requires separate fine-tuning, OWL focuses on training a single generalizable
+domain-agnostic planner. This fundamental difference offers both effective domain transferability and training
+efficiency.
+7 Conclusion
+We introduced WORKFORCE , a hierarchical multi-agent framework that decouples strategic planning from
+domain-specific execution, enabling cross-domain transferability without system redesign. WORKFORCE
+achieves 69.70% accuracy on the GAIA benchmark, outperforming both open-source alternatives and Deep
+Research. We also presented OPTIMIZED WORKFORCE LEARNING (OWL ), which applies reinforcement
+learning and enhances the Qwen2.5-32B-Instruct model by 16.37% on the GAIA benchmark. We hope
+that by combining plug-and-play worker nodes with a generalizable planning core, our approach provides a
+scalable foundation for general-purpose AI assistants.
+8 Acknowledgements
+We sincerely thank Xukun Liu and Weiyu Ma, Weijie Bai, Yuqin Xie, and Yueming Lai for their valuable
+support in this project. This work was carried out as a collaborative open source research initiative at
+CAMEL-AI.org, supported by funding from Eigent.AI.
+References
+[1]Anthropic. Claude 3.7 sonnet and claude code, February 2025. URL https://www.anthropic.com/ne
+ws/claude-3-7-sonnet . Accessed: 2025-05-13.
+[2]Dzmitry Bahdanau, Nicolas Gontier, Gabriel Huang, Ehsan Kamalloo, Rafael Pardinas, Alex Piché, Torsten
+Scholak, Oleh Shliazhko, Jordan Prince Tremblay, Karam Ghanem, et al. Tapeagents: a holistic framework for
+agent development and optimization. arXiv preprint arXiv:2412.08445, 2024.
+[3]Baian Chen, Chang Shu, Ehsan Shareghi, Nigel Collier, Karthik Narasimhan, and Shunyu Yao. Fireact: Toward
+language agent fine-tuning. arXiv preprint arXiv:2310.05915, 2023.
+[4]Weize Chen, Yusheng Su, Jingwei Zuo, Cheng Yang, Chenfei Yuan, Chen Qian, Chi-Min Chan, Yujia Qin, Yaxi
+Lu, Ruobing Xie, et al. Agentverse: Facilitating multi-agent collaboration and exploring emergent behaviors in
+agents. arXiv preprint arXiv:2308.10848, 2(4):6, 2023.
+[5]Zehui Chen, Kuikun Liu, Qiuchen Wang, Wenwei Zhang, Jiangning Liu, Dahua Lin, Kai Chen, and Feng Zhao.
+Agent-flan: Designing data and methods of effective agent tuning for large language models. arXiv preprint
+arXiv:2403.12881, 2024.
+[6]Jiazhan Feng, Shijue Huang, Xingwei Qu, Ge Zhang, Yujia Qin, Baoquan Zhong, Chengquan Jiang, Jinxin Chi, and
+Wanjun Zhong. Retool: Reinforcement learning for strategic tool use in llms. arXiv preprint arXiv:2504.11536 ,
+2025.
+[7]Adam Fourney, Gagan Bansal, Hussein Mozannar, Cheng Tan, Eduardo Salinas, Erkang, Zhu, Friederike Niedtner,
+Grace Proebsting, Griffin Bassman, Jack Gerrits, Jacob Alber, Peter Chang, Ricky Loynd, Robert West, Victor
+Dibia, Ahmed Awadallah, Ece Kamar, Rafah Hosn, and Saleema Amershi. Magentic-one: A generalist multi-agent
+system for solving complex tasks, 2024. URL https://arxiv.org/abs/2411.04468 .
+12
+
+=== PAGE 13 ===
+[8]Adam Fourney, Gagan Bansal, Hussein Mozannar, Cheng Tan, Eduardo Salinas, Friederike Niedtner, Grace
+Proebsting, Griffin Bassman, Jack Gerrits, Jacob Alber, et al. Magentic-one: A generalist multi-agent system for
+solving complex tasks. arXiv preprint arXiv:2411.04468, 2024.
+[9] Google. Langfun. https://github.com/google/langfun , 2023. Version 0.0.1.
+[10] Shuhao Gu, Jialing Zhang, Siyuan Zhou, Kevin Yu, Zhaohu Xing, Liangdong Wang, Zhou Cao, Jintao Jia, Zhuoyi
+Zhang, Yixuan Wang, et al. Infinity-mm: Scaling multimodal performance with large-scale and high-quality
+instruction data. arXiv preprint arXiv:2410.18558, 2024.
+[11] Taicheng Guo, Xiuying Chen, Yaqi Wang, Ruidi Chang, Shichao Pei, Nitesh V Chawla, Olaf Wiest, and Xian-
+gliang Zhang. Large language model based multi-agents: A survey of progress and challenges. arXiv preprint
+arXiv:2402.01680, 2024.
+[12] H2O.ai. Autonomous agentic ai: execute multi-step workflows autonomously. https://h2o.ai/platfor
+m/enterprise-h2ogpte/#AgenticAI , 2024. URL https://h2o.ai/platform/enterprise
+-h2ogpte/#AgenticAI .
+[13] Sirui Hong, Xiawu Zheng, Jonathan Chen, Yuheng Cheng, Jinlin Wang, Ceyao Zhang, Zili Wang, Steven Ka Shing
+Yau, Zijuan Lin, Liyang Zhou, et al. Metagpt: Meta programming for multi-agent collaborative framework. arXiv
+preprint arXiv:2308.00352, 3(4):6, 2023.
+[14] Mengkang Hu, Pu Zhao, Can Xu, Qingfeng Sun, Jianguang Lou, Qingwei Lin, Ping Luo, and Saravan Rajmohan.
+Agentgen: Enhancing planning abilities for large language model based agent via environment and task generation.
+arXiv preprint arXiv:2408.00764, 2024.
+[15] Bowen Jin, Hansi Zeng, Zhenrui Yue, Jinsung Yoon, Sercan Arik, Dong Wang, Hamed Zamani, and Jiawei
+Han. Search-r1: Training llms to reason and leverage search engines with reinforcement learning. arXiv preprint
+arXiv:2503.09516, 2025.
+[16] Guohao Li, Hasan Hammoud, Hani Itani, Dmitrii Khizbullin, and Bernard Ghanem. Camel: Communicative agents
+for" mind" exploration of large language model society. Advances inNeural Information Processing Systems , 36:
+51991–52008, 2023.
+[17] Hao Ma, Tianyi Hu, Zhiqiang Pu, Liu Boyin, Xiaolin Ai, Yanyan Liang, and Min Chen. Coevolving with the
+other you: Fine-tuning llm with sequential cooperative multi-agent reinforcement learning. Advances inNeural
+Information Processing Systems, 37:15497–15525, 2024.
+[18] Grégoire Mialon, Clémentine Fourrier, Thomas Wolf, Yann LeCun, and Thomas Scialom. Gaia: a benchmark for
+general ai assistants. In TheTwelfth International Conference onLearning Representations, 2023.
+[19] Microsoft. Multi-agent experiment v0.1 msr ai frontiers (autogen team members). https://aka.ms/gaia_
+multiagent_v01_march_1st , 2024. URL https://aka.ms/gaia_multiagent_v01_march_1
+st.
+[20] Sumeet Ramesh Motwani, Chandler Smith, Rocktim Jyoti Das, Rafael Rafailov, Ivan Laptev, Philip HS Torr, Fabio
+Pizzati, Ronald Clark, and Christian Schroeder de Witt. Malt: Improving reasoning with multi-agent llm training.
+arXiv preprint arXiv:2412.01928, 2024.
+[21] OpenAI. Hello gpt-4o, May 2024. URL https://openai.com/index/hello-gpt-4o/ . Accessed:
+2025-05-13.
+[22] OpenAI. Introducing deep research. https://openai.com/index/introducing-deep-resea
+rch/ , 2024. URL https://openai.com/index/introducing-deep-research/ . Accessed:
+2025-05-10.
+13
+
+=== PAGE 14 ===
+[23] Melissa Z Pan, Mert Cemri, Lakshya A Agrawal, Shuyi Yang, Bhavya Chopra, Rishabh Tiwari, Kurt Keutzer,
+Aditya Parameswaran, Kannan Ramchandran, Dan Klein, et al. Why Do Multiagent Systems Fail? In ICLR 2025
+Workshop onBuilding Trust inLanguage Models andApplications, 2025.
+[24] Panupong Pasupat and Percy Liang. Compositional semantic parsing on semi-structured tables. arXiv preprint
+arXiv:1508.00305, 2015.
+[25] Huy Nhat Phan, Tien N Nguyen, Phong X Nguyen, and Nghi DQ Bui. Hyperagent: Generalist software engineering
+agents to solve coding tasks at scale. arXiv preprint arXiv:2409.16299, 2024.
+[26] Zehan Qi, Xiao Liu, Iat Long Iong, Hanyu Lai, Xueqiao Sun, Wenyi Zhao, Yu Yang, Xinyue Yang, Jiadai Sun,
+Shuntian Yao, et al. WebRL: Training LLM Web Agents via Self-Evolving Online Curriculum Reinforcement
+Learning. arXiv preprint arXiv:2411.02337, 2024.
+[27] Chen Qian, Wei Liu, Hongzhang Liu, Nuo Chen, Yufan Dang, Jiahao Li, Cheng Yang, Weize Chen, Yusheng Su,
+Xin Cong, et al. Chatdev: Communicative agents for software development. arXiv preprint arXiv:2307.07924 ,
+2023.
+[28] Yujia Qin, Shihao Liang, Yining Ye, Kunlun Zhu, Lan Yan, Yaxi Lu, Yankai Lin, Xin Cong, Xiangru Tang,
+Bill Qian, et al. Toolllm: Facilitating large language models to master 16000+ real-world apis. arXiv preprint
+arXiv:2307.16789, 2023.
+[29] Rafael Rafailov, Archit Sharma, Eric Mitchell, Christopher D Manning, Stefano Ermon, and Chelsea Finn. Direct
+preference optimization: Your language model is secretly a reward model. In Thirty-seventh Conference onNeural
+Information Processing Systems, 2023. URL https://openreview.net/forum?id=HPuSIXJaa9 .
+[30] Aymeric Roucher, Albert Villanova del Moral, Clémentine Fourrier, Merve Noyan, and Thomas Wolf. Open-source
+deepresearch – freeing our search agents. https://huggingface.co/blog/open-deep-research ,
+February 2025. URL https://huggingface.co/blog/open-deep-research . Accessed: 2025-05-
+10.
+[31] Aymeric Roucher, Albert Villanova del Moral, Thomas Wolf, Leandro von Werra, and Erik Kaunismäki. ‘smola-
+gents‘: a smol library to build great agentic systems. https://github.com/huggingface/smolagent
+s, 2025.
+[32] Oliver Slumbers, David Henry Mguni, Kun Shao, and Jun Wang. Leveraging large language models for optimised
+coordination in textual multi-agent reinforcement learning. 2023.
+[33] Vighnesh Subramaniam, Antonio Torralba, and Shuang Li. Debategpt: Fine-tuning large language models with
+multi-agent debate supervision. 2024.
+[34] Vighnesh Subramaniam, Yilun Du, Joshua B Tenenbaum, Antonio Torralba, Shuang Li, and Igor Mordatch.
+Multiagent finetuning: Self improvement with diverse reasoning chains. arXiv preprint arXiv:2501.05707, 2025.
+[35] Jiabin Tang, Tianyu Fan, and Chao Huang. Autoagent: A fully-automated and zero-code framework for llm agents.
+arXiv e-prints, pages arXiv–2502, 2025.
+[36] Trase. Meet trase systems, the ai agent platform. https://www.trasesystems.com/ , 2024. URL
+https://www.trasesystems.com/ . Accessed: 2025-01-15.
+[37] Harsh Trivedi, Tushar Khot, Mareike Hartmann, Ruskin Manku, Vinty Dong, Edward Li, Shashank Gupta, Ashish
+Sabharwal, and Niranjan Balasubramanian. Appworld: A controllable world of apps and people for benchmarking
+interactive coding agents. arXiv preprint arXiv:2407.18901, 2024.
+[38] Chi Wang, Qingyun Wu, and the AG2 Community. Ag2: Open-source agentos for ai agents, 2024. URL
+https://github.com/ag2ai/ag2 . Available at https://docs.ag2.ai/.
+14
+
+=== PAGE 15 ===
+[39] Yuxiang Wei, Olivier Duchenne, Jade Copet, Quentin Carbonneaux, Lingming Zhang, Daniel Fried, Gabriel
+Synnaeve, Rishabh Singh, and Sida I Wang. Swe-rl: Advancing llm reasoning via reinforcement learning on open
+software evolution. arXiv preprint arXiv:2502.18449, 2025.
+[40] Junde Wu, Jiayuan Zhu, and Yuyuan Liu. Agentic Reasoning: Reasoning LLMs with Tools for the Deep Research.
+arXiv preprint arXiv:2502.04644, 2025.
+[41] Zhiyong Wu, Chengcheng Han, Zichen Ding, Zhenmin Weng, Zhoumianze Liu, Shunyu Yao, Tao Yu, and Lingpeng
+Kong. Os-copilot: Towards generalist computer agents with self-improvement. arXiv preprint arXiv:2402.07456 ,
+2024.
+[42] Tianbao Xie, Fan Zhou, Zhoujun Cheng, Peng Shi, Luoxuan Weng, Yitao Liu, Toh Jing Hua, Junning Zhao, Qian
+Liu, Che Liu, Leo Z. Liu, Yiheng Xu, Hongjin Su, Dongchan Shin, Caiming Xiong, and Tao Yu. Openagents: An
+open platform for language agents in the wild. CoRR , abs/2310.10634, 2023. doi: 10.48550/ARXIV.2310.10634.
+URL https://doi.org/10.48550/arXiv.2310.10634 .
+[43] Weimin Xiong, Yifan Song, Qingxiu Dong, Bingchan Zhao, Feifan Song, Xun Wang, and Sujian Li. MPO:
+Boosting LLM Agents with Meta Plan Optimization. arXiv preprint arXiv:2503.02682, 2025.
+[44] An Yang, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chengyuan Li, Dayiheng Liu, Fei
+Huang, Haoran Wei, et al. Qwen2. 5 technical report. arXiv preprint arXiv:2412.15115, 2024.
+[45] Yingxuan Yang, Huacan Chai, Shuai Shao, Yuanyi Song, Siyuan Qi, Renting Rui, and Weinan Zhang. AgentNet:
+Decentralized Evolutionary Coordination for LLM-based Multi-Agent Systems. arXiv preprint arXiv:2504.00587 ,
+2025.
+[46] Zhilin Yang, Peng Qi, Saizheng Zhang, Yoshua Bengio, William W Cohen, Ruslan Salakhutdinov, and Christo-
+pher D Manning. Hotpotqa: A dataset for diverse, explainable multi-hop question answering. arXiv preprint
+arXiv:1809.09600, 2018.
+[47] Yuanqing Yu, Zhefan Wang, Weizhi Ma, Zhicheng Guo, Jingtao Zhan, Shuai Wang, Chuhan Wu, Zhiqiang Guo,
+and Min Zhang. StepTool: A Step-grained Reinforcement Learning Framework for Tool Learning in LLMs. arXiv
+preprint arXiv:2410.07745, 2024.
+[48] Aohan Zeng, Mingdao Liu, Rui Lu, Bowen Wang, Xiao Liu, Yuxiao Dong, and Jie Tang. Agenttuning: Enabling
+generalized agent abilities for llms. arXiv preprint arXiv:2310.12823, 2023.
+[49] Yaowei Zheng, Richong Zhang, Junhao Zhang, Yanhan Ye, Zheyan Luo, Zhangchi Feng, and Yongqiang Ma.
+Llamafactory: Unified efficient fine-tuning of 100+ language models. In Proceedings ofthe62nd Annual Meeting
+oftheAssociation forComputational Linguistics (V olume 3:System Demonstrations) , Bangkok, Thailand, 2024.
+Association for Computational Linguistics. URL http://arxiv.org/abs/2403.13372 .
+[50] Yuxiang Zheng, Dayuan Fu, Xiangkun Hu, Xiaojie Cai, Lyumanshan Ye, Pengrui Lu, and Pengfei Liu. Deep-
+researcher: Scaling deep research via reinforcement learning in real-world environments. arXiv preprint
+arXiv:2504.03160, 2025.
+[51] Yifei Zhou, Song Jiang, Yuandong Tian, Jason Weston, Sergey Levine, Sainbayar Sukhbaatar, and Xian Li. SWEET-
+RL: Training Multi-Turn LLM Agents on Collaborative Reasoning Tasks. arXiv preprint arXiv:2503.15478 , 2025.
+15
+
