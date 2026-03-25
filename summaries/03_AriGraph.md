@@ -1,21 +1,72 @@
 # AriGraph: Learning Knowledge Graph World Models with Episodic Memory for LLM Agents
 
-> Anokhin et al., AIRI / Skoltech / Oxford, arXiv:2407.04363v3 (2025.05.15)
+> **논문 정보**: Petr Anokhin, Nikita Semenov, Artyom Sorokin, Dmitry Evseev, Andrey Kravchenko, Mikhail Burtsev, Evgeny Burnaev (AIRI Moscow, Skoltech, London Institute for Mathematical Sciences, University of Oxford)
+> **arXiv**: 2407.04363 (2025.05, IJCAI 2025)
+> **코드**: N/A
 
-## 필수 요소
+---
 
-| 항목 | 내용 |
-|------|------|
-| **Problem** | LLM 기반 에이전트가 동적 환경에서 장기 메모리를 효과적으로 활용하지 못하는 문제. 기존 방법들(전체 히스토리, 요약, RAG)은 비정형 메모리 표현에 의존하여 복잡한 의사결정에 필수적인 추론과 계획을 지원하지 못함. 특히 수백 스텝에 걸친 탐색 후 과거 관찰을 정확히 상기하거나, 환경 변화에 따라 지식을 갱신하는 것이 불가능함. |
-| **Motivation** | LLM 에이전트가 부분 관측 환경(POMDP)에서 활동할 때 전체 문맥을 유지하는 방식은 비용이 크고(step 150 기준 Full History는 14,000 프롬프트 토큰), 수백만 토큰 컨텍스트를 활용하더라도 방대한 정보 속 복잡한 논리를 처리하기 어려움. RAG는 관련 정보가 메모리 전체에 흩어져 있을 때 검색 능력이 크게 떨어짐. 인간의 인지과학에서는 의미 기억(semantic memory)과 에피소드 기억(episodic memory)이 상호 연결되어 있음이 밝혀졌으나, LLM 에이전트 아키텍처에는 이 두 기억 유형의 통합이 이루어지지 않고 있었음. |
-| **Method** | **AriGraph**: 의미 기억 그래프와 에피소드 기억을 통합한 지식 그래프 세계 모델. G = (Vs, Es, Ve, Ee) 구조로 구성됨. (1) **의미 기억**: 관찰에서 LLM이 (객체1, 관계, 객체2) 형태의 트리플릿을 추출하여 지식 그래프를 구성; 새 관찰로 인해 무효화된 엣지는 자동 삭제(예: "사과, 탁자 위에 있음" -> "사과, 인벤토리에 있음"). (2) **에피소드 기억**: 매 타임스텝마다 전체 텍스트 관찰을 에피소드 노드로 저장하고, 해당 관찰에서 추출된 모든 의미 트리플릿과 에피소드 엣지로 연결. (3) **검색**: 사전학습된 Contriever 모델 기반 시맨틱 서치(BFS 방식, depth/width 제어)와, 관련 트리플릿에 연결된 에피소드 노드를 점수화하는 에피소드 서치 병행. **Ariadne 에이전트**: AriGraph + 계획(Planning) + 의사결정(ReAct 기반)으로 구성된 인지 아키텍처. 작업 메모리에는 현재 관찰, 최근 행동 히스토리, AriGraph에서 검색된 의미/에피소드 지식, 목표, 현재 계획이 포함됨. 또한 탐색 모드에서 그래프의 공간 관계를 이용해 미탐색 출구를 자동으로 식별하여 탐색 효율을 높임. |
-| **Key Contribution** | 1. 의미 기억과 에피소드 기억을 단일 그래프 구조 내에서 통합한 최초의 LLM 에이전트 메모리 아키텍처. 2. 환경과의 상호작용을 통해 동적으로 업데이트(추가/삭제)되는 지식 그래프 세계 모델. 기존 GraphRAG, HOLMES 등은 업데이트 메커니즘이 없음. 3. 에피소드 엣지를 통해 "동시에 발생한" 의미 트리플릿들을 연결함으로써, 단순 의미 유사도 검색만으로는 불가능한 컨텍스트 기반 에피소드 검색 가능. 4. 정적 Q&A용으로 설계된 KG 방법들과 달리, 동적 인터랙티브 환경에 그대로 적용 가능. |
-| **Experiment/Results** | **TextWorld 텍스트 게임** (GPT-4-0125-preview 사용, 5회 시도 중 상위 3회 평균): 3종 게임(Treasure Hunt, Cleaning, Cooking)의 기본/어려운/가장 어려운 난이도. AriGraph는 Treasure Hunt 세 난이도 모두 완벽 해결(1.0/1.0/1.0). 비교: Full History는 Hard/Hardest에서 0(해결 불가). Reflexion은 단일 난이도에서 0.93이나 Hard 이상 미시험. **Cleaning**: AriGraph 0.79 vs. Full History 0.05, Summary 0.35, RAG 0.39, Simulacra 0.70. **Cooking**: AriGraph 1.0/1.0/0.65 (Medium/Hard/Hardest) vs. Full History 0.18/-/-, Summary 0.52/0.21/-. **NetHack** (GPT-4o 사용): Ariadne [Room obs] 593.00±202.62점, 6.33±2.31 레벨 vs. NetPlay [Room obs] 341.67±109.14점, 3.67±1.15 레벨; NetPlay [Level obs, 메모리 오라클] 675.33±130.27점, 7.33±1.15 레벨. 즉 Ariadne는 제한된 관찰만으로 전체 레벨 정보를 가진 에이전트에 근접한 성능 달성. **Multi-hop Q&A** (MuSiQue, HotpotQA 각 200샘플): AriGraph(GPT-4) MuSiQue EM 45.0/F1 57.0, HotpotQA EM 68.0/F1 74.7. HOLMES(GPT-4)가 MuSiQue EM 48.0/F1 58.0으로 최고이나 AriGraph는 거의 동등하며 비용이 GraphRAG 대비 10배 이상 저렴 (QA당 11,000 vs 115,000 프롬프트 토큰). **인간 플레이어 비교**: Ariadne는 평균 인간을 전 게임에서 능가, Cooking/Treasure Hunt에서 상위 3인 인간과 동등 수준. **RL 비교**: Cooking 4단계 난이도 전부에서 GATA, LTL-GATA, EXPLORER RL 베이스라인을 능가. |
-| **Limitation** | 1. (저자 언급) 멀티모달 관찰 미지원: 현재 텍스트 관찰만 처리 가능. 2. (저자 언급) 절차적 기억(procedural memory) 미통합. 3. (저자 언급) 더 정교한 그래프 탐색 방법이 필요함. 4. (독해 시 한계) 탐색 모드에서 위치 및 출구를 인식하기 위해 그래프 내 어떤 요소가 위치/출구를 나타내는지에 대한 전문가 지식(expert knowledge)이 하드코딩됨. 5. LLM 백본(GPT-4)에 크게 의존하며, LLaMA-3-70B 사용 시 성능이 크게 저하됨(Treasure Hunt 0.47, Cooking 0.67). 6. Cleaning Hardest 등 일부 태스크는 미시험. 7. LLM-에이전트와 RL 비교 환경이 100% 동일하지 않음(LLM용 초기 지침 추가).  |
-
-## 선택 요소
+## Overview
 
 | 항목 | 내용 |
 |------|------|
-| **Baseline 비교** | 동일한 Planning+DecisionMaking 모듈에 메모리만 교체한 공정한 비교: (1) Full History: 모든 관찰/행동 기록 유지, 150스텝에서 14,000 토큰 소모, Treasure Hunt Hard/Hardest 해결 불가, Cooking Medium 0.18. (2) Summary: 요약 기반, Treasure Hunt 0.33/0.17/-, Cooking 0.52/0.21/-. (3) RAG: 유사도 기반 top-k 검색, Treasure Hunt 0.33/0.17/-. (4) Simulacra (Park et al., 2023): 최근성+중요도+관련성 스코어링+반성, Cooking 0.30. (5) Reflexion (Shinn et al., 2023): 에피소드 간 반성, 다중 시도 방식, Cooking 1.0(2회)에서 RAG 대비 향상되나 이후 성능 저하. RL 베이스라인(GATA, LTL-GATA, EXPLORER): Cooking 4단계 전부에서 Ariadne에 못 미침. Q&A 베이스라인: HOLMES(GPT-4)가 MuSiQue EM 48.0으로 최고, AriGraph(GPT-4)는 45.0으로 근접; HotpotQA에서는 AriGraph(GPT-4) EM 68.0이 HOLMES 66.0 초과. GraphRAG 대비 AriGraph는 10배 이상 비용 절감(토큰 기준). |
-| **Ablation Study** | Table 4 (TextWorld 실험) 기준: (1) **AriGraph w/o exploration** (탐색 모듈 제거): Treasure Hunt 1.0->0.87, Cooking 1.0->0.87로 성능 하락. 탐색 모듈이 게임 해결에 기여함을 확인. (2) **AriGraph w/o episodic** (에피소드 기억 제거): Treasure Hunt Hard 1.0->0.67, Cooking Medium 1.0->0.64, Cooking Hard 1.0->0.45로 크게 하락. 반면 Cleaning에서는 0.79->0.92로 오히려 상승(Cleaning은 오래된 정보 필터링이 더 중요, 에피소드 기억이 오래된 위치 정보를 유지하여 오히려 방해할 수 있음). 에피소드 기억이 레시피·요리 지침 등 장기 세부 정보 회상에 특히 중요함이 검증됨. |
+| **Problem** | 기존 LLM 에이전트는 전체 관찰 이력, 요약, RAG 등 비구조적 메모리 표현에 의존하여, 복잡한 의사결정에 필수적인 추론과 계획을 효과적으로 지원하지 못한다. 전체 이력을 컨텍스트에 넣는 방식은 비용이 높고, 방대한 정보 속 복잡한 논리를 처리하는 데 한계가 있다. |
+| **Motivation** | 자율 에이전트가 새로운 환경에서 지식을 축적하고 업데이트하며 학습하려면, 구조화된 세계 모델(World Model)이 필요하다. 인간의 인지 시스템처럼 의미 기억(일반 지식)과 에피소드 기억(특정 경험)을 통합하면, 공간 탐색·물체 추적·장기 계획에서 비구조적 메모리보다 효과적이다. |
+| **Limitation** | (1) 지식 그래프 구축이 LLM의 트리플 추출 능력에 의존하며, 추출 오류가 누적될 수 있다. (2) TextWorld와 NetHack 등 텍스트 게임 환경에서만 검증되어, 실제 세계 태스크에서의 일반화가 불확실하다. (3) 시맨틱 검색 깊이(d)와 너비(w) 등 하이퍼파라미터 튜닝이 필요하며, 환경마다 최적값이 다를 수 있다. (4) Multi-hop QA에서는 전용 방법(HOLMES)에 근접하나 완전히 능가하지는 못한다. |
+
+---
+
+## Method
+
+AriGraph는 **시맨틱 메모리**(지식 그래프)와 **에피소드 메모리**(관찰 이력)를 하나의 통합 그래프 구조로 결합한 월드 모델이다.
+
+1. **그래프 구조 정의**: `G = (Vs, Es, Ve, Ee)`
+   - `Vs, Es`: 시맨틱 정점·엣지 — `(객체1, 관계, 객체2)` 트리플 형태의 일반 지식
+   - `Ve, Ee`: 에피소드 정점·엣지 — 과거 관찰을 저장하는 하이퍼엣지로, 동시에 추출된 모든 트리플을 하나의 에피소드 정점에 연결
+
+2. **AriGraph 구축 (매 타임스텝)**
+   - 새 관찰 `o_t`에서 LLM이 시맨틱 트리플 `(Vs_t, Es_t)` 추출
+   - 기존 그래프에서 관련 엣지 `Es_rel`을 조회하여 구식(outdated) 정보 탐지 및 제거
+   - 새 트리플로 시맨틱 메모리 확장 + 새 에피소드 정점 `ve_t` 추가
+
+3. **검색 (Algorithm 1: Memory Graph Search)**
+   - **시맨틱 검색**: 쿼리와 Contriever 모델로 가장 관련 있는 트리플 검색 → 인접 정점을 재귀적으로 탐색 (깊이 d, 너비 w 제어)
+   - **에피소드 검색**: 시맨틱 검색 결과와 연결된 에피소드 정점을 관련성 점수 `rel(ve) = n / max(N,1)·log(max(N,1))`로 순위화하여 상위 k개 반환
+
+4. **Ariadne 에이전트 아키텍처**
+   - **Working Memory**: 최근 관찰-행동 이력 + AriGraph에서 검색된 시맨틱·에피소드 메모리
+   - **Planning**: Working Memory 기반으로 서브골 생성·업데이트
+   - **Decision Making**: ReAct 기반 모듈이 메모리와 계획을 참조하여 행동 선택
+   - 매 관찰마다 AriGraph 업데이트 → 학습과 행동이 동시에 진행
+
+기존 RAG·요약·전체 이력 방식과 달리, 구조화된 그래프가 공간 추론과 멀티홉 정보 연결을 직접 지원한다.
+
+---
+
+## Key Contribution
+
+1. **시맨틱+에피소드 통합 메모리 그래프**: 지식 그래프와 에피소드 메모리를 하나의 구조로 결합하여, LLM 에이전트가 상호작용하면서 세계 모델을 자율 구축. 기존 방법들이 두 메모리를 분리하거나 비구조적으로 처리한 한계를 해결.
+2. **동적 지식 업데이트**: 매 타임스텝마다 구식 정보를 탐지·제거하고 새 지식을 추가하여, 환경 변화에 적응하는 살아있는 월드 모델 유지.
+3. **인간 수준 성능**: TextWorld 환경에서 인간 최고 플레이어에 근접하는 성능 달성, 기존 LLM 메모리 방법과 RL 베이스라인 모두를 크게 초과.
+4. **범용성 검증**: 인터랙티브 환경(TextWorld, NetHack)과 정적 QA(MuSiQue, HotpotQA) 양쪽에서 경쟁력 있는 성능.
+
+---
+
+## Experiment & Results
+
+**TextWorld 환경** (Treasure Hunt, Cleaning, Cooking):
+- 모든 태스크에서 Ariadne(AriGraph)가 Full History, Summarization, RAG, Simulacra, Reflexion 베이스라인을 크게 초과
+- Treasure Hunt: 베이스라인 에이전트는 풀지 못하는 반면, Ariadne는 ~50스텝 만에 해결
+- Treasure Hunt Hardest (36방, 7키): Ariadne만 의미 있는 진행 달성
+- Cooking: RL 베이스라인 4개 난이도 전부에서 Ariadne 우위. GPT-4 Full History는 처음 2레벨만 해결
+- 인간 비교: 평균 인간 플레이어를 모든 태스크에서 초과, 최고 인간 플레이어와 유사한 수준
+
+**NetHack**:
+- Ariadne [Room obs]: 제한된 관찰만으로도 전체 레벨 정보를 가진 NetPlay [Level obs]에 근접하는 점수 달성
+
+**Multi-hop QA** (GPT-4, 200 샘플):
+- MuSiQue: AriGraph EM=45.0, F1=57.0 vs HOLMES EM=48.0, F1=58.0 vs GraphReader EM=38.0, F1=47.4
+- HotpotQA: AriGraph EM=**68.0**, F1=**74.7** vs HOLMES EM=66.0, F1=78.0 vs GraphReader EM=55.0, F1=70.0
+- GPT-4o-mini: AriGraph MuSiQue F1=47.9, HotpotQA F1=68.6 vs GraphRAG F1=53.5/63.3
+
+**그래프 스케일링**: 탐색 단계에서 빠르게 성장 후, 환경에 익숙해지면 포화. 장기 상호작용에도 안정적 유지.

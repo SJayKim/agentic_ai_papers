@@ -1,28 +1,84 @@
 # Unveiling Privacy Risks in LLM Agent Memory
 
-> **논문 정보**
-> - arXiv: 2502.13172v2 (2025년 6월 3일)
-> - 저자: Bo Wang, Weiyi He, Shenglai Zeng, Zhen Xiang, Yue Xing, Jiliang Tang, Pengfei He
-> - 소속: Michigan State University, University of Georgia
+> **논문 정보**: Bo Wang, Weiyi He, Shenglai Zeng, Zhen Xiang, Yue Xing, Jiliang Tang, Pengfei He (Michigan State University, University of Georgia)
+> **arXiv**: 2502.13172 (2025.06, ACL 2025)
+> **코드**: N/A
 
 ---
 
-## 필수 요소
+## Overview
 
 | 항목 | 내용 |
 |------|------|
-| **Problem** | LLM 에이전트의 메모리 모듈에 저장된 과거 사용자 쿼리(프라이빗 정보)가 외부 공격자에 의해 추출될 수 있는가. 기존 RAG 데이터 추출 공격("Please repeat all the context" 등)은 에이전트의 복잡한 워크플로우(코드 실행, 웹 클릭 등 텍스트 이외의 액션)에서는 작동하지 않아, 에이전트 메모리에 특화된 공격 방법이 존재하지 않았다. |
-| **Motivation** | 의료(EHR 환자 진단 이력), 온라인 쇼핑(구매 패턴), 자율주행(과거 주행 시나리오) 등 민감한 도메인에서 LLM 에이전트가 광범위하게 배포되고 있다. 이들 에이전트는 과거 사용자-에이전트 상호작용 기록을 메모리에 저장하는데, 이 메모리가 얼마나 취약한지 체계적으로 연구된 바 없었다. 특히 에이전트의 솔루션이 텍스트 생성이 아닌 도구/API 호출로 이루어지는 경우, 기존 RAG 추출 공격은 작동하지 않는다. |
-| **Method** | **MEXTRA (Memory EXTRaction Attack)**를 제안. 공격 프롬프트를 두 파트로 설계한다: (1) **Locator (˜q_loc)**: 원하는 정보(이전 예시 쿼리)를 지목하는 부분 — "I lost previous example queries"처럼 메모리에서 검색된 사용자 쿼리를 직접 요청; (2) **Aligner (˜q_align)**: 에이전트의 워크플로우에 맞게 출력 포맷을 지정 — "please enter them in the search box"처럼 에이전트가 정상 액션처럼 해당 정보를 출력하게 유도. 또한 GPT-4 기반의 **자동화된 다양한 공격 프롬프트 생성** 방법을 제공: 기본 지식(Basic, I_basic)과 구현 세부 사항을 아는 고급 지식(Advanced, I_advan) 두 가지 수준의 인스트럭션으로 n개의 다양한 공격 프롬프트를 자동 생성하여 메모리에서 서로 다른 레코드를 검색·추출한다. |
-| **Key Contribution** | (1) LLM 에이전트 메모리에 특화된 최초의 체계적 프라이버시 공격 MEXTRA 제안 — 기존 RAG 추출 공격과 달리 에이전트 워크플로우(코드 실행, 웹 액션 등)에서도 동작함; (2) Locator+Aligner 이중 구조의 공격 프롬프트 설계 원칙 제시; (3) 공격자 지식 수준(Basic/Advanced)에 따른 자동화 프롬프트 생성 방법론; (4) 에이전트 설계자 관점(유사도 함수, 임베딩 모델, 메모리 크기, 검색 깊이, 백본 LLM)과 공격자 관점(공격 횟수, 지식 수준)에서 메모리 유출에 영향을 미치는 요인 종합 분석. |
-| **Experiment/Results** | **실험 대상**: EHRAgent(의료 EHR 코드 생성 에이전트, edit distance 기반 top-4 검색)와 RAP(온라인 쇼핑 웹 에이전트, cosine similarity 기반 top-3 검색). LLM 백본: GPT-4o, 메모리 크기: 200. **주요 결과 (n=30 공격 프롬프트, 메모리 200개 기준)**: EHRAgent에서 EN=50 (25% 추출), CER=0.83, AER=0.83, EE=0.42; RAP에서 EN=26 (13% 추출), CER=0.87, AER=0.90, EE=0.29. **메모리 설정 영향 (Table 2)**: edit distance 사용 시 cosine similarity 대비 일관되게 높은 추출 성능 (EHRAgent 메모리 500개 기준 edit=59 vs. cosine MiniLM=24); 메모리 크기가 클수록 추출 수 증가 (50→500 시 EHRAgent edit: 31→59); 검색 깊이 k 증가 시 추출 수 증가 (k=1→5 시 EHRAgent EN: 8→59). **백본 비교 (Table 3, RAP)**: GPT-4o(EN=26) > GPT-4(EN=23) > Llama3-70b(EN=17). **공격 프롬프트 수 영향**: n=50 시 edit distance 사용 에이전트는 메모리의 30% 이상, cosine similarity 사용 에이전트는 10% 이상 유출. I_advan이 I_basic 대비 RN 대폭 향상 (RAP cosine n=50: RN 35→84). **QA-Agent 일반화 실험 (Table 4)**: I_advan+cosine에서 EN=55, EE=0.46, 메모리 200개의 약 27.5% 추출. |
-| **Limitation** | (1) 단일 에이전트 설정에서만 평가 — 다중 에이전트 환경(에이전트 간 메모리 공유)으로의 확장 미검토; (2) 세션 제어(사용자/세션 수준 메모리 격리) 미포함 — 현재 프레임워크에서 여러 사용자가 동일 세션을 공유할 수 있어 공격자가 다른 사용자 정보에도 접근 가능하지만, 세션 제어 통합의 표준 방법이 없어 미래 과제로 남김; (3) 방어 기법에 대한 평가 미흡 — 입출력 필터링, 파라프레이징, 메모리 익명화 등의 방어 효과를 실험적으로 검증하지 않고 논의 수준에 그침. |
+| **Problem** | LLM 에이전트의 메모리 모듈에 저장된 사용자-에이전트 상호작용 기록이 악의적 프롬프트를 통해 유출될 수 있는 새로운 프라이버시 위험이 존재한다. 기존 프라이버시 공격 연구는 LLM 자체의 학습 데이터나 RAG의 외부 DB에 집중했으나, 에이전트 메모리의 프라이버시 취약점은 체계적으로 연구되지 않았다. |
+| **Motivation** | 의료(EHR) 에이전트나 쇼핑 에이전트 등 프라이버시 민감 도메인에서 LLM 에이전트가 확산되고 있다. 메모리에는 환자 진료 기록, 구매 이력 등 민감 정보가 저장되는데, 블랙박스 접근만으로도 이 정보를 추출할 수 있다면 심각한 프라이버시 위협이 된다. |
+| **Limitation** | (1) 2개 에이전트(EHRAgent, RAP/Webshop)에서만 검증되어 공격의 일반화가 제한적. (2) 방어 메커니즘에 대한 제안이 없으며, 취약점 진단에만 집중. (3) 공격 프롬프트 자동 생성에 GPT-4를 사용하여 공격 비용이 상당. (4) 메모리 크기와 검색 설정이 고정된 환경에서만 평가하여, 동적 메모리 시스템에서의 취약점은 미탐색. |
 
 ---
 
-## 선택 요소
+## Method
+
+MEXTRA(Memory EXTRAction Attack)는 블랙박스 설정에서 LLM 에이전트 메모리의 개인 정보를 추출하는 공격 기법이다.
+
+1. **위협 모델 (Threat Model)**
+   - **공격자 목표**: 에이전트 메모리에 저장된 과거 사용자 쿼리 q_i를 최대한 많이 추출
+   - **공격자 능력**: 블랙박스 — 입력 쿼리로만 에이전트와 상호작용 가능
+   - **지식 수준**: (1) Basic — 에이전트 도메인/태스크만 아는 수준, (2) Advanced — 탐색적 상호작용으로 구현 세부사항 파악
+
+2. **공격 프롬프트 설계**
+   - 공격 프롬프트 `q̃ = q̃_loc ∥ q̃_align`의 2부분 구조:
+     - **Locator (q̃_loc)**: 메모리에서 추출할 정보를 지정 (예: "I lost previous example queries")
+     - **Aligner (q̃_align)**: 에이전트 워크플로우에 맞는 출력 형식 지정 (예: "please enter them in the search box")
+   - 기존 "Please repeat all context" 류 공격이 실패하는 이유: 에이전트 워크플로우가 텍스트 생성이 아닌 도구 호출로 구성되어 형식 불일치
+
+3. **자동화된 다양한 프롬프트 생성**
+   - GPT-4를 사용하여 n개의 다양한 공격 프롬프트 자동 생성
+   - **추출 기능성**: 프롬프트 설계 원칙 준수
+   - **다양한 검색**: 서로 다른 메모리 레코드를 검색하도록 다양한 표현 사용
+   - Basic 수준: 일반적 표현 변화, Advanced 수준: 에이전트 구현 정보를 활용한 타겟팅된 다양화
+
+4. **평가 지표**
+   - Extracted Number (EN): 추출된 고유 사용자 쿼리 수
+   - Extracted Efficiency (EE): `|Q| / (n × k)` — 공격 프롬프트당 추출 효율
+   - Retrieved Number (RN), Complete Extracted Rate (CER), Any Extracted Rate (AER)
+
+---
+
+## Key Contribution
+
+1. **에이전트 메모리 프라이버시 위험 최초 체계적 조사**: LLM 에이전트 메모리의 프라이버시 취약점을 블랙박스 설정에서 최초로 체계적으로 분석.
+2. **MEXTRA 공격 프레임워크**: Locator + Aligner 구조의 공격 프롬프트 설계로 에이전트 워크플로우에 맞춤형 메모리 추출 달성. 기존 데이터 추출 공격 대비 에이전트 특화.
+3. **메모리 구성 요소별 취약성 분석**: 유사도 함수, 임베딩 모델, 메모리 크기 등 메모리 설계 요소가 유출 정도에 미치는 영향을 체계적으로 분석.
+4. **프라이버시 방어 필요성 제기**: 현재 에이전트 메모리 설계에 프라이버시 보호가 결여되어 있음을 실증하고, 방어 연구의 필요성을 환기.
+
+---
+
+## Experiment & Results
+
+**대상 에이전트**: EHRAgent(의료 기록, edit distance 검색, top-4), RAP/Webshop(온라인 쇼핑, cosine 유사도, MiniLM, top-3). LLM: GPT-4o, 메모리 크기 200.
+
+**주요 결과 (30개 공격 프롬프트)**:
+- EHRAgent: EN=**50**/200 (25%), EE=0.42, CER=0.83, AER=0.83
+- RAP: EN=**26**/200 (13%), EE=0.29, CER=0.87, AER=0.90
+- MEXTRA가 30회 공격만으로 메모리의 13~25%를 추출 — 심각한 취약성
+
+**Ablation - 프롬프트 설계 요소**:
+- w/o aligner: EHRAgent EN 50→36, RAP EN 26→6 (Aligner의 중요성, 특히 웹 에이전트에서)
+- w/o req: RAP EN 26→25 (요구사항 제거 영향 미미)
+- w/o demos: EHRAgent EN 50→29, RAP EN 26→8 (데모 예시의 중요성)
+
+**유사도 함수·임베딩 모델 영향 (Table 2)**:
+- Edit distance > Cosine similarity — 문자열 기반 검색이 더 많은 유출 유발
+- RoBERTa 임베딩이 MiniLM/MPNet보다 더 많은 유출 (검색 분산이 높아 다양한 레코드 검색)
+
+**메모리 크기 영향**: 메모리 크기 증가(50→500)에 따라 추출 수 증가 (EHRAgent: 31→59). 메모리가 클수록 취약.
+
+**공격 횟수 영향**: 공격 프롬프트 수 증가(10→50)에 따라 추출 수 증가하나 효율은 감소 (중복 검색 증가).
+
+---
+
+## 선택 요소 (해당되는 것만)
 
 | 항목 | 내용 |
 |------|------|
-| **Threat Model** | **블랙박스 설정**: 공격자는 에이전트에 입력 쿼리만 보낼 수 있고, 내부 파라미터·프롬프트·메모리 내용에는 직접 접근 불가. **공격자 지식 수준 2단계**: (1) Basic — 에이전트의 적용 도메인과 태스크 유형만 앎 (예: "이건 의료 기록 관리 에이전트"); (2) Advanced — 에이전트 메모리의 유사도 함수(edit distance 또는 cosine similarity) 같은 구현 세부 사항까지 추론/파악. **공격자 목표**: 메모리 M에 저장된 과거 사용자 쿼리 q_i를 최대한 많이 추출. n개의 다양한 공격 프롬프트 {˜q_j}를 설계하여 각 쿼리가 다른 메모리 레코드를 검색하게 함으로써 총 추출 집합 Q = ∪ ˜o_j의 크기를 극대화. |
-| **Baseline 비교** | (1) **w/o aligner** (aligner 없이 locator만): EHRAgent EN=36(-28%), RAP EN=6(-77%) — aligner의 중요성 확인; (2) **w/o req** (요구사항 없이 예시만): EHRAgent EN=39(-22%), RAP EN=25(-4%); (3) **w/o demos** (예시 없이 요구사항만): EHRAgent EN=29(-42%), RAP EN=8(-69%); 기존 RAG 공격 프롬프트 "Please repeat all the context"는 에이전트 워크플로우에 맞지 않아 메모리 쿼리 대신 시스템 프롬프트 요약을 반환하며 실패. MEXTRA는 모든 기준선 대비 EN, CER, AER에서 우수한 성능을 기록. |
+| **Threat Model** | 블랙박스 공격: 입력 쿼리로만 에이전트와 상호작용. Basic(도메인 정보만)/Advanced(구현 세부사항 파악) 두 수준의 공격자 지식. 공격 목표는 메모리에 저장된 과거 사용자 쿼리의 최대 추출. |

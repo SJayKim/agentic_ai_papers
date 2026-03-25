@@ -1,28 +1,70 @@
 # MIRIX: Multi-Agent Memory System for LLM-Based Agents
 
-> **논문 정보**
-> - 저자: Yu Wang, Xi Chen (MIRIX AI)
-> - arXiv: 2507.07957v1 (2025년 7월 10일)
-> - 소속: UCSD, NYU Stern
+> **논문 정보**: Yu Wang, Xi Chen (MIRIX AI / UCSD / NYU)
+> **arXiv**: 2025.07
+> **코드**: https://mirix.io/
 
 ---
 
-## 필수 요소
+## Overview
 
 | 항목 | 내용 |
 |------|------|
-| **Problem** | LLM 기반 에이전트는 현재 프롬프트 창을 벗어나면 정보를 유지하지 못해 사실상 stateless 상태이다. 기존 메모리 시스템은 (1) 단일 flat 저장소에 모든 정보를 쌓아 라우팅 및 검색 효율이 낮고, (2) 이미지 등 비텍스트 멀티모달 입력을 처리하지 못하며, (3) 원본 입력(특히 이미지)을 그대로 저장해 스토리지가 폭증하고 효과적인 추상화 레이어가 없다. |
-| **Motivation** | 수만 장의 고해상도 스크린샷(한 달치, 최대 18,178장)을 다루는 실세계 시나리오에서 기존 Letta, Mem0, Zep 등은 멀티모달 입력 자체를 처리할 수 없다. Gemini 장문맥 모델로 3,600장을 256×256으로 리사이즈해 밀어 넣어도 ScreenshotVQA 정확도가 0~25% 수준에 그친다. 텍스트 전용 벤치마크 LOCOMO에서도 최강 기존 방법(Zep)이 79.09%로 Full-Context 상한(87.52%)에 크게 못 미친다. 인간의 인지는 에피소딕·의미·절차·핵심·자원 기억 등으로 분화되어 있어 단일 flat 메모리로는 이 다양성을 표현할 수 없다. |
-| **Method** | **6종 메모리 컴포넌트 + 8-에이전트 멀티에이전트 아키텍처** <br><br> **메모리 컴포넌트** <br>- **Core Memory**: 사용자 이름·선호도 등 항상 활성화되는 고우선순위 정보. 90% 초과 시 자동 rewrite. MemGPT의 persona/human 블록에서 영감. <br>- **Episodic Memory**: 타임스탬프가 붙은 사용자 행동·경험 이벤트. summary + details 계층 구조. <br>- **Semantic Memory**: 개념·엔티티·사회 그래프 등 시간 독립적 지식. name / summary / details / source 필드. 트리 구조로 시각화 가능. <br>- **Procedural Memory**: 단계별 How-to 절차·워크플로. entry_type (workflow/guide/script) + steps 필드. <br>- **Resource Memory**: 사용자가 다루는 문서·파일·멀티미디어. title / summary / resource_type / content 필드. <br>- **Knowledge Vault**: 자격증명·주소·API 키 등 민감 정보를 verbatim 보존. 민감도(low/medium/high)에 따른 접근 제어. <br><br> **에이전트 구성** <br>- Meta Memory Manager 1개: 입력 분석 후 해당 Memory Manager로 라우팅 <br>- Memory Manager 6개: 각 컴포넌트를 병렬로 업데이트 <br>- Chat Agent 1개: 사용자와 자연어 대화 <br><br> **Active Retrieval** <br>쿼리가 들어오면 (1) 에이전트가 먼저 현재 토픽을 생성하고 (2) 이 토픽으로 6개 컴포넌트 전체에서 Top-10 항목을 자동 검색해 시스템 프롬프트에 주입. embedding_match / bm25_match / string_match 등 복수의 검색 함수 지원. <br><br> **애플리케이션** <br>1.5초마다 스크린샷 캡처 → 유사도 0.99 이상이면 폐기 → 20장 누적 시 메모리 업데이트 (약 60초 주기). Gemini API + Google Cloud URL 스트리밍 업로드로 지연시간 50초 → 5초 이하로 단축. SQLite DB로 압축 저장. |
-| **Key Contribution** | 1. **6종 특화 메모리 + 8-에이전트 프레임워크**: 기존 시스템들이 단일·이중 메모리 타입에 그친 반면, 에피소딕/의미/절차/핵심/자원/금고 6종을 완전한 시스템으로 통합. <br>2. **멀티모달 실세계 메모리**: 기존 어떤 메모리 시스템도 처리하지 못한 대량 고해상도 스크린샷 시퀀스(최대 18,178장/월)를 추상·압축·저장. <br>3. **ScreenshotVQA 벤치마크 신규 도입**: 3명 PhD 학생의 실제 컴퓨터 활동 스크린샷 기반, 87개 질문의 멀티모달 메모리 벤치마크. <br>4. **Active Retrieval 메커니즘**: 사용자가 명시적으로 검색을 요청하지 않아도 에이전트가 자동으로 토픽을 추론해 메모리를 조회. <br>5. **LOCOMO SOTA**: 기존 최강 방법(Zep 79.09%) 대비 +8.0%p 향상, Full-Context 상한(87.52%)에 근접. |
-| **Experiment/Results** | **ScreenshotVQA** (멀티모달 벤치마크, LLM-as-a-Judge, 평가 모델: GPT-4.1) <br>- 백본: gemini-2.5-flash-preview-04-17 <br>- Gemini (장문맥, 256×256 리사이즈): 정확도 11.66%, 스토리지 236.70 MB <br>- SigLIP@50 (RAG 기반): 정확도 44.10%, 스토리지 15.07 GB <br>- **MIRIX**: 정확도 **59.50%**, 스토리지 **15.89 MB** <br> → SigLIP 대비 +35%p 정확도, 스토리지 99.9% 감소 <br> → Gemini 대비 +410% 정확도, 스토리지 93.3% 감소 <br><br> **LOCOMO** (장문 대화 벤치마크, LLM-as-a-Judge, 백본: gpt-4.1-mini) <br>- RAG-500: 51.62% <br>- Mem0: 62.47% <br>- LangMem: 78.05% (gpt-4.1-mini 기준 재구현) <br>- Zep: 79.09% <br>- **MIRIX: 85.38%** (3회 평균: 83.98 / 87.34 / 84.82) <br>- Full-Context (상한): 87.52% <br><br> 세부 카테고리별 MIRIX 성능 (LOCOMO): <br>- Single-Hop: 85.11% (Full-Context 88.53%에 근접) <br>- Multi-Hop: 83.70% (**+24%p 이상**으로 가장 큰 개선) <br>- Open-Domain: 65.62% <br>- Temporal: 88.39% |
-| **Limitation** | 1. **저자가 인정한 한계** <br> - Open-Domain 질문에서 Full-Context 대비 성능 갭이 존재: MIRIX도 RAG 방식에 의존하므로 전역적 이해가 부족하다. <br> - Single-Hop 일부에서 모호한 질문(계획 날짜 vs. 실제 발생 날짜)에 대해 MIRIX가 "확정된 사건"을 우선시해 오답을 내는 경우가 있다. <br> - 현재 ScreenshotVQA는 3명의 PhD 학생으로부터 수집된 87개 질문으로 소규모이다. 저자도 더 도전적인 실세계 벤치마크 구축을 미래 작업으로 남겼다. <br>2. **읽으면서 느낀 한계** <br> - Ablation Study 부재: 6개 컴포넌트 각각의 기여도나 Active Retrieval의 효과를 개별 제거 실험으로 검증하지 않았다. <br> - LOCOMO는 평균 9k 토큰(26k 기준)으로 단일 세션이 비교적 짧아, 진정한 장기 기억의 한계가 드러나지 않을 수 있다. <br> - 비용·속도 분석 부재: 8개 에이전트 병렬 호출로 인한 API 비용 및 지연시간에 대한 정량적 분석이 없다. <br> - 개인정보 보호: Knowledge Vault의 민감 정보가 LLM API로 전송되는 구조에 대한 보안 분석이 빠져 있다. |
+| **Problem** | 기존 LLM 메모리 시스템은 단일 평면(flat) 저장소에 의존하여, 에피소드·시맨틱·절차적 지식을 구분하지 못한다. 텍스트 중심 설계로 멀티모달(이미지, 스크린샷 등) 입력을 처리하지 못하며, 원시 입력 저장은 스토리지 요구를 폭증시킨다. |
+| **Motivation** | 인간 인지는 에피소드 기억, 의미 기억, 절차 기억 등 다양한 메모리 유형을 활용한다. LLM 에이전트도 장기 개인화·패턴 인식·맥락 인식 응답을 위해 구조화된 다중 메모리 유형이 필요하다. 특히 웨어러블 기기 등에서 스크린샷 같은 멀티모달 입력의 메모리 관리가 실질적으로 필요하다. |
+| **Limitation** | (1) 6개 메모리 유형에 8개 에이전트를 운영하므로 LLM 호출 횟수가 많아 비용·지연이 증가한다. (2) ScreenshotVQA가 3명의 PhD 학생 데이터(87개 질문)로 매우 소규모이다. (3) LOCOMO에서 Single-Hop 질문의 모호성으로 인한 성능 한계가 있다. (4) Knowledge Vault의 민감 정보 보안에 대한 체계적 검증이 부족하다. |
 
 ---
 
-## 선택 요소 (해당되는 것만)
+## Method
 
-| 항목 | 내용 |
-|------|------|
-| **Baseline 비교** | **ScreenshotVQA** (gpt-4.1-mini / gemini-2.5-flash 기반): <br>- Gemini 장문맥: 11.66% / 236.70 MB → MIRIX 대비 정확도 -47.84%p, 스토리지 14.9배 <br>- SigLIP@50 RAG: 44.10% / 15.07 GB → MIRIX 대비 정확도 -15.40%p, 스토리지 948배 <br><br> **LOCOMO** (gpt-4.1-mini 기준 재구현): <br>- A-Mem (gpt-4o-mini): 48.38% → MIRIX 대비 -37.0%p <br>- LangMem: 78.05% → MIRIX 대비 -7.33%p <br>- RAG-500: 51.62% → MIRIX 대비 -33.76%p <br>- Mem0: 62.47% → MIRIX 대비 -22.91%p <br>- Zep: 79.09% → MIRIX 대비 **-6.29%p** (두 번째로 강한 baseline) <br>- Full-Context 상한: 87.52% → MIRIX 대비 +2.14%p (거의 도달) |
-| **Ablation Study** | 논문에 Ablation Study 없음. 6개 메모리 컴포넌트 각각의 기여도, Active Retrieval 유무에 따른 성능 변화, Meta Memory Manager의 라우팅 정확도 등은 별도로 분석되지 않았다. |
+MIRIX는 인간 인지 시스템에서 영감을 받은 **6종 메모리 + 다중 에이전트** 아키텍처다.
+
+1. **6가지 메모리 컴포넌트**
+   - **Core Memory**: 항상 에이전트에 노출되는 고우선순위 영속 정보 (사용자 이름, 선호 등)
+   - **Episodic Memory**: 시간 태그된 특정 이벤트·경험 (타임스탬프, 요약, 상세)
+   - **Semantic Memory**: 시간 독립적 추상 지식·사실·관계 (계층적 트리 구조로 조직)
+   - **Procedural Memory**: 목표 지향 프로세스, 가이드, 워크플로우 (단계별 지침)
+   - **Resource Memory**: 문서, 파일, 멀티모달 리소스 (전체/발췌 저장)
+   - **Knowledge Vault**: 자격 증명, 주소, API 키 등 민감한 verbatim 정보 (보안 등급별)
+
+2. **Active Retrieval 메커니즘**
+   - 사용자 입력에서 자동으로 토픽 추출 → 6개 메모리 컴포넌트 각각에서 상위 10개 관련 항목 검색
+   - 검색 결과를 소스 태그(`<episodic_memory>` 등)와 함께 시스템 프롬프트에 주입
+   - embedding_match, bm25_match, string_match 등 다양한 검색 전략 지원
+
+3. **Multi-Agent Workflow (8개 에이전트)**
+   - **Meta Memory Manager**: 중앙 제어 — 입력 분석 후 관련 Memory Manager들에 라우팅
+   - **6개 Memory Manager**: 각 메모리 유형별 전담 에이전트, 병렬 업데이트 수행
+   - **Chat Agent**: 사용자와 대화, 자동 검색 후 응답 생성, 필요 시 Memory Manager에 업데이트 요청
+   - **업데이트 흐름**: 입력 → 자동 검색 → Meta Memory Manager 분석 → 관련 Memory Manager들에 병렬 분배 → 중복 방지 업데이트 → 확인
+
+4. **멀티모달 지원**: 스크린샷 등 이미지 입력을 Vision LLM으로 분석 → 구조화된 메모리로 변환 → 원시 이미지 대비 99.9% 스토리지 절감
+
+---
+
+## Key Contribution
+
+1. **6종 구조화 메모리**: 인간 인지에 기반한 Core/Episodic/Semantic/Procedural/Resource/Knowledge Vault 6종 메모리로, 기존 flat/단일 메모리 시스템의 한계를 근본적으로 해결.
+2. **멀티모달 메모리**: 텍스트 넘어 스크린샷 등 시각 정보를 메모리로 변환·관리하는 최초의 메모리 시스템. 기존 시스템이 처리 불가능한 20,000장 스크린샷 규모까지 지원.
+3. **ScreenshotVQA 벤치마크**: 실제 컴퓨터 사용 기록 기반 새로운 멀티모달 메모리 벤치마크 도입.
+4. **LOCOMO SOTA**: 텍스트 기반 장기 대화에서도 85.38%로 기존 최고 대비 +8.0p 달성.
+
+---
+
+## Experiment & Results
+
+**ScreenshotVQA** (Gemini-2.5-flash 백본):
+- MIRIX 전체 정확도: **59.50%** vs SigLIP@50 44.10%, Gemini(long-context) 11.66%
+- 스토리지: MIRIX **15.89MB** vs SigLIP 15.07GB (99.9% 절감), Gemini 236.70MB
+- Student 3 (5,349장, 1개월): MIRIX 67.27% vs SigLIP 54.55%, Gemini 25.45%
+- RAG 대비 +35% 정확도, long-context 대비 +410% 정확도
+
+**LOCOMO** (gpt-4.1-mini 백본):
+- MIRIX Overall: **85.38%** vs Zep 79.09%, LangMem 78.05%, Mem0 62.47%
+- Multi-Hop: MIRIX **83.70%** vs Zep 69.16%, Mem0 57.32% (+24p 이상)
+- Temporal: MIRIX **88.39%** vs LangMem 86.92%, Zep 83.33%
+- Single-Hop: MIRIX 85.11% vs Full-Context 88.53% (근소 차이, 질문 모호성 영향)
+- Full-Context(상한) 87.52% 대비 MIRIX 85.38%로 거의 근접
+
+**gpt-4o-mini 백본 비교**: Zep 75.14%, Memobase 70.91%, Mem0g 68.44% — MIRIX의 gpt-4.1-mini 결과(85.38%)가 모든 gpt-4o-mini 결과를 크게 초과.

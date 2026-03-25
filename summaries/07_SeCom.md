@@ -1,19 +1,77 @@
 # SeCom: On Memory Construction and Retrieval for Personalized Conversational Agents
 
-## 필수 요소
+> **논문 정보**: Zhuoshi Pan, Qianhui Wu, Huiqiang Jiang, Xufang Luo, Hao Cheng, Dongsheng Li, Yuqing Yang, Chin-Yew Lin, H. Vicky Zhao, Lili Qiu, Jianfeng Gao (Tsinghua University, Microsoft)
+> **arXiv**: ICLR 2025
+> **코드**: N/A
+
+---
+
+## Overview
 
 | 항목 | 내용 |
 |------|------|
-| **Problem** | 장기 대화(long-term conversation)에서 개인화된 응답을 생성하기 위해 대화 이력을 메모리로 구성하는 방법론의 문제. 기존의 턴 단위(turn-level), 세션 단위(session-level), 요약 기반(summarization-based) 메모리 구성 방식은 각각 메모리 검색 정확도와 검색된 콘텐츠의 의미적 품질 측면에서 한계를 가짐. 턴 단위는 지나치게 세분화되어 단편적이고 불완전한 맥락을 제공하고, 세션 단위는 너무 굵어서 무관한 정보를 다량 포함하며, 요약 방식은 요약 과정에서 핵심 세부 정보가 손실됨. |
-| **Motivation** | 장기 다중 세션 오픈도메인 대화에서 LLM 기반 대화 에이전트가 과거 사건과 사용자 선호를 일관되게 유지하는 것은 필수적이나, 기존 방식들은 검색 시스템에 부적합한 메모리 단위 granularity 때문에 하위 최적(sub-optimal) 응답을 생성함. 특히 (1) 무관한 정보가 포함된 긴 컨텍스트는 LLM의 이해도를 저하시키고, (2) 자연 언어의 내재적 중복성(redundancy)이 검색 시스템에 노이즈로 작용해 검색 정확도를 떨어뜨린다는 점이 핵심 동기. LOCOMO 데이터셋 기준, Zero History 대비 Full History 사용 시 GPT4Score가 24.86 → 54.15로 오르지만 13K 토큰을 소비하며, 이는 불필요한 정보를 대량 포함하는 비효율적 방식임. |
-| **Method** | **SECOM(SEgmentation + COMpression)**은 두 가지 핵심 메커니즘으로 구성됨. (1) **세그먼트 단위 메모리 구성**: GPT-4 기반 LLM 대화 분절 모델(conversation segmentation model)을 사용해 긴 대화를 주제별로 일관된 세그먼트(topically coherent segments)로 분할. 제로샷 분절에 더해, 소량의 주석 데이터가 있을 경우 LLM 자기반성(self-reflection) 메커니즘을 활용해 분절 가이던스(rubric)를 반복적으로 개선함. 이는 prefix-tuning의 텍스트 기반 유사물로서, WindowDiff 오류가 가장 큰 상위 K개 샘플을 선별해 LLM이 오류를 반성하고 분절 rubric을 업데이트하는 방식. (2) **압축 기반 메모리 디노이징**: 메모리 검색 전에 LLMLingua-2(압축률 75%, xlm-roberta-large 백본)를 사용해 각 메모리 단위의 중복적 자연 언어 표현을 제거함으로써 검색 시스템의 노이즈를 줄임. 검색은 MPNet(multi-qa-mpnet-base-dot-v1) + FAISS 또는 BM25을 사용하며, 응답 생성은 GPT-3.5-Turbo 또는 Mistral-7B-Instruct-v0.3로 수행. |
-| **Key Contribution** | (1) 메모리 granularity가 검색 정확도와 응답 품질 모두에 큰 영향을 미친다는 체계적 분석 결과 제시. (2) 자연 언어의 중복성이 검색 시스템의 노이즈로 작용하며, LLMLingua-2 같은 프롬프트 압축 기법이 효과적인 디노이징 메커니즘으로 활용될 수 있음을 최초로 제안. (3) 세그먼트 단위 메모리 뱅크 구성 + 압축 기반 디노이징을 통합한 SECOM 시스템 제안. (4) LLM 자기반성을 활용한 대화 분절 모델이 DialSeg711, TIAGE, SuperDialSeg에서 비지도/전이학습 설정 모두에서 SOTA 달성. (5) 요약 과정 없이 검색된 세그먼트를 직접 컨텍스트로 사용해 정보 손실 없는 응답 생성. |
-| **Experiment/Results** | **평가 벤치마크**: LOCOMO(평균 300턴, 9K 토큰/샘플), Long-MT-Bench+(평균 65.45턴, 19K 토큰/대화), CoQA, Persona-Chat, 대화 분절 데이터셋 3종(DialSeg711, TIAGE, SuperDialSeg). **주요 수치(Table 1)**:  - LOCOMO에서 SECOM(BM25, GPT4-Seg): GPT4Score 71.57 (Turn-Level BM25 65.58, MemoChat 65.10 대비 +6점), BLEU 8.07, Rouge2 16.30  - Long-MT-Bench+에서 SECOM(MPNet, GPT4-Seg): GPT4Score 88.81 (Turn-Level MPNet 84.91 대비 +3.9점), BLEU 13.80, Rouge2 19.21  - Mistral-7B 응답 생성 시 Long-MT-Bench+에서 SECOM(MPNet): GPT4Score 90.58 (Full History 78.73 대비 +11.85점)  - LOCOMO 공식 QA 기준: SECOM GPT4Score 84.21 (MemoChat 75.77 대비 +8.44점)  - CoQA에서: SECOM GPT4Score 98.31 (COMEDY 97.48, MemoChat 97.16 대비 최고)  - Persona-Chat에서: SECOM GPT4Score 78.34 (MemoChat 76.83 대비 +1.51점)  **대화 분절(Table 4)**: DialSeg711 제로샷 설정에서 Pk=0.093, WD=0.103, F1=0.888, Score=0.895로 이전 SOTA(DialSTART: Pk=0.178)를 크게 능가. 전이학습(Transfer from SuperDialSeg) 설정에서도 RoBERTa(Score=0.702) 대비 Score=0.936으로 월등. **인간 평가(Table 10)**: Coherence, Consistency, Memorability, Engagingness, Humanness 5개 항목 평균에서 SECOM이 1.55점으로 최고(MemoChat 1.48, COMEDY 1.51). |
-| **Limitation** | (1) 저자가 명시적으로 밝힌 한계는 논문에 충분히 기술되지 않음. (2) 분절 모델로 GPT-4를 사용할 경우 API 비용이 발생하며 레이턴시가 증가함. LLMLingua-2 디노이징 역시 추가 계산 비용이 필요함(논문은 MemoChat 대비 오버헤드가 크지 않다고 주장). (3) 제로샷 분절은 GPT-4 수준의 LLM 없이는 성능이 저하될 수 있음(RoBERTa-Seg 사용 시 LOCOMO GPT4Score 61.84로 Turn-Level MPNet 57.99보다는 높지만, GPT4-Seg의 69.33에 비해 낮음). (4) SECOM의 세그먼트 경계 품질이 최종 응답 품질에 직접적 영향을 미치므로, 분절 모델의 성능에 의존성이 큼. (5) 압축 후 원본 세그먼트 대신 압축된 버전을 검색 인덱스에 사용하므로, 압축 과정에서 의미적으로 중요한 표현이 제거될 위험이 있음. |
+| **Problem** | 장기 대화에서 메모리 단위의 세분성(granularity)이 검색 정확도와 응답 품질에 결정적 영향을 미치지만, 기존 접근법들은 턴 단위(너무 세밀), 세션 단위(너무 거칠), 요약 기반(정보 손실) 방식 모두 최적이 아니다. |
+| **Motivation** | 턴 단위 메모리는 단편적이고 불완전한 컨텍스트를 제공하며, 세션 단위는 무관한 정보를 과다 포함한다. 요약 기반 방법은 대화를 요약하는 과정에서 QA에 필수적인 세부 정보가 손실된다. 이 세 가지 한계를 동시에 해결하는 새로운 메모리 구성 단위가 필요하다. 또한 자연어의 내재적 중복성이 검색 시스템에 노이즈로 작용함을 발견했다. |
+| **Limitation** | (1) 대화 분할 모델의 품질이 전체 성능을 좌우하며, GPT-4 기반 분할이 최고 성능이나 비용이 높다. (2) RoBERTa 기반 경량 분할 모델은 성능 하락이 있다 (GPT4Score 61.84 vs GPT-4 분할 69.33). (3) 압축 기반 디노이징의 최적 압축률이 태스크마다 다를 수 있다. (4) 세그먼트 경계가 모호한 대화에서는 분할 자체가 어려울 수 있다. |
 
-## 선택 요소 (해당되는 것만)
+---
 
-| 항목 | 내용 |
-|------|------|
-| **Baseline 비교** | 총 8가지 방법과 비교: (1) Zero History (대화 이력 없음), (2) Full History (전체 이력 연결), (3) Turn-Level (BM25/MPNet), (4) Session-Level (BM25/MPNet), (5) SumMem (LangChain 동적 요약), (6) RecurSum (재귀적 요약 갱신), (7) ConditionMem (턴별 요약+지식 생성 후 검색), (8) MemoChat (LLM 기반 메모 작성 및 검색). LOCOMO 기준: 가장 강력한 베이스라인인 ConditionMem(GPT4Score 65.92)과 Turn-Level BM25(65.58)를 SECOM BM25(71.57)이 약 +5.65점 차이로 능가. Long-MT-Bench+ 기준: MemoChat(85.14)을 SECOM MPNet(88.81)이 +3.67점 차이로 능가. GPT-4 기반 페어와이즈 비교(Figure 4)에서 SECOM vs. MemoChat: WIN 44.21%, TIE 23.85%, LOSE 31.94%; SECOM vs. SumMem: WIN 58.86%, TIE 18.97%, LOSE 22.18%. |
-| **Ablation Study** | (1) **압축 기반 디노이징 제거 효과(Table 2)**: LOCOMO에서 디노이징 제거 시 GPT4Score가 69.33 → 59.87로 -9.46점 하락, Rouge2 13.74 → 12.11(-1.63점). Long-MT-Bench+에서는 88.81 → 87.51(-1.30점)으로 상대적으로 작은 감소. (2) **메모리 granularity 비교(Figure 2, Figure 5)**: Long-MT-Bench+에서 검색 토큰 수 2000~8000 범위 전체에서 세그먼트 레벨이 턴/세션 레벨보다 GPT4Score 일관적으로 높음. 검색 DCG 기준(BM25)으로도 세그먼트가 턴/세션 레벨을 모든 K 값에서 상회. (3) **청크 크기 영향(Figure 2a)**: 응답 품질(BLEU, ROUGE2)은 청크당 턴 수가 5~25 범위에서 최적값이 존재하며, 지나치게 작거나 크면 성능이 저하됨. (4) **압축률 영향(Figure 3)**: 압축률이 50% 이상일 때 검색 Recall이 향상되며, 특히 BM25 기반에서 K=1 기준 약 90% 이상 Recall 달성. |
+## Method
+
+SeCom은 장기 대화를 **토픽 일관 세그먼트**로 분할하고, **압축 기반 디노이징**으로 검색 정확도를 향상시키는 메모리 시스템이다.
+
+1. **Segment-Level Memory Construction (세그먼트 단위 메모리)**
+   - 각 대화 세션 `c`를 토픽 일관 세그먼트 `{s_k}`로 분할
+   - 턴 단위(너무 세밀)와 세션 단위(너무 거칠) 사이의 최적 세분성 달성
+   - 분할된 세그먼트를 메모리 뱅크의 기본 단위로 사용
+
+2. **Conversation Segmentation Model**
+   - **Zero-shot Segmentation**: LLM(GPT-4 또는 Mistral-7B)에 분할 가이드라인 `G`를 제공하여 세션을 세그먼트로 분할
+   - **Self-Reflection 기반 가이드라인 학습**: SGD에 비유한 반복 최적화
+     - 각 반복에서 분할 오류가 큰 "hard examples" K개 선택
+     - LLM이 ground-truth 대비 오류를 반성(reflect)하여 가이드라인 `G` 업데이트
+     - `G_{m+1} = G_m - η∇L(G_m)` — LLM이 암묵적으로 gradient를 추정
+
+3. **Compression-based Memory Denoising**
+   - 자연어의 내재적 중복성이 검색 시스템에 노이즈로 작용한다는 핵심 통찰
+   - LLMLingua-2를 사용하여 메모리 단위에서 중복 제거 (압축률 75%)
+   - 디노이징 후 검색: `{m_n} ← f_R(u*, f_Comp(M), N)`
+   - 압축률 50% 이상에서 관련 세그먼트와의 유사도 증가 + 무관 세그먼트와의 유사도 감소 효과
+
+4. **Retrieval & Response Generation**
+   - BM25 또는 MPNet 기반 검색으로 쿼리와 관련된 상위 N개 세그먼트 검색
+   - 검색된 세그먼트를 시간 순서로 연결하여 LLM에 컨텍스트로 제공
+
+---
+
+## Key Contribution
+
+1. **메모리 세분성의 체계적 분석**: 턴·세션·요약 단위의 한계를 실증적으로 밝히고, 세그먼트 단위가 검색 정확도와 응답 품질 모두에서 우수함을 입증.
+2. **압축 기반 디노이징**: 프롬프트 압축 기법을 메모리 검색의 노이즈 제거에 최초 적용. 자연어 중복이 검색 노이즈로 작용한다는 새로운 통찰.
+3. **Self-Reflection 기반 분할 가이드라인 학습**: SGD에 비유한 반복적 가이드라인 최적화로 분할 품질 향상. 별도 학습 데이터 없이도 작동.
+4. **경량 모델 지원**: GPT-4 외에 Mistral-7B, RoBERTa 기반 분할 모델도 지원하여 자원 제약 환경에서의 적용 가능성 확보.
+
+---
+
+## Experiment & Results
+
+**데이터셋**: (1) LOCOMO — 평균 300턴, 9K 토큰의 장기 대화. (2) Long-MT-Bench+ — 멀티턴 벤치마크.
+
+**비교 대상**: Turn-Level, Session-Level (BM25/MPNet), SumMem, RecurSum, ConditionMem, MemoChat, Zero/Full History
+
+**LOCOMO 결과 (GPT4Score, BM25 기반)**:
+- SeCom(GPT4-Seg): **71.57** vs Turn-Level 65.58, Session-Level 63.16, MemoChat 65.10, ConditionMem 65.92
+- SeCom(Mistral-7B-Seg): 66.37 — GPT-4 대비 하락하나 여전히 경쟁력 유지
+- Full History 54.15 — 전체 이력이 오히려 낮은 성능 (무관 정보의 해로움 입증)
+
+**Long-MT-Bench+ 결과 (GPT4Score, MPNet 기반)**:
+- SeCom(GPT4-Seg): **88.81** vs Turn-Level 84.91, MemoChat 85.14, Session-Level 73.38
+- SeCom이 가장 적은 토큰(820)으로 최고 성능 달성
+
+**Ablation - 디노이징 효과 (LOCOMO, MPNet)**:
+- SeCom: GPT4Score 69.33 vs 디노이징 제거 시 59.87 (+9.46)
+- 압축률 50% 이상에서 검색 recall 일관 향상
+
+**Ablation - 세분성 비교**: 다양한 컨텍스트 예산(2K~8K 토큰)에서 세그먼트 단위가 턴·세션 단위보다 일관되게 우수.
+
+**GPT-4 Pairwise 비교**: SeCom이 RecurSum 대비 58.86% WIN, SumMem 대비 50.49% WIN.
