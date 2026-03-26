@@ -1,0 +1,882 @@
+=== PAGE 1 ===
+Published as a conference paper at ICLR 2024
+THINK -ON-GRAPH : DEEP AND RESPONSIBLE REASON -
+ING OF LARGE LANGUAGE MODEL ON KNOWLEDGE
+GRAPH
+Jiashuo Sun21∗ †Chengjin Xu1∗Lumingyuan Tang31∗ †Saizhuo Wang41∗ †
+Chen Lin2Yeyun Gong6Lionel M. Ni5Heung-Yeung Shum14Jian Guo15‡
+1IDEA Research, International Digital Economy Academy
+2Xiamen University
+3University of Southern California
+4The Hong Kong University of Science and Technology
+5The Hong Kong University of Science and Technology (Guangzhou)
+6Microsoft Research Asia
+ABSTRACT
+Although large language models (LLMs) have achieved significant success in vari-
+ous tasks, they often struggle with hallucination problems, especially in scenarios
+requiring deep and responsible reasoning. These issues could be partially addressed
+by introducing external knowledge graphs (KG) in LLM reasoning. In this paper,
+we propose a new LLM-KG integrating paradigm “ LLM⊗KG” which treats the
+LLM as an agent to interactively explore related entities and relations on KGs
+and perform reasoning based on the retrieved knowledge. We further implement
+this paradigm by introducing a new approach called Think-on-Graph (ToG), in
+which the LLM agent iteratively executes beam search on KG, discovers the most
+promising reasoning paths, and returns the most likely reasoning results. We use
+a number of well-designed experiments to examine and illustrate the following
+advantages of ToG: 1) compared with LLMs, ToG has better deep reasoning power;
+2) ToG has the ability of knowledge traceability and knowledge correctability by
+leveraging LLMs reasoning and expert feedback; 3) ToG provides a flexible plug-
+and-play framework for different LLMs, KGs and prompting strategies without
+any additional training cost; 4) the performance of ToG with small LLM models
+could exceed large LLM such as GPT-4 in certain scenarios and this reduces the
+cost of LLM deployment and application. As a training-free method with lower
+computational cost and better generality, ToG achieves overall SOTA in 6 out of
+9 datasets where most previous SOTAs rely on additional training. Our code is
+publicly available at https://github.com/IDEA-FinAI/ToG .
+1 I NTRODUCTION
+Large language models (LLMs) (Ouyang et al., 2022; OpenAI, 2023; Thoppilan et al., 2022; Brown
+et al., 2020a; Chowdhery et al., 2022; Touvron et al., 2023) have demonstrated remarkable perfor-
+mance across various natural language processing tasks. These models capitalize on pre-training
+techniques applied to vast text corpora to generate responses that are coherent and contextually
+appropriate. Despite their impressive performance, LLMs have substantial limitations when facing
+complex knowledge reasoning tasks (Petroni et al., 2021; Talmor et al., 2019; Talmor & Berant, 2018;
+Zhang et al., 2023) that require deep and responsible reasoning. Firstly, LLMs usually fail to provide
+accurate answers to questions requiring specialized knowledge beyond what was included in the
+pre-training phase (out-of-date knowledge in Figure 1a), or to questions requiring long logic chain and
+multi-hop knowledge reasoning. Secondly, LLMs lack responsibility, explainability and transparency,
+∗Equal contribution.
+†Work done during internship at IDEA Research.
+‡Corresponding author.
+1arXiv:2307.07697v6  [cs.CL]  24 Mar 2024
+
+=== PAGE 2 ===
+Published as a conference paper at ICLR 2024
+Question：What is the majority party now in the country where Canberra is located?(Chain-of-Thought Prompt): Let’s think step by step.Response: Canberrais the capital of Australia. According to my knowledge up to September 2021the prime minister of Australia is Scott Morrison, who is a member of the Liberal Party. So the answer should be Liberal Party.
+LLM-only
+❌(a)(Prompt): Please generate a SPARQL query for this question.Response: SELECT ?country ?party WHERE {?canberra dbprop:isLocatedIn ?country .?country dbprop:majorityParty ?party .}Response: Sorry, based on my query result from the knowledge base, I cannot answer your questionsince I do not have enough information.
+Canberra
+Australia
+Labor PartyisLocatedInmajorityParty[not exist]Canberra is located in Australia.Majority party in Australia is Not FoundRetrievePrompt
+LLM ⊕KG
+❌(b)
+Looking for triples related to Canberra
+The most relevant one is (Canberra, capital of, Australia). Information not enough for answering the question. Looking for triples related to Australia
+The most relevant one is (Australia, prime minister, Anthony Albanese).
+I know that Anthony Albanese is from Labor Party.Enough information is collected for answering this question.
+Canberra
+Australia
+Anthony Albanese
+has been leader of theAustralian Labor Party(ALP) since 2019 and ……capital of
+prime minister 
+The answer is Labor Party“Think”On graphOn graphLLM-inherent   knowledgeConclude
+LLM ⊗KG“Think”
+✅(c)“Think”
+Figure 1: Representative workflow of three LLM reasoning paradigms: (a) LLM-only (e.g., Chain-of-
+Thought prompting), (b) LLM ⊕KG (e.g., KBQA via LLM-generated SPARQL query), (c) LLM ⊗
+KG (e.g., Think-on-Graph).
+raising concerns about the risk of hallucinations or toxic texts. Thirdly, the training process for LLMs
+is often expensive and time-consuming, making it challenging to keep their knowledge up to date.
+Recognizing these challenges, a natural and promising solution is to incorporate external knowledge
+such as knowledge graphs (KGs) to help improve LLM reasoning. KGs offer structured, explicit,
+and editable representations of knowledge, presenting a complementary strategy to mitigate the
+limitations of LLMs (Pan et al., 2023). Researchers (Li et al., 2023c; Xie et al., 2022; Baek et al.,
+2023b; Yang et al., 2023; Wang et al., 2023a; Jiang et al., 2023) have explored the usage of KGs as
+external knowledge sources to mitigate hallucination in LLMs. These approaches follow a routine:
+retrieve information from KGs, augment the prompt accordingly, and feed the increased prompt into
+LLMs (as illustrated in Figure 1b). In this paper, we refer to this paradigm as “ LLM⊕KG”. Although
+aiming to integrate the power of LLM and KG, in this paradigm, LLM plays the role of translator
+which transfers input questions to machine-understandable command for KG searching and reasoning,
+but it does not participate in the graph reasoning process directly. Unfortunately, the loose-coupling
+LLM⊕KGparadigm has its own limitations, and its success depends heavily on the completeness
+and high quality of KG. In Figure 1b, for example, although LLM successfully identified necessary
+relation types required to answer the question, the absence of the relation “majority party” leads to a
+failure in retrieving the correct answer.
+Building upon these considerations, we propose a new tight-coupling “ LLM⊗KG” paradigm where
+KGs and LLMs work in tandem, complementing each other’s capabilities in each step of graph
+reasoning. Figure 1c provides an example illustrating the advantage of LLM⊗KG. In this example,
+the missing relation "majority party" resulting in the failure in Figure 1b can be complemented by
+a reference triple (Australia ,prime minister ,Anthony Albanese )discovered by the LLM agent
+with dynamic reasoning ability (Yao et al., 2022), as well as the political party membership of
+Anthony Albanese coming from LLM’s inherent knowledge. In this way, the LLM succeeds in
+generati
+
+=== PAGE 3 ===
+Published as a conference paper at ICLR 2024
+Question:What is the majority party now in the country where Canberra is located?
+Canberracapital ofcountryterritorycontinent
+Australia
+part of
+Labor PartyAnswer
+1. Canberra--capital of--Australia --prime minister --Anthony Albanese --political party --Labor Party2. Canberra--capital of--Australia --prime minister --Anthony Albanese --occupation --Politician3. Canberra--capital of--Australia --head government--Prime Minister of Australia --officeholder --Anthony AlbaneseGenerate
+prime ministercentral bank...
+Anthony Albaneseheadgovernment
+Prime Minister of Australia
+Depth 1Depth 2
+Reasoning pathsPrune
+Australia
+political partyoccupation
+Labor Partyofficeholder
+Politiciancitizenship
+Depth 3
+Anthony Albanese
+Prime Minister of Australia
+Australian Capital Territory
+Canberracapital of
+Australia
+Anthony Albanese
+Prime Minister of Australiahead governmentoffice-holder
+Politicianoccupation
+Labor Party
+Enough Information
+Australian Capital Territory
+Australian Capital Territorycountrycountry
+Not Enough InformationNot Enough Information
+Depth 1Depth 2SearchDepth 3…territorycontinentpart ofcountryprime minister
+continentcentral bankcitizenshippolitical  party…
+continent01.00.501.00.501.00.5ReasoningSearchSearch
+PrunePruneReasoningReasoning…
+Canberra
+Canberra
+Figure 2: An example workflow of ToG. The glowing entities are the central entities where the
+search starts at each iteration (depth), and the entities with boldface are the selected central entities
+for the next iteration after pruning. At each pruning step, the darkness of the edges represents the
+ranking score given by LLM, and the dashed lines indicate relations that have been pruned due to low
+evaluation scores.
+information through the top-N reasoning paths in beam search is gathered to answer the question
+(judged by LLMs in "Think" step) or the predefined maximum search depth is reached.
+The advantage of ToG can be abbreviated as (1) Deep reasoning: ToG extracts diverse and multi-
+hop reasoning paths from KGs as the basis for LLM reasoning, enhancing LLMs’ deep reasoning
+capabilities for knowledge-intensive tasks. (2) Responsible reasoning: Explicit, editable reasoning
+paths improve the explainability of the reasoning process of LLMs, and enable the tracing and
+correction of the provenances of models’ outputs. (3) Flexibility and efficiency: a) ToG is a plug-
+and-play framework that can be applied to a variety of LLMs and KGs seamlessly. b) Under ToG
+framework, knowledge can be updated frequently via KG instead of LLM whose knowledge-update
+is expensive and slow. c) ToG enhances the reasoning ability of small LLMs (e.g., LLAMA2-70B) to
+be competitive with big LLMs (e.g., GPT-4).
+2 M ETHODS
+ToG implements the “ LLM⊗KG” paradigm by asking LLM to perform beam search on knowledge
+graph. Specifically, it prompts the LLM to iteratively explore multiple possible reasoning paths on
+KGs until the LLM determines that the question can be answered based on the current reasoning
+paths. ToG constantly updates and maintains top- Nreasoning paths P={p1, p2, . . . , p N}for the
+question xafter each iteration, where Ndenotes the width of beam search. The entire inference
+process of ToG contains the following 3 phases: initialization, exploration, and reasoning.
+2.1 T HINK -ON-GRAPH
+2.1.1 I NITIALIZATION OF GRAPH SEARCH
+Given a question, ToG leverages the underlying LLM to localize the initial entity of the reasoning
+paths on knowledge graph. This phase can be regarded as the initialization of the top- Nreasoning
+paths P. ToG first prompts LLMs to automatically extract the topic entities in question and gets the
+3
+
+=== PAGE 4 ===
+Published as a conference paper at ICLR 2024
+top-Ntopic entities E0={e0
+1, e0
+2, ..., e0
+N}to the question. Note that the number of topic entities
+might possibly be less than N.
+2.1.2 E XPLORATION
+At the beginning of the D-th iteration, each path pnconsists of D−1triples, i.e., pn=
+{(ed
+s,n, rd
+j,n, ed
+o,n)}D−1
+d=1, where ed
+s,nanded
+o,ndenote subject and object entities, rd
+j,nis a specific
+relation between them, (ed
+s,n, rd
+j,n, ed
+o,n)and(ed+1
+s,n, rd+1
+j,n, ed+1
+o,n)are connected to each other. The
+sets of the tail entities and relations in Pare denoted as ED−1={eD−1
+1, eD−1
+2, ..., eD−1
+N}and
+RD−1={rD−1
+1, rD−1
+2, ..., rD−1
+N}, respectively.
+The exploration phase in the D-th iteration aims to exploit the LLM to identify the most relevant
+top-Nentities EDfrom the neighboring entities of the current top- Nentity set ED−1based on the
+question xand extend the top- Nreasoning paths PwithED. To address the complexity of handling
+numerous neighboring entities with the LLM, we implement a two-step exploration strategy: first,
+exploring significant relations, and then using selected relations to guide entity exploration.
+Relation Exploration Relation exploration is a beam search process with the depth of 1 and the
+width of NfromED−1toRD. The whole process can be decomposed into two steps: Search and
+Prune . The LLM serves as an agent to automatically complete this process.
+•Search At the beginning of the D-th iteration, the relation exploration phase first searches out
+relations RD
+cand,n linked to the tail entity eD−1
+n for each reasoning path pn. These relations are
+aggregated into RD
+cand. In the case of Figure 2, E1={Canberra }andR1
+cand denotes the set of all
+relations linked to Canberra inwards or outwards. Notably, the Search procedure can be easily
+completed by executing two simple pre-defined formal queries shown in Appendix E.1 and E.2,
+which makes ToG adapt well to different KGs without any training cost .
+•Prune Once we have obtained the candidate relation sets RD
+cand and the expanded candidate reason-
+ing paths Pcand from the relation search, we can utilize the LLM to select out new top- Nreasoning
+paths Pending with the tail relations RDfromPcand based on the literal information of the ques-
+tionxand the candidate relations RD
+cand. The prompt used here can be found in Appendix E.3.1.
+As shown in Figure 2, the LLM selects top-3 relations {capital of ,country ,territory }out
+from all relations linked to the entity Canberra in the first iteration. Since Canberra is the
+only topic entity, the top-3 candidate reasoning paths are updated as {(Canberra, capital of ),
+(Canberra, country ),(Canberra, territory )}.
+Entity Exploration Similar to relationship exploration, entity exploration is also a beam search
+process performed by the LLM from RDtoED, and consists of two steps, Search andPrune .
+•Search Once we have obtained new top- Nreasoning paths Pand the set of new tail relations
+RDfrom relation exploration, for each relation path pn∈P, we can explore a candidate entity
+setED
+cand,n by querying (eD−1
+n, rD
+n,?)or(?, rD
+n, eD−1
+n), where eD−1
+n, rndenote the tail entity
+and relation of pn. We can aggregate {ED
+cand, 1, ED
+cand, 2, ..., ED
+cand,N}intoED
+cand and expand
+top-Nreasoning paths PtoPcand with the tail entities ED
+cand. For the shown case, E1
+cand can be
+represented as {Australia ,Australia ,Australian Capital Territory }.
+•Prune Since the entities in each candidate set ED
+cand is expressed in natural language, we can
+leverage the LLM to select new top- Nreasoning paths Pending with the tail entities EDout
+from Pcand. The prompt used here can be found in Appendix E.3.2. As shown in Figure 2,
+Australia and Australian Capital Territory are scored as 1 since the relations capital of ,
+country andterritory are only linked to one tail entity respectively, and the current reason-
+ing paths pare updated as {(Canberra, capital of, Australia ),(Canberra, country, Australia ),
+(Canberra, territory, Australian Capital Terr
+
+=== PAGE 5 ===
+Published as a conference paper at ICLR 2024
+2.1.3 R EASONING
+Upon obtaining the current reasoning path Pthrough the exploration process, we prompt the LLM to
+evaluate whether the current reasoning paths are adequate for generating the answer. If the evaluation
+yields a positive result, we prompt the LLM to generate the answer using the reasoning paths with
+the query as inputs as illustrated in Figure 2. The prompt used for evaluation and generation can be
+found in Appendix E.3.3 and E.3.4. Conversely, if the evaluation yields a negative result, we repeat
+theExploration andReasoning steps until the evaluation is positive or reaches the maximum
+search depth Dmax. If the algorithm has not yet concluded, it signifies that even upon reaching
+theDmax, ToG remains unable to explore the reasoning paths to resolve the question. In such a
+scenario, ToG generates the answer exclusively based on the inherent knowledge in the LLM. The
+whole inference process of ToG contains Dexploration phases and Devaluation steps as well as a
+generation step, which needs at most 2ND+D+ 1calls to the LLM.
+2.2 R ELATION -BASED THINK -ON-GRAPH
+Previous KBQA methods, particularly based on semantic parsing, have predominantly relied on rela-
+tion information in questions to generate formal queries (Lan et al., 2022). Inspired by this, we propose
+relation-based ToG (ToG-R) that explores the top- Nrelation chains {pn= (e0
+n, r1
+n, r2
+n, ..., rD
+n)}N
+n=1
+starting with the topic entities {e0
+n}N
+n=1instead of triple-based reasoning paths. ToG-R sequentially
+performs relation search ,relation prune andentity search in each iteration, which is the same as ToG.
+Then ToG-R performs the reasoning step based on all candidate reasoning paths ending with ED
+cand
+obtained by entity search. If the LLM determines that the retrieved candidate reasoning paths do not
+contain enough information for the LLM to answer the question, we randomly sample N entities
+from the candidate entities ED
+cand and continue to the next iteration. Assuming that entities in each
+entity set ED
+cand,n probably belong to the same entity class and have similar neighboring relations,
+the results of pruning the entity set {ED
+cand,n}N
+n=1might have little impact on the following relation
+exploration. Thus, we use the random beam search instead of the LLM-constrained beam search in
+ToG for entity prune , referred to as random prune . Algorithm 1 and 2 show the implementation
+details of the ToG and ToG-R. ToG-R needs at most ND+D+ 1calls to the LLM.
+Compared to ToG, ToG-R offers two key benefits: 1) It eliminates the need for the process of pruning
+entities using the LLM, thereby reducing the overall cost and reasoning time. 2) ToG-R primarily
+emphasizes the literal information of relations, mitigating the risk of misguided reasoning when the
+literal information of intermediate entities is missing or unfamiliar to the LLM.
+3 E XPERIMENTS
+3.1 E XPERIMENTAL DESIGN
+3.1.1 D ATASETS AND EVALUATION METRICS
+In order to test ToG’s ability on multi-hop knowledge-intensive reasoning tasks, we evaluate ToG
+on five KBQA datasets (4 Multi-hop and 1 Single-hop): CWQ (Talmor & Berant, 2018), WebQSP
+(Yih et al., 2016), GrailQA (Gu et al., 2021), QALD10-en (Perevalov et al., 2022), Simple Questions
+(Bordes et al., 2015). Moreover, in order to examine ToG on more generic tasks, we also prepare
+one open-domain QA dataset: WebQuestions (Berant et al., 2013); two slot filling datasets: T-REx
+(ElSahar et al., 2018) and Zero-Shot RE (Petroni et al., 2021); and one fact-checking dataset: Creak
+(Onoe et al., 2021). Note that, for two big datasets GrailQA and Simple Questions, we only randomly
+selected 1,000 samples each for testing in order to save computational cost. For all datasets, exact
+match accuracy (Hits@1) is used as our evaluation metric following previous works (Li et al., 2023c;
+Baek et al., 2023b; Jiang et al., 2023; Li et al., 2023a).
+3.1.2 M ETHODS SELECTED FOR COMPARISON
+We compare with standard prompting (IO pr
+
+=== PAGE 6 ===
+Published as a conference paper at ICLR 2024
+MethodMulti-Hop KBQA Single-Hop KBQA Open-Domain QA Slot Filling Fact Checking
+CWQ WebQSP GrailQA QALD10-en Simple Questions WebQuestions T-REx Zero-Shot RE Creak
+Without external knowledge
+IO prompt w/ChatGPT 37.6 63.3 29.4 42.0 20.0 48.7 33.6 27.7 89.7
+CoT w/ChatGPT 38.8 62.2 28.1 42.9 20.3 48.5 32.0 28.8 90.1
+SC w/ChatGPT 45.4 61.1 29.6 45.3 18.9 50.3 41.8 45.4 90.8
+With external knowledge
+Prior FT SOTA 70.4α82.1β75.4γ45.4δ85.8ϵ56.3ζ87.7η74.6θ88.2ι
+Prior Prompting SOTA - 74.4κ53.2κ- - - - - -
+ToG-R (Ours) w/ChatGPT 58.9 75.8 56.4 48.6 45.4 53.2 75.3 86.5 93.8
+ToG (Ours) w/ChatGPT 57.1 76.2 68.7 50.2 53.6 54.5 76.8 88.0 91.2
+ToG-R (Ours) w/GPT-4 69.5 81.9 80.3 54.7 58.6 57.1 75.5 86.9 95.4
+ToG (Ours) w/GPT-4 67.6 82.6 81.4 53.8 66.7 57.9 77.1 88.3 95.6
+Table 1: The ToG results for different datasets. The prior FT (Fine-tuned) and prompting SOTA
+include the best-known results: α: Das et al. (2021); β: Yu et al. (2023); γ: Gu et al. (2023); δ:
+Santana et al. (2022); ϵ: Baek et al. (2023a); ζ: Kedia et al. (2022); η: Glass et al. (2022); θ: Petroni
+et al. (2021); ι: Yu et al. (2022); κ: Li et al. (2023a).
+evaluated datasets usually have an advantage by nature over methods based on prompting without
+training, but sacrificing the flexibility and generalization on other data. For a fair play, therefore, we
+compare with previous SOTA among all prompting-based methods and previous SOTA among all
+methods respectively. Note that the paper Tan et al. (2023) is not involved in comparison because its
+results are not based on standard exact match and thus incomparable.
+3.1.3 E XPERIMENT DETAILS
+Method CWQ WebQSP
+Fine-tuned
+NSM (He et al., 2021) 53.9 74.3
+CBR-KBQA (Das et al., 2021) 67.1 -
+TIARA (Shu et al., 2022) - 75.2
+DeCAF (Yu et al., 2023) 70.4 82.1
+Prompting
+KD-CoT (Wang et al., 2023b) 50.5 73.7
+StructGPT (Jiang et al., 2023) - 72.6
+KB-BINDER (Li et al., 2023a) - 74.4
+LLama2-70B-Chat
+CoT 39.1 57.4
+ToG-R 57.6 68.9
+ToG 53.6 63.7
+Gain (+18.5) (+11.5)
+ChatGPT
+CoT 38.8 62.2
+ToG-R 57.1 75.8
+ToG 58.9 76.2
+Gain (+20.1) (+14.0)
+GPT-4
+CoT 46.0 67.3
+ToG-R 67.6 81.9
+ToG 69.5 82.6
+Gain (+23.5) (+15.3)
+Table 2: Performances of ToG using different back-
+bone models on CWQ and WebQSP.Given the plug-and-play convenience of ToG,
+we try three LLMs in experiments: ChatGPT,
+GPT-4 and Llama-2. We use OpenAI API to call
+ChatGPT (GPT-3.5-turbo) and GPT-41. Llama-
+2-70B-Chat (Touvron et al., 2023) runs with 8
+A100-40G without quantization, where the tem-
+perature parameter is set to 0.4 for exploration
+process (increasing diversity) and set to 0 for rea-
+soning process (guaranteeing reproducibility).
+The maximum token length for the generation
+is set to 256. In all experiments, we set both
+width Nand depth Dmax to 3 for beam search.
+Freebase (Bollacker et al., 2008) is used as KG
+for CWQ, WebQSP, GrailQA, Simple Questions,
+and Webquestions, and Wikidata (Vrande ˇci´c &
+Krötzsch, 2014) is used as KG for QALD10-en,
+T-REx, Zero-Shot RE and Creak. We use 5 shots
+in ToG-reasoning prompts for all the datasets.
+3.2 M AINRESULTS
+3.2.1 C OMPARISON TO OTHER METHODS
+Since CoT uses external KG to enhance LLM,
+we first compare it with those methods lever-
+aging external knowledge as well. As we can
+see in Figure 1, even if ToG is a training-free
+prompting-based method and has natural disad-
+vantage in comparison with those fine-tuning
+methods trained with data for evaluation, ToG
+with GPT-4 still achieves new SOTA performance in 6 out of 9 datasets, including WebQSP, GrailQA,
+1GPT-3.5-turbo and GPT-4 is both from https://openai.com/
+6
+
+=== PAGE 7 ===
+Published as a conference paper at ICLR 2024
+QALD10-en, WebQuestions, Zero-Shot RE and Creak. Even for some dataset without SOTA, e.g.,
+CWQ, the performance of CoT has already been close to SOTA (69.5% v.s. 70.4%). If comparing
+with all promoting-based methods, both ToG with GPT-4 and its weaker version ToG with ChatGPT
+can win the competition in all datasets. In particular, the improvement of 1.6% on open-domain QA
+dataset WebQuestions demonstrates the ToG’s generality on open-domain QA tasks. We also notice
+that the performance of ToG on single-hop KBQA dataset is not as good as its performance on other
+datasets. These results indicate that ToG is more effective on multi-hop datasets in general, which
+supports our argument that ToG enhances the deep reasoning capability of LLMs.
+We also see from Figure 1 that, compared with those methods without leveraging external knowledge
+(e.g, IO, CoT and SC prompting methods), the advantage of ToG is more significant. For example,
+the performance improves 51.8% and 42.9% on GrailQA and Zero-Shot RE, respectively. It turns out
+that benefits from external KG can not be ignored in reasoning.
+ToG outperforms ToG-R on most datasets since the triple-based reasoning paths provide additional
+intermediate entity information compared to the relation chains retrieved by ToG-R. More detailed
+analysis of the answers generated by ToG can be checked in Appendix B.2. And the results of
+previous methods on each dataset are reported in Appendix C for better comparison,
+3.2.2 P ERFORMANCES WITH DIFFERENT BACKBONE MODELS
+Given ToG’s flexibility of plug-and-play, we evaluate how different backbone models affect its
+performance on two datasets CWQ and WebQSP. Table 2 shows that, as we expected, the performance
+of CoT improves with the size (also reflecting partially the reasoning ability) of backbone models
+(GPT-4 > ChatGPT > Llama-2). Furthermore, we see that, the larger the backbone model, the larger
+the gap between CoT and ToG (the gain increases from 18.5% for Llama-2 to 23.5% for GPT-4
+on CWQ, and from 11.5% for Llama-2 to 15.3% for GPT-4 on WebQSP), and this indicates more
+potential of KG can be mined using a more powerful LLM.
+In addition, even if using the smallest model Llama-2 (70B parameters), ToG outperforms CoT with
+GPT-4. This implies a much cheaper technical route for LLM deployment and application, i.e., TOG
+with cheap small LLM may be a candidate for substituting expensive big LLM, especially in vertical
+scenarios that external KGs can cover.
+3.2.3 A BLATION STUDY
+We perform various ablation studies to understand the importance of different factors in ToG. We
+conduct our ablation studies on two subsets of the test sets of CWQ and WebQSP, each of which
+contains 1,000 randomly sampled questions.
+Method CWQ WebQSP
+CoT 37.6 62.0
+ToG
+w/ Freebase 58.8 76.2
+w/ WikiData 54.9 68.6
+ToG-R
+w/ Freebase 59.2 75.1
+w/ WikiData 51.9 66.7
+Table 3: Performances of ToG using
+different source KGs on CWQ and We-
+bQSP.Do search depth and width matter for ToG? To ex-
+plore the influence of the search depth Dmax and the beam
+width Non ToG’s performance, we conduct experiments
+under settings with depths ranging from 1 to 4 and widths
+from 1 to 4. As shown in Figure 3, ToG’s performance im-
+proves with the search depth and width. This also implies
+that ToG’s performance could potentially be improved
+with the increment of the exploration depth and breadth.
+However, considering the computational cost (which in-
+creases linearly with the depth), we set both the depth
+and width to 3 as the default experimental setting. On
+the other hand, the performance growth diminishes when
+the depth exceeds 3. This is mainly because only a small
+part of questions have the reasoning depths (based on the
+number of relations in SPARQL, as seen in Figure 12 in
+the Appendix) of greater than 3.
+Do different KGs affect ToG’s performance? One of the main advantages of ToG is its plug-and-
+play capabilities. As shown in Table 3, ToG achieves si
+
+=== PAGE 8 ===
+Published as a conference paper at ICLR 2024
+Figure 3: Performances of ToG with different search depths and widths.
+different effects on the performance of ToG. Notably, Freebase brings more significant improvements
+on CWQ and WebQSP than Wikidata, since both datasets are constructed upon Freebase. Moreover,
+in a very large KG like Wikidata, the searching and pruning processes are relatively challenging.
+Method CWQ WebQSP
+ToG
+w/ Triples 58.8 76.2
+w/ Sequences 57.2 73.2
+w/ Sentences 58.6 73
+ToG-R
+w/ Sequences 59.2 75.1
+w/ Sentences 50.1 67.3
+Table 4: Performances of ToG using dif-
+ferent prompting designs.How do different prompt designs affect ToG? We
+perform additional experiments to determine which types
+of prompt representations can work well for our approach.
+The results are presented in Table 4. "Triples" denotes
+using triple formats as prompts to represent multiple paths,
+such as "(Canberra, capital of, Australia), (Australia, prime
+minister, Anthony Albanese)". "Sequences" refers to the
+utilization of a sequence format, as illustrated in Figure 2.
+"Sentences" involves converting the triples into natural
+language sentences. For example, "(Canberra, capital of,
+Australia)" can be converted to "The capital of Canberra
+is Australia." The result shows that the utilization of triple-
+based representations for the reasoning paths yields the
+highest degree of efficiency and superior performance.
+Conversely, when considering ToG-R, each reasoning path
+is a relation chain starting from a topic entity, rendering it incompatible with the triple-based prompt
+representation. Consequently, the transformation of ToG-R into the natural language form results in
+excessively lengthy prompts, thereby leading to a notable deterioration in performance.
+Method CWQ WebQSP
+ToG
+w/BM25 51.4 58.7
+w/SentenceBERT 51.7 66.3
+w/ChatGPT 58.8 76.2
+ToG-R
+w/BM25 49.4 57.3
+w/SentenceBERT 50.1 60.1
+w/ChatGPT 59.2 75.1
+Table 5: Performances of ToG using dif-
+ferent pruning tools.Comparing the affects from different pruning tools.
+Other than the LLM, lightweight models that can mea-
+sure text similarity like BM25 and SentenceBERT, can
+be employed as pruning tools in the exploration phase.
+We can select top- Nentities and relations based on their
+literal similarities with the question. We investigate the
+impacts of different pruning tools on the performance of
+the ToG, as demonstrated in Table 5. The replacement of
+the LLM with either BM25 or SentenceBERT results in
+the significant performance degradation of our approach.
+Concretely, the results on CWQ drop on average by 8.4%,
+and the results on WebQSP drop on average by 15.1%.
+The results show that the LLMs perform best as a pruning
+tool in terms of effectiveness. On the other hand, after utilizing the BM25 or SentenceBERT, we
+only need D+ 1calls to the LLM instead of 2ND+D+ 1as we discuss in Section 2.1.3, which
+enhances the efficiency of ToG.
+We conduct additional ablation studies on the effect of the number of seed exemplars and the
+difference between ToG and naive beam search on the KG, which can be seen in Appendix B.1.
+3.3 K NOWLEDGE TRACEABILITY AND CORRECTABILITY IN TOG
+The quality of KG is very important for correct reasoning by ToG. An interesting feature of ToG is
+knowledge traceability and knowledge correctability during LLM reasoning, and it provides a way to
+improve KG’s quality using ToG itself and reduce the cost of KG construction and correction. As
+illustrated in Figure 4, the explicit reasoning paths of the ToGs can be displayed to users. If potential
+8
+
+=== PAGE 9 ===
+Published as a conference paper at ICLR 2024
+Figure 4: The illustration of knowledge traceability and correctability of ToG.
+errors or uncertainties in ToG answers are discovered by human users/experts or other LLMs, ToG
+has the ability to trace back and examine the reasoning path, find suspicious triples with errors, and
+correct them.
+Take the case in Figure 4 as an example. Given the input question “What is mascot Phillie Phanatic’s
+team’s spring training stadium?”, ToG outputs the wrong answer “Bright House Field” in the first
+round. Then ToG traces back all reasoning paths, localizes the cause of the error may come from the
+second reasoning path (Phillie PhanaticTeam− − − → Philadelphia PhilliesArena Stadium− − − − − − − → Bright House Field),
+and analyzes that the error comes from the old name “Specturm Field” of “Bright House Field” in
+the outdated triple ( Philadelphia Phillies ,Arena Stadium ,Bright House Field ). According to the
+hints from ToG, user can ask LLM to correct this error and answer the same question with correct
+information. This example reveals that ToG not only enhances LLM with KG, but also improves the
+quality of KG with LLM, known as knowledge infusion (Moiseev et al., 2022).
+4 R ELATED WORK
+Reasoning with LLM Prompting Chain-of-Thought (CoT) (Wei et al., 2022) has been shown to be
+effective in enhancing LLM reasoning. It creates a series of prompt instances according to reasoning
+logic under a few-shot learning paradigm in order to improve LLM’s performance on complex tasks.
+The thought of CoT has been improved along different dimensions, including Auto-CoT (Zhang
+et al., 2022), Complex-CoT (Fu et al., 2023), Self-Consistency (Wang et al., 2023c), Zero-Shot-CoT
+(Kojima et al., 2022), Iter-CoT (Sun et al., 2023b), ToT (Yao et al., 2023), GoT (Besta et al., 2023)
+and so on. Given the limitation that all these works only use the knowledge in training data, recent
+efforts such as ReAct (Yao et al., 2022) attempt to utilize the information from external sources such
+as Wiki documents to further improve the reasoning performance.
+KG-enhanced LLM KG has advantages in dynamic, explicit, and structured knowledge repre-
+sentation (Pan et al., 2023) and techniques combining LLMs with KGs have been studied. Early
+studies (Peters et al., 2019; Huang et al., 2024; Luo et al., 2024; Zhang et al., 2021; Li et al., 2023b;
+Liu et al., 2020) embed structured knowledge from KGs into the underlying neural networks during
+the pretraining or fine-tuning process. However, KG embedded in LLM sacrifices its own nature of
+explainability in knowledge reasoning and efficiency in knowledge updating (Hu et al., 2023).
+Recent works instead combine LLMs with KGs by translating relevant structured knowledge from
+KGs to textual prompts for LLMs. All the methods follow a fixed pipeline that retrieves extra
+information from KGs to augment the LLM prompt and they belong to the LLM⊕KGparadigm we
+defined in the introduction section. On the other hand, Jiang et al. (2023) asks LLM to explore KG
+and so it can be regarded as a special case of ToG, which belongs to the LLM ⊗KG paradigms.
+9
+
+=== PAGE 10 ===
+Published as a conference paper at ICLR 2024
+5 C ONCLUSION
+We introduce the LLM⊗KGparadigm for integrating LLMs and KGs in a tight-coupling manner,
+and propose the Think-on-Graph (ToG) algorithmic framework which leverages LLM as a agent
+participating in KG reasoning for better decision-making. Experimental results demonstrate that ToG
+outperforms existing fine-tuning-based methods and prompting-based methods without additional
+training cost and mitigates the hallucination issue of LLMs.
+6 A CKNOWLEDGEMENT
+We express our sincere gratitude to the esteemed reviewers for their invaluable feedback and con-
+structive comments, which significantly contributed to the improvement and refinement of this paper.
+Their insightful suggestions and meticulous attention to detail have played a pivotal role in enhancing
+the quality and clarity of our research work.
+REFERENCES
+Farah Atif, Ola El Khatib, and Djellel Eddine Difallah. Beamqa: Multi-hop knowledge graph
+question answering with sequence-to-sequence prediction and beam search. In Hsin-Hsi Chen,
+Wei-Jou (Edward) Duh, Hen-Hsen Huang, Makoto P. Kato, Josiane Mothe, and Barbara Poblete
+(eds.), Proceedings of the 46th International ACM SIGIR Conference on Research and Development
+in Information Retrieval, SIGIR 2023, Taipei, Taiwan, July 23-27, 2023 , pp. 781–790. ACM, 2023.
+doi: 10.1145/3539618.3591698. URL https://doi.org/10.1145/3539618.3591698 .
+Jinheon Baek, Alham Fikri Aji, Jens Lehmann, and Sung Ju Hwang. Direct fact retrieval from
+knowledge graphs without entity linking. In Anna Rogers, Jordan L. Boyd-Graber, and Naoaki
+Okazaki (eds.), Proceedings of the 61st Annual Meeting of the Association for Computational
+Linguistics (Volume 1: Long Papers), ACL 2023, Toronto, Canada, July 9-14, 2023 , pp. 10038–
+10055. Association for Computational Linguistics, 2023a. doi: 10.18653/v1/2023.acl-long.558.
+URLhttps://doi.org/10.18653/v1/2023.acl-long.558 .
+Jinheon Baek, Alham Fikri Aji, and Amir Saffari. Knowledge-augmented language model prompting
+for zero-shot knowledge graph question answering, 2023b.
+Debayan Banerjee, Pranav Ajit Nair, Ricardo Usbeck, and Chris Biemann. Gett-qa: Graph embedding
+based t2t transformer for knowledge graph question answering, 2023.
+Jonathan Berant, Andrew Chou, Roy Frostig, and Percy Liang. Semantic parsing on freebase
+from question-answer pairs. In Proceedings of the 2013 Conference on Empirical Methods in
+Natural Language Processing, EMNLP 2013, 18-21 October 2013, Grand Hyatt Seattle, Seattle,
+Washington, USA, A meeting of SIGDAT, a Special Interest Group of the ACL , pp. 1533–1544.
+ACL, 2013. URL https://aclanthology.org/D13-1160/ .
+Maciej Besta, Nils Blach, Ales Kubicek, Robert Gerstenberger, Lukas Gianinazzi, Joanna Gajda,
+Tomasz Lehmann, Michal Podstawski, Hubert Niewiadomski, Piotr Nyczyk, and Torsten Hoefler.
+Graph of thoughts: Solving elaborate problems with large language models, 2023.
+Kurt D. Bollacker, Colin Evans, Praveen K. Paritosh, Tim Sturge, and Jamie Taylor. Freebase: a
+collaboratively created graph database for structuring human knowledge. In SIGMOD Conference ,
+2008.
+Antoine Bordes, Nicolas Usunier, Sumit Chopra, and Jason Weston. Large-scale simple question
+answering with memory networks. CoRR , abs/1506.02075, 2015. URL http://arxiv.org/
+abs/1506.02075 .
+Tom B. Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared Kaplan, Prafulla Dhari-
+wal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, Sandhini Agar-
+wal, Ariel Herbert-V oss, Gretchen Krueger, Tom Henighan, Rewon Child, Aditya Ramesh,
+Daniel M. Ziegler, Jeffrey Wu, Clemens Winter, Christopher Hesse, Mark Chen, Eric Sigler,
+10
+
+=== PAGE 11 ===
+Published as a conference paper at ICLR 2024
+Mateusz Litwin, Scott Gray, Benjamin Chess, Jack Clark, Christopher Berner, Sam McCan-
+dlish, Alec Radford, Ilya Sutskever, and Dario Amodei. Language models are few-shot
+learners. In Hugo Larochelle, Marc’Aurelio Ranzato, Raia Hadsell, Maria-Florina Balcan,
+and Hsuan-Tien Lin (eds.), Advances in Neural Information Processing Systems 33: Annual
+Conference on Neural Information Processing Systems 2020, NeurIPS 2020, December 6-12,
+2020, virtual , 2020a. URL https://proceedings.neurips.cc/paper/2020/hash/
+1457c0d6bfcb4967418bfb8ac142f64a-Abstract.html .
+Tom B. Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared Kaplan, Prafulla Dhari-
+wal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, Sandhini Agar-
+wal, Ariel Herbert-V oss, Gretchen Krueger, Tom Henighan, Rewon Child, Aditya Ramesh,
+Daniel M. Ziegler, Jeffrey Wu, Clemens Winter, Christopher Hesse, Mark Chen, Eric Sigler,
+Mateusz Litwin, Scott Gray, Benjamin Chess, Jack Clark, Christopher Berner, Sam McCan-
+dlish, Alec Radford, Ilya Sutskever, and Dario Amodei. Language models are few-shot
+learners. In Hugo Larochelle, Marc’Aurelio Ranzato, Raia Hadsell, Maria-Florina Balcan,
+and Hsuan-Tien Lin (eds.), Advances in Neural Information Processing Systems 33: Annual
+Conference on Neural Information Processing Systems 2020, NeurIPS 2020, December 6-12,
+2020, virtual , 2020b. URL https://proceedings.neurips.cc/paper/2020/hash/
+1457c0d6bfcb4967418bfb8ac142f64a-Abstract.html .
+Shulin Cao, Jiaxin Shi, Zijun Yao, Xin Lv, Jifan Yu, Lei Hou, Juanzi Li, Zhiyuan Liu, and Jinghui
+Xiao. Program transfer for answering complex questions over knowledge bases. In Smaranda
+Muresan, Preslav Nakov, and Aline Villavicencio (eds.), Proceedings of the 60th Annual Meeting of
+the Association for Computational Linguistics (Volume 1: Long Papers), ACL 2022, Dublin, Ireland,
+May 22-27, 2022 , pp. 8128–8140. Association for Computational Linguistics, 2022. doi: 10.18653/
+v1/2022.acl-long.559. URL https://doi.org/10.18653/v1/2022.acl-long.559 .
+Aakanksha Chowdhery, Sharan Narang, Jacob Devlin, Maarten Bosma, Gaurav Mishra, Adam
+Roberts, Paul Barham, Hyung Won Chung, Charles Sutton, Sebastian Gehrmann, Parker Schuh,
+Kensen Shi, Sasha Tsvyashchenko, Joshua Maynez, Abhishek Rao, Parker Barnes, Yi Tay, Noam
+Shazeer, Vinodkumar Prabhakaran, Emily Reif, Nan Du, Ben Hutchinson, Reiner Pope, James
+Bradbury, Jacob Austin, Michael Isard, Guy Gur-Ari, Pengcheng Yin, Toju Duke, Anselm Lev-
+skaya, Sanjay Ghemawat, Sunipa Dev, Henryk Michalewski, Xavier Garcia, Vedant Misra, Kevin
+Robinson, Liam Fedus, Denny Zhou, Daphne Ippolito, David Luan, Hyeontaek Lim, Barret Zoph,
+Alexander Spiridonov, Ryan Sepassi, David Dohan, Shivani Agrawal, Mark Omernick, Andrew M.
+Dai, Thanumalayan Sankaranarayana Pillai, Marie Pellat, Aitor Lewkowycz, Erica Moreira, Rewon
+Child, Oleksandr Polozov, Katherine Lee, Zongwei Zhou, Xuezhi Wang, Brennan Saeta, Mark
+Diaz, Orhan Firat, Michele Catasta, Jason Wei, Kathy Meier-Hellstern, Douglas Eck, Jeff Dean,
+Slav Petrov, and Noah Fiedel. Palm: Scaling language modeling with pathways, 2022.
+Rajarshi Das, Manzil Zaheer, Dung Thai, Ameya Godbole, Ethan Perez, Jay-Yoon Lee, Lizhen Tan,
+Lazaros Polymenakos, and Andrew McCallum. Case-based reasoning for natural language queries
+over knowledge bases, 2021.
+Michiel de Jong, Yury Zemlyanskiy, Joshua Ainslie, Nicholas FitzGerald, Sumit Sanghai, Fei Sha,
+and William Cohen. Fido: Fusion-in-decoder optimized for stronger performance and faster
+inference. arXiv preprint arXiv:2212.08153 , 2022.
+Cicero Nogueira dos Santos, Zhe Dong, Daniel Cer, John Nham, Siamak Shakeri, Jianmo Ni, and
+Yun hsuan Sung. Knowledge prompts: Injecting world knowledge into language models through
+soft prompts, 2022.
+Hady ElSahar, Pavlos V ougiouklis, Arslen Remaci, Christophe Gravier, Jonathon S. Hare, Frédérique
+Laforest, and Elena Simperl. T-rex: A large scale alignment of natural language with knowledge
+base triples. In 
+
+=== PAGE 12 ===
+Published as a conference paper at ICLR 2024
+Yao Fu, Hao Peng, Ashish Sabharwal, Peter Clark, and Tushar Khot. Complexity-based prompting for
+multi-step reasoning. In The Eleventh International Conference on Learning Representations, ICLR
+2023, Kigali, Rwanda, May 1-5, 2023 . OpenReview.net, 2023. URL https://openreview.
+net/pdf?id=yf1icZHC-l9 .
+Michael Glass, Gaetano Rossiello, Md Faisal Mahbub Chowdhury, Ankita Naik, Pengshan Cai, and
+Alfio Gliozzo. Re2G: Retrieve, rerank, generate. In Proceedings of the 2022 Conference of the
+North American Chapter of the Association for Computational Linguistics: Human Language
+Technologies , pp. 2701–2715, Seattle, United States, July 2022. Association for Computational
+Linguistics. doi: 10.18653/v1/2022.naacl-main.194. URL https://aclanthology.org/
+2022.naacl-main.194 .
+Yu Gu, Sue Kase, Michelle Vanni, Brian M. Sadler, Percy Liang, Xifeng Yan, and Yu Su. Beyond
+I.I.D.: three levels of generalization for question answering on knowledge bases. In Jure Leskovec,
+Marko Grobelnik, Marc Najork, Jie Tang, and Leila Zia (eds.), WWW ’21: The Web Conference
+2021, Virtual Event / Ljubljana, Slovenia, April 19-23, 2021 , pp. 3477–3488. ACM / IW3C2, 2021.
+doi: 10.1145/3442381.3449992. URL https://doi.org/10.1145/3442381.3449992 .
+Yu Gu, Xiang Deng, and Yu Su. Don’t generate, discriminate: A proposal for grounding language
+models to real-world environments, 2023.
+Gaole He, Yunshi Lan, Jing Jiang, Wayne Xin Zhao, and Ji-Rong Wen. Improving multi-hop
+knowledge base question answering by learning intermediate supervision signals. In Liane Lewin-
+Eytan, David Carmel, Elad Yom-Tov, Eugene Agichtein, and Evgeniy Gabrilovich (eds.), WSDM
+’21, The Fourteenth ACM International Conference on Web Search and Data Mining, Virtual
+Event, Israel, March 8-12, 2021 , pp. 553–561. ACM, 2021. doi: 10.1145/3437963.3441753. URL
+https://doi.org/10.1145/3437963.3441753 .
+Linmei Hu, Zeyi Liu, Ziwang Zhao, Lei Hou, Liqiang Nie, and Juanzi Li. A survey of knowledge
+enhanced pre-trained language models. IEEE Transactions on Knowledge and Data Engineering ,
+2023.
+Rikui Huang, Wei Wei, Xiaoye Qu, Wenfeng Xie, Xianling Mao, and Dangyang Chen. Joint multi-
+facts reasoning network for complex temporal question answering over knowledge graph. arXiv
+preprint arXiv:2401.02212 , 2024.
+Jinhao Jiang, Kun Zhou, Zican Dong, Keming Ye, Wayne Xin Zhao, and Ji-Rong Wen. Structgpt: A
+general framework for large language model to reason over structured data, 2023.
+Dan Jurafsky and James H. Martin. Speech and language processing: an introduction to natural
+language processing, computational linguistics, and speech recognition, 2nd Edition . Prentice
+Hall series in artificial intelligence. Prentice Hall, Pearson Education International, 2009. ISBN
+9780135041963. URL https://www.worldcat.org/oclc/315913020 .
+Akhil Kedia, Mohd Abbas Zaidi, and Haejun Lee. Fie: Building a global probability space by
+leveraging early fusion in encoder for open-domain question answering. In Yoav Goldberg, Zornitsa
+Kozareva, and Yue Zhang (eds.), Proceedings of the 2022 Conference on Empirical Methods in
+Natural Language Processing, EMNLP 2022, Abu Dhabi, United Arab Emirates, December 7-11,
+2022 , pp. 4246–4260. Association for Computational Linguistics, 2022. doi: 10.18653/v1/2022.
+emnlp-main.285. URL https://doi.org/10.18653/v1/2022.emnlp-main.285 .
+Takeshi Kojima, Shixiang Shane Gu, Machel Reid, Yutaka Matsuo, and Yusuke
+Iwasawa. Large language models are zero-shot reasoners. In NeurIPS ,
+2022. URL http://papers.nips.cc/paper_files/paper/2022/hash/
+8bb0d291acd4acf06ef112099c16f326-Abstract-Conference.html .
+Yunshi Lan and Jing Jiang. Query graph generation for answering multi-hop complex questions from
+knowledge bases. Association for Computational Linguistics, 2020.
+Yunshi Lan, Gaole He, Jinhao Jiang, Jing Jiang, Wayne Xin Zhao, and Ji-Rong Wen. Complex
+knowledge base question answering: A survey. IEEE Transactions on Knowledge and Data
+Engineering , 2022.
+12
+
+=== PAGE 13 ===
+Published as a conference paper at ICLR 2024
+Patrick Lewis, Ethan Perez, Aleksandra Piktus, Fabio Petroni, Vladimir Karpukhin, Naman Goyal,
+Heinrich Küttler, Mike Lewis, Wen tau Yih, Tim Rocktäschel, Sebastian Riedel, and Douwe Kiela.
+Retrieval-augmented generation for knowledge-intensive nlp tasks, 2021.
+Tianle Li, Xueguang Ma, Alex Zhuang, Yu Gu, Yu Su, and Wenhu Chen. Few-shot in-context learning
+on knowledge base question answering. In Anna Rogers, Jordan L. Boyd-Graber, and Naoaki
+Okazaki (eds.), Proceedings of the 61st Annual Meeting of the Association for Computational
+Linguistics (Volume 1: Long Papers), ACL 2023, Toronto, Canada, July 9-14, 2023 , pp. 6966–6980.
+Association for Computational Linguistics, 2023a. doi: 10.18653/v1/2023.acl-long.385. URL
+https://doi.org/10.18653/v1/2023.acl-long.385 .
+Wendi Li, Wei Wei, Xiaoye Qu, Xian-Ling Mao, Ye Yuan, Wenfeng Xie, and Dangyang Chen. Trea:
+Tree-structure reasoning schema for conversational recommendation. In Proceedings of the 61st
+Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pp.
+2970–2982, 2023b.
+Xingxuan Li, Ruochen Zhao, Yew Ken Chia, Bosheng Ding, Lidong Bing, Shafiq Joty, and Soujanya
+Poria. Chain of knowledge: A framework for grounding large language models with structured
+knowledge bases, 2023c.
+Daizong Liu, Xiaoye Qu, Jianfeng Dong, and Pan Zhou. Reasoning step-by-step: Temporal sentence
+localization in videos via deep rectification-modulation network. In Proceedings of the 28th
+International Conference on Computational Linguistics , pp. 1841–1851, 2020.
+Wei Liu, Weihao Zeng, Keqing He, Yong Jiang, and Junxian He. What makes good data for
+alignment? a comprehensive study of automatic data selection in instruction tuning. In The Twelfth
+International Conference on Learning Representations , 2024. URL https://openreview.
+net/forum?id=BTKAeLqLMw .
+Ye Liu, Semih Yavuz, Rui Meng, Dragomir Radev, Caiming Xiong, and Yingbo Zhou. Uni-parser:
+Unified semantic parser for question answering on knowledge base and database. arXiv preprint
+arXiv:2211.05165 , 2022.
+Yinhan Liu, Myle Ott, Naman Goyal, Jingfei Du, Mandar Joshi, Danqi Chen, Omer Levy, Mike
+Lewis, Luke Zettlemoyer, and Veselin Stoyanov. Roberta: A robustly optimized bert pretraining
+approach, 2019.
+Linhao Luo, Yuan-Fang Li, Gholamreza Haffari, and Shirui Pan. Reasoning on graphs: Faithful
+and interpretable large language model reasoning. In International Conference on Learning
+Representations , 2024.
+Fedor Moiseev, Zhe Dong, Enrique Alfonseca, and Martin Jaggi. SKILL: structured knowledge
+infusion for large language models. In Marine Carpuat, Marie-Catherine de Marneffe, and Iván
+Vladimir Meza Ruíz (eds.), Proceedings of the 2022 Conference of the North American Chapter
+of the Association for Computational Linguistics: Human Language Technologies, NAACL 2022,
+Seattle, WA, United States, July 10-15, 2022 , pp. 1581–1588. Association for Computational
+Linguistics, 2022. doi: 10.18653/v1/2022.naacl-main.113. URL https://doi.org/10.
+18653/v1/2022.naacl-main.113 .
+Yasumasa Onoe, Michael J. Q. Zhang, Eunsol Choi, and Greg Durrett. CREAK: A dataset for
+commonsense reasoning over entity knowledge. In Joaquin Vanschoren and Sai-Kit Yeung
+(eds.), Proceedings of the Neural Information Processing Systems Track on Datasets and
+Benchmarks 1, NeurIPS Datasets and Benchmarks 2021, December 2021, virtual , 2021. URL
+https://datasets-benchmarks-proceedings.neurips.cc/paper/2021/
+hash/5737c6ec2e0716f3d8a7a5c4e0de0d9a-Abstract-round2.html .
+OpenAI. Gpt-4 technical report, 2023.
+Long Ouyang, Jeff Wu, Xu Jiang, Diogo Almeida, Carroll L. Wainwright, Pamela Mishkin, Chong
+Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, John Schulman, Jacob Hilton, Fraser Kelton,
+Luke Miller, Maddie Simens, Amanda Askell, Peter Welinder, Paul F. Christiano, Jan Leike,
+and Ryan Lowe. Training language models to follow instructions with human feedback. arXiv
+Preprint , 2022. doi: 10.48550/arXiv.2203.02155. URL 
+
+=== PAGE 14 ===
+Published as a conference paper at ICLR 2024
+Shirui Pan, Linhao Luo, Yufei Wang, Chen Chen, Jiapu Wang, and Xindong Wu. Unifying large
+language models and knowledge graphs: A roadmap. arXiv preprint arXiv:2306.08302 , 2023.
+A. Perevalov, D. Diefenbach, R. Usbeck, and A. Both. Qald-9-plus: A multilingual dataset for
+question answering over dbpedia and wikidata translated by native speakers. In 2022 IEEE
+16th International Conference on Semantic Computing (ICSC) , pp. 229–234, Los Alamitos,
+CA, USA, jan 2022. IEEE Computer Society. doi: 10.1109/ICSC52841.2022.00045. URL
+https://doi.ieeecomputersociety.org/10.1109/ICSC52841.2022.00045 .
+Matthew E. Peters, Mark Neumann, Robert Logan, Roy Schwartz, Vidur Joshi, Sameer Singh, and
+Noah A. Smith. Knowledge enhanced contextual word representations. In Proceedings of the 2019
+Conference on Empirical Methods in Natural Language Processing and the 9th International Joint
+Conference on Natural Language Processing (EMNLP-IJCNLP) , pp. 43–54, Hong Kong, China,
+November 2019. Association for Computational Linguistics. doi: 10.18653/v1/D19-1005. URL
+https://aclanthology.org/D19-1005 .
+Fabio Petroni, Aleksandra Piktus, Angela Fan, Patrick Lewis, Majid Yazdani, Nicola De Cao, James
+Thorne, Yacine Jernite, Vladimir Karpukhin, Jean Maillard, Vassilis Plachouras, Tim Rocktäschel,
+and Sebastian Riedel. Kilt: a benchmark for knowledge intensive language tasks, 2021.
+Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi
+Zhou, Wei Li, and Peter J Liu. Exploring the limits of transfer learning with a unified text-to-text
+transformer. The Journal of Machine Learning Research , 21(1):5485–5551, 2020.
+Manuel Alejandro Borroto Santana, Bernardo Cuteri, Francesco Ricca, and Vito Barbara. SPARQL-
+QA enters the QALD challenge. In Xi Yan, Meriem Beloucif, and Ricardo Usbeck (eds.),
+Proceedings of the 7th Natural Language Interfaces for the Web of Data (NLIWoD) co-located
+with the 19th European Semantic Web Conference (ESWC 2022), Hersonissos, Greece, May 29th,
+2022 , volume 3196 of CEUR Workshop Proceedings , pp. 25–31. CEUR-WS.org, 2022. URL
+https://ceur-ws.org/Vol-3196/paper3.pdf .
+Yiheng Shu, Zhiwei Yu, Yuhan Li, Börje Karlsson, Tingting Ma, Yuzhong Qu, and Chin-Yew Lin.
+TIARA: Multi-grained retrieval for robust question answering over large knowledge base. In
+Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing , pp.
+8108–8121, Abu Dhabi, United Arab Emirates, December 2022. Association for Computational
+Linguistics. doi: 10.18653/v1/2022.emnlp-main.555. URL https://aclanthology.org/
+2022.emnlp-main.555 .
+Haitian Sun, Tania Bedrax-Weiss, and William W. Cohen. Pullnet: Open domain question answering
+with iterative retrieval on knowledge bases and text, 2019.
+Hao Sun, Xiao Liu, Yeyun Gong, Anlei Dong, Jingwen Lu, Yan Zhang, Daxin Jiang, Linjun
+Yang, Rangan Majumder, and Nan Duan. Beamsearchqa: Large language models are strong
+zero-shot QA solver. CoRR , abs/2305.14766, 2023a. doi: 10.48550/arXiv.2305.14766. URL
+https://doi.org/10.48550/arXiv.2305.14766 .
+Jiashuo Sun, Yi Luo, Yeyun Gong, Chen Lin, Yelong Shen, Jian Guo, and Nan Duan. Enhancing
+chain-of-thoughts prompting with iterative bootstrapping in large language models, 2023b.
+Alon Talmor and Jonathan Berant. The web as a knowledge-base for answering complex questions.
+In Marilyn A. Walker, Heng Ji, and Amanda Stent (eds.), Proceedings of the 2018 Conference of
+the North American Chapter of the Association for Computational Linguistics: Human Language
+Technologies, NAACL-HLT 2018, New Orleans, Louisiana, USA, June 1-6, 2018, Volume 1 (Long
+Papers) , pp. 641–651. Association for Computational Linguistics, 2018. doi: 10.18653/v1/
+n18-1059. URL https://doi.org/10.18653/v1/n18-1059 .
+Alon Talmor, Jonathan Herzig, Nicholas Lourie, and Jonathan Berant. Commonsenseqa: A question
+answering challenge targeting commonsense knowledge. In Jill Burstein, Christy Doran, and
+Thamar Solorio (eds.),
+
+=== PAGE 15 ===
+Published as a conference paper at ICLR 2024
+Yiming Tan, Dehai Min, Yu Li, Wenbo Li, Nan Hu, Yongrui Chen, and Guilin Qi. Evaluation
+of chatgpt as a question answering system for answering complex questions. arXiv preprint
+arXiv:2303.07992 , 2023.
+Romal Thoppilan, Daniel De Freitas, Jamie Hall, Noam Shazeer, Apoorv Kulshreshtha, Heng-Tze
+Cheng, Alicia Jin, Taylor Bos, Leslie Baker, Yu Du, YaGuang Li, Hongrae Lee, Huaixiu Steven
+Zheng, Amin Ghafouri, Marcelo Menegali, Yanping Huang, Maxim Krikun, Dmitry Lepikhin,
+James Qin, Dehao Chen, Yuanzhong Xu, Zhifeng Chen, Adam Roberts, Maarten Bosma, Yanqi
+Zhou, Chung-Ching Chang, Igor Krivokon, Will Rusch, Marc Pickett, Kathleen S. Meier-Hellstern,
+Meredith Ringel Morris, Tulsee Doshi, Renelito Delos Santos, Toju Duke, Johnny Soraker,
+Ben Zevenbergen, Vinodkumar Prabhakaran, Mark Diaz, Ben Hutchinson, Kristen Olson, Ale-
+jandra Molina, Erin Hoffman-John, Josh Lee, Lora Aroyo, Ravi Rajakumar, Alena Butryna,
+Matthew Lamm, Viktoriya Kuzmina, Joe Fenton, Aaron Cohen, Rachel Bernstein, Ray Kurzweil,
+Blaise Agüera y Arcas, Claire Cui, Marian Croak, Ed H. Chi, and Quoc Le. Lamda: Language mod-
+els for dialog applications. CoRR , 2022. URL https://arxiv.org/abs/2201.08239 .
+Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay
+Bashlykov, Soumya Batra, Prajjwal Bhargava, Shruti Bhosale, Dan Bikel, Lukas Blecher, Cris-
+tian Canton Ferrer, Moya Chen, Guillem Cucurull, David Esiobu, Jude Fernandes, Jeremy Fu,
+Wenyin Fu, Brian Fuller, Cynthia Gao, Vedanuj Goswami, Naman Goyal, Anthony Hartshorn,
+Saghar Hosseini, Rui Hou, Hakan Inan, Marcin Kardas, Viktor Kerkez, Madian Khabsa, Isabel
+Kloumann, Artem Korenev, Punit Singh Koura, Marie-Anne Lachaux, Thibaut Lavril, Jenya Lee,
+Diana Liskovich, Yinghai Lu, Yuning Mao, Xavier Martinet, Todor Mihaylov, Pushkar Mishra,
+Igor Molybog, Yixin Nie, Andrew Poulton, Jeremy Reizenstein, Rashi Rungta, Kalyan Saladi,
+Alan Schelten, Ruan Silva, Eric Michael Smith, Ranjan Subramanian, Xiaoqing Ellen Tan, Binh
+Tang, Ross Taylor, Adina Williams, Jian Xiang Kuan, Puxin Xu, Zheng Yan, Iliyan Zarov, Yuchen
+Zhang, Angela Fan, Melanie Kambadur, Sharan Narang, Aurelien Rodriguez, Robert Stojnic,
+Sergey Edunov, and Thomas Scialom. Llama 2: Open foundation and fine-tuned chat models,
+2023.
+Denny Vrande ˇci´c and Markus Krötzsch. Wikidata: A free collaborative knowledgebase. Commun.
+ACM , 57(10):78–85, sep 2014. ISSN 0001-0782. doi: 10.1145/2629489. URL https://doi.
+org/10.1145/2629489 .
+Jianing Wang, Qiushi Sun, Nuo Chen, Xiang Li, and Ming Gao. Boosting language models reasoning
+with chain-of-knowledge prompting, 2023a.
+Keheng Wang, Feiyu Duan, Sirui Wang, Peiguang Li, Yunsen Xian, Chuantao Yin, Wenge Rong, and
+Zhang Xiong. Knowledge-driven cot: Exploring faithful reasoning in llms for knowledge-intensive
+question answering, 2023b.
+Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc V . Le, Ed H. Chi, Sharan Narang, Aakanksha
+Chowdhery, and Denny Zhou. Self-consistency improves chain of thought reasoning in language
+models. In The Eleventh International Conference on Learning Representations, ICLR 2023,
+Kigali, Rwanda, May 1-5, 2023 . OpenReview.net, 2023c. URL https://openreview.net/
+pdf?id=1PL1NIMMrw .
+Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Ed H. Chi, Quoc Le, and Denny Zhou.
+Chain of thought prompting elicits reasoning in large language models. arXiv Preprint , 2022. URL
+https://arxiv.org/abs/2201.11903 .
+Tianbao Xie, Chen Henry Wu, Peng Shi, Ruiqi Zhong, Torsten Scholak, Michihiro Yasunaga, Chien-
+Sheng Wu, Ming Zhong, Pengcheng Yin, Sida I. Wang, Victor Zhong, Bailin Wang, Chengzu
+Li, Connor Boyle, Ansong Ni, Ziyu Yao, Dragomir Radev, Caiming Xiong, Lingpeng Kong,
+Rui Zhang, Noah A. Smith, Luke Zettlemoyer, and Tao Yu. UnifiedSKG: Unifying and multi-
+tasking structured knowledge grounding with text-to-text language models. In Proceedings of
+the 2022 Conference on Empirical Methods in Natural Language Processing , pp. 60
+

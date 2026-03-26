@@ -1,0 +1,1178 @@
+=== PAGE 1 ===
+EVOAGENT : Towards Automatic Multi-Agent Generation via Evolutionary
+Algorithms
+Siyu Yuan1∗, Kaitao Song2∗†,
+Jiangjie Chen1, Xu Tan2, Dongsheng Li2, Deqing Yang1†
+Fudan University1, Microsoft Research Asia2
+syyuan21@m.fudan.edu.cn ,{kaitaosong, xuta, dongsli}@microsoft.com
+{jjchen19,yangdeqing}@fudan.edu.cn
+https://evo-agent.github.io
+Abstract
+The rise of powerful large language models
+(LLMs) has spurred a new trend in build-
+ing LLM-based autonomous agents for solv-
+ing complex tasks, especially multi-agent sys-
+tems. Despite the remarkable progress, we
+notice that existing works are heavily depen-
+dent on human-designed frameworks, which
+greatly limits the functional scope and scala-
+bility of agent systems. How to automatically
+extend the specialized agent to multi-agent sys-
+tems to improve task-solving capability still
+remains a significant challenge. In this paper,
+we introduce EVOAGENT , a generic method
+to automatically extend specialized agents to
+multi-agent systems via the evolutionary algo-
+rithm, thereby improving the effectiveness of
+LLM-based agents in solving tasks. Specif-
+ically, we consider the existing agent frame-
+works as the initial individual and then apply
+a series of evolutionary operators (e.g., mu-
+tation, crossover, selection, etc.) to generate
+multiple agents with diverse settings. Experi-
+mental results across various tasks show that
+EVOAGENT can significantly enhance the task-
+solving capability of LLM-based agents, and
+can be generalized to any LLM-based agent
+framework to extend them into multi-agent
+systems. Resources are available at https:
+//evo-agent.github.io/ .
+1 Introduction
+Recently, the advent of large language models
+(LLMs) (OpenAI, 2023; Team, 2023; Touvron
+et al., 2023; Anthropic, 2024) have shown remark-
+able capabilities in solving language understanding,
+reasoning, and generation tasks. Based on the foun-
+dation of LLMs, many research works (Gravitas,
+2023; Shen et al., 2023a; Nakajima, 2023; Schick
+et al., 2023; Wei et al., 2022b; Hong et al., 2024;
+∗The first two authors have equal contributions. This
+work was done when the first author was an intern at Microsoft
+Research Asia.
+†Corresponding authors.
+Query: Please create a travel plan where I'll depart from Washington and head to Myrtle Beach for a 3-day trip from March 13th to March 15th, 2022. Can you help me keep this journey within a budget of $1,400? It's vital that my accommodations are pet-friendly.STEP 1: Initialization
+Initial AgentHuman Written
+STEP 2: EA Operation Crossover & Mutation
+Day 1: Current City: from Washington to Myrtle Beach Lunch: Exotic India Attraction: SkyWheel Myrtle Beach Accommodation: Cozy Brooklyn Room
+Initial Agent
+Accommodation Agent
+Transportation Agent
+Day 1: Current City: from Washington to Myrtle Beach Breakfast: Exotic India, Myrtle Beach Lunch: Catfish Charlie's, Myrtle Beach Attraction: SkyWheel Myrtle Beach Accommodation: Large sunny park slope apartment, pet-friendlyDay 1: Current City: from Washington to Myrtle Beach Transportation: Flight Number: F3792603 Breakfast: Exotic India, Myrtle Beach Lunch: Catfish Charlie's, Myrtle Beach Attraction: SkyWheel Myrtle Beach Accommodation: Cozy Brooklyn Room Hotel Agent
+STEP 3: Selection
+Quality Check
+This agent has a duplicate type with Accommodation Agent, so it is discarded.STEP 4: Results Update
+Update Operation
+Day 1: Current City: from Washington to Myrtle Beach Transportation: Flight Number: F3792603 Breakfast: Exotic India, Myrtle Beach Lunch: Catfish Charlie's, Myrtle Beach Attraction: SkyWheel Myrtle Beach Accommodation: Large sunny park slope apartment, pet-friendlyFigure 1: The illustration of EVOAGENT . With the
+generated multiple specialized agents, EVOAGENT can
+generate a better travel plan to meet user preferences.
+For EA operators, Crossover can improve the results
+of parent agents by adjusting existing details (e.g., the
+information marked as blue).Mutation can introduce
+new variations to refine the results of parent agents 
+
+=== PAGE 2 ===
+agent. To address this point, we notice that human
+society is composed of vast individuals, each pos-
+sessing their unique characteristics. By selecting,
+orchestrating, and cooperating with different indi-
+viduals, humans can form an efficient team group
+to handle complicated missions in the real world.
+Therefore, there has been an increasing trend to de-
+velop multi-agent collaboration frameworks (Park
+et al., 2023b; Li et al., 2023a; Wu et al., 2023;
+Hong et al., 2024) to simulate human behaviors
+for solving complex tasks. By developing a series
+of specialized agents with diverse settings, multi-
+agent systems enable us to reveal emergent abili-
+ties among multiple agents and synergize their spe-
+cialized expertise to achieve superior performance,
+akin to simulating human populations. Neverthe-
+less, it is worthy noting that, in most of (multi)-
+agent frameworks, their designs heavily depend on
+handcrafted settings, including character roles, task
+scopes, skills, and prompt settings. Although we
+admit that meticulous human design is quite useful
+for instructing LLM-based agents to understand
+tasks, it also limits scaling up the number of agents
+to further improve performance due to expensive
+human labor. Considering the increasing popularity
+of LLM-based autonomous agents, how to create a
+generic agent generation paradigm to automatically
+build multi-agent systems is a critical challenge.
+In this paper, we introduce a novel method,
+EVOAGENT , that formulates agent generation as
+the evolutionary processing (Bäck and Schwefel,
+1993) in human society. Specifically, to align hu-
+man society, each agent can be considered as in-
+dividuals that can procreate its population across
+successive generations. Motivated by this mech-
+anism, we can simulate such a human behavior
+to automatically generate multiple agents based
+on any pre-defined agents. Therefore, as shown
+in Figure 1, EVOAGENT can be considered as a
+one-shot agent generation method that starts from
+a specialized agent as the initial agent, and then
+considers its settings (e.g., role, skills, prompts,
+and so on) as the variables to be evolved. With a
+series operation of EAs (e.g., selection, crossover,
+mutation), EVOAGENT can automatically create
+multiple evolutionary agents based on the initial
+specialized agent. Moreover, EVOAGENT is not
+limited to the infrastructure of agent frameworks,
+as it is a generic multi-agent generation method.
+Thus, it can be applied to any agent framework and
+expanded to multi-agent systems without any extrahuman effort.
+We conduct experiments on multiple datasets, in-
+cluding knowledge-based question answering and
+multi-modal reasoning ( §4.1), interactive scientific
+solving ( §4.2) and real-world complex planning
+(§4.3). Experimental results indicate that EVOA-
+GENT can generate multiple agents with diverse
+skills and harness their capabilities to consistently
+improve the performance of the model in different
+scenarios. Besides, to validate the scalability of
+EVOAGENT in creating massive agents, we also
+apply our method to some conversational scenar-
+ios (e.g., debate), and the results also indicate the
+potential of EVOAGENT in generating multiple di-
+verse agents. Overall, the contributions of this pa-
+per can be summarized as below:
+• We introduce E VOAGENT , a simple and generic
+multi-agent generation method to improve the
+effectiveness of LLM-based agents in solving
+tasks. EVOAGENT can automatically generate
+new specialized agents and is applicable to any
+agent framework.
+•We formulate the agent generation processing
+as an evolutionary pipeline, that encompasses
+multiple operators (e.g., selection, crossover, mu-
+tation) to generate agent population without ad-
+ditional human supervision.
+•We conduct extensive experiments on various
+tasks and demonstrate the effectiveness, scala-
+bility, and generality of our EVOAGENT . Par-
+ticularly, EVOAGENT can significantly enhance
+the performance of LLM-based agents in both
+challenging open-world sc
+
+=== PAGE 3 ===
+memory (Weston et al., 2015; Shinn et al., 2023)).
+Some of them also extend agent frameworks to
+multi-agent collaboration (e.g., MetaGPT (Li et al.,
+2023b), Generative Agents (Park et al., 2023b), Au-
+toGen (Wu et al., 2023), Camel (Li et al., 2023a),
+AgentVerse (Chen et al., 2024b) and so on), by
+designing multiple specific roles. These systems
+also demonstrate satisfactory performance in ad-
+dressing massive, challenging tasks. However, it is
+worth noting that most of the popular agent frame-
+works heavily relied on handcrafted designs. The
+abundant human efforts necessitated by these sys-
+tems also limit the adaptability and flexibility of
+agents to handle unexpected challenges (Qian et al.,
+2023; He et al., 2023; Chen et al., 2024b; Hong
+et al., 2024). In this paper, we propose EVOAGENT ,
+a method that can be applied to any LLM-based
+agent framework and easily extend to multi-agent
+systems. By using EA, our method allows us to
+iteratively generate and optimize multiple agents
+with diverse settings.
+Agent Generation Recent studies have shown
+that assigning personas or roles to LLM-based au-
+tonomous agents can influence their behavior and
+performance in generation tasks (Xu et al., 2023;
+Deshpande et al., 2023; Park et al., 2023a; Li et al.,
+2023a). Current methods primarily involve manu-
+ally assigning these personas and limit multi-agent
+collaboration to single or fixed roles, which re-
+quires significant human effort and hinders gener-
+alization (Li et al., 2023a; Wu et al., 2023; Li et al.,
+2023b; Hong et al., 2024). To address this, some
+frameworks like AgentVerse (Chen et al., 2024b)
+and AutoAgents (Chen et al., 2023b) have been pro-
+posed to automatically generate unlimited agents
+for collaborative task completion. However, these
+methods still heavily depend on human-designed
+interventions, which limits their scalability and
+functionality. For example, AutoAgents requires
+agent settings to satisfy a “Planner - Agent Ob-
+server - Plan Observer” framework. Meanwhile,
+AgentVerse formulates a pipeline of “Expert Re-
+cruitment - Collaborative Decision Making - Ac-
+tion Execution - Evaluation” to build agents. These
+architectures also limit the task scope of designing
+agents. In contrast, EVOAGENT can automatically
+formulate the current agent frameworks to multi-
+agent systems with high-quality generated special-
+ized agents by using EAs, which is flexible and
+adaptable to various agent frameworks.3 Method
+Generally, human society comprises a broad spec-
+trum of individuals from diverse cultures, encom-
+passing multiple generations. To solve specific
+tasks, human society usually involves a lot of ex-
+pert individuals and aggregates their specialized
+expertise to achieve better answer. Thus, it can
+be considered as the foundation to facilitate multi-
+agent collaborations. To fulfill this point, how to
+automatically create multiple agents would be very
+critical. Inspired by evolutionism, we formulate
+agent generation as an evolutionary process to gen-
+erate multiple agents without any human labor.
+3.1 Preliminary
+Evolutionary algorithm (EA) (Bartz-Beielstein
+et al., 2014; Eiben et al., 2015), is a general al-
+gorithm to simulate the biological behaviors in evo-
+lution, including reproduction, mutation, recombi-
+nation, and selection. By introducing genetic al-
+gorithm (Sampson, 1976; Holland, 1992; Mitchell,
+1998; Schmitt, 2001; Mirjalili et al., 2020) of the
+“survival of the fittest” mechanism, it can also be
+considered as an optimization method to improve
+individuals. Therefore, EAs also belong to the non-
+parametric learning method, which can be applied
+to any framework. All we need to do is define
+which parts should be evolved and the correspond-
+ing evolutionary operators. We also note some
+recent works (Guo et al., 2023; Chen et al., 2023a)
+indicate the potential of EAs that can be applied
+to optimize discrete prompts. So, in this paper,
+we explore how to formulate the agent generation
+problem as an evolutionary task.
+
+
+=== PAGE 4 ===
+Algorithm 1: Multi-Agent Generation with Evolutionary Algorithm
+Require: Initial agent A(0,0), population size Nper iteration, number of iterations T,
+quality-check module LLM Quality (·), evolutionary operations Evo Crossover (·)and
+Evo Mutation (·),Evo Update (·)
+Input: Initial result R0derived from A(0,0)
+Output: Final result RT
+1fort= 1toTdo
+2 Crossover: Update the settings of parent agents based on their generated results and initial
+agent: {A′
+(0,t−1), A′
+(1,t−1), ..., A′
+(N−1,t−1)} ←
+Evo Crossover ({R(0,t−1), R(1,t−1), ..., R (N−1,t−1)}, A(0,0));
+3 Mutation: Generate N′(N′> N )child agents based on parent agents and initial agent:
+{A(0,t), A(1,t), ..., A (N′−1,t)} ←Evo Mutation ({A′
+(0,t−1), A′
+(1,t−1), ..., A′
+(N−1,t−1)}, A(0,0))
+4 Selection : Select high-quality agents with quality-check module:
+{A(0,t), A(1,t), ..., A (N−1,t)} ←
+LLM Quality ({A(0,t), A(1,t), ..., A (N′−1,t)},{A(N,t′)}t′=t−1
+t′=1);
+5 Result Update: Generate new result from new agents:
+{R(0,t), R(1,t), ..., R (N−1,t)} ← { A(0,t), A(1,t), ..., A (N−1,t)}
+6 Integrate their results as a natural selection processing:
+Rt←Evo Update ({R(0,t), R(1,t), ..., R (N−1,t)}, Rt−1);
+7end
+8return RT←Rt;
+of E VOAGENT as a four-stage pipeline:
+STEP 1: Initialization To conduct EAs, we first
+need to confirm our initial agents. Here, we en-
+able EVOAGENT to start from a pre-defined agent
+framework (e.g., MetaGPT (Hong et al., 2024) and
+AutoGen (Wu et al., 2023)), which serves as the
+initial (parent) agents. Moreover, we also define
+which parts of this agent should be upgraded. Gen-
+erally, since EAs is a generic algorithm, EVOA-
+GENT is applicable to any agent frameworks and
+extends them as multi-agent frameworks. We will
+then explore how to generate new agents in the next
+steps.
+STEP 2: Crossover & Mutation In the first it-
+eration, we directly use the initial agents as the
+parents. And then, we design two kinds of evolu-
+tionary operators, named Crossover andMutation .
+ForCrossover , we first enable the parent agents
+to generate results based on user requests. Then,
+based on the generated results, we ask LLMs to
+check which skills should be improved and then
+update them. This mechanism allows us to generate
+child agents in new settings without requiring any
+human labor. Moreover, we also need to guarantee
+the diversity between the child agents and parents.
+To this end, we design a Mutation operation thatrequires LLMs to compare the child agents and
+parent agents and then modify the child agents to
+make them distinct from their parents while main-
+taining their task-solving capability. Based on these
+evolutionary operators, we can generate effective
+and diverse agents during one iteration. Besides,
+as we also need to conduct multiple iterations, we
+will append all agents generated in the previous
+generation into the next iteration.
+STEP 3: Selection Based on the above steps, we
+can obtain multiple candidate agents with diverse
+settings. To guarantee the quality of agents, we also
+introduce a selection mechanism like EAs. Here,
+we conduct a quality-check module with an LLM
+to detect whether the generated agents can satisfy
+it has inherited the characteristics and maintained
+differences from parent agents. We will select N
+child agents as the evolved agents in each iteration.
+STEP 4: Results Update Based on the above
+steps, we obtain many new agents that evolved
+from parent agents, but with diverse settings. To im-
+prove task-solving capabilities, we ask each child
+agent to generate candidate results and then use
+LLMs to integrate these candidates with the result
+from the previous iteration into a new result, akin
+to a natural selection processing stage. Moreover,
+
+=== PAGE 5 ===
+Model Method Logic Writing Code
+LLama2-13BDirect 4.00 28.00 0.00
+CoT 26.00 46.00 18.00
+SPP 0.00 4.00 1.00
+Self-Refine 3 33.50 31.20 12.37
+AgentVerse 10.00 12.00 15.36
+AutoAgents 16.00 18.00 13.50
+EVOAGENT (1,3)35.50 49.60 27.83
+GPT-3.5Direct 48.00 56.20 76.29
+CoT 47.50 51.00 71.13
+SPP 56.00 54.40 61.86
+Self-Refine 3 47.50 59.19 46.39
+AgentVerse 66.50 56.20 50.48
+AutoAgents 68.00 55.35 52.16
+EVOAGENT (1,3)71.50 60.80 79.38
+GPT-4Direct 60.50 75.40 79.38
+CoT 65.50 74.00 80.41
+SPP 64.50 79.20 78.35
+Self-Refine 3 64.50 74.60 79.38
+AgentVerse 66.50 78.00 80.41
+AutoAgents 69.00 82.00 83.56
+EVOAGENT (1,3)77.00 84.40 84.53
+Table 1: Results of LLMs with different methods on
+Logic Grid Puzzle ( Logic ), Trivia Creative Writing
+(Writing ) and Codenames Collaborative ( Code ). The
+best results are bolded , and the second best ones are
+underlined .
+we can automatically generate more agents by re-
+peating the operations from step 2 to step 4 until
+the number of agents has fulfilled our targets.
+By introducing EA, EVOAGENT enables us to
+automatically extend the existing agent framework
+to a multi-agent system without any extra human
+designs. The mechanism also makes EVOAGENT
+can be applied to any agent framework without
+any prerequisites. We also present the details of
+EVOAGENT in Algorithm 1.
+4 Experiment
+In this section, we adopt EVOAGENT to multiple
+applications to illustrate that EVOAGENT can help
+LLM-based agents better accomplish tasks with
+multi-agent generation.1We also demonstrate that
+EVOAGENT can be applicable in supporting cur-
+rently widely used multi-agent frameworks, such
+as MetaGPT, AutoGen, and Camel in Appendix D.
+4.1 NLP and Multi-Modal Tasks
+Benchmarks To align previous experiences, e.g.,
+Self-Refine (Madaan et al., 2023) and Solo Per-
+formance Prompting (Wang et al., 2023), we se-
+lect three NLP knowledge-intensive and reasoning-
+1The data examples of EVOAGENT on these tasks are
+provided in Appendix C.intensive tasks from (Wang et al., 2023) and one
+multi-modal task:
+•Logic Grid Puzzle is a reasoning task with 200
+puzzles featuring 2 to 5 unique occupants in dif-
+ferent houses. The aim is to identify house num-
+bers for one occupant with provided clues.
+•Trivia Creative Writing is a knowledge-
+intensive task consisting of 100 instances. This
+task requires a model to write a coherent story
+while incorporating answers to N trivia questions.
+•Codenames Collaborative is a reasoning-
+intensive task with 50 instances. It involves a
+model identifying target words based on a given
+hint and a complete list of words.
+•MMMU (Yue et al., 2023) is a comprehensive
+and general benchmark for multi-discipline multi-
+modal understanding and reasoning. MMMU has
+three levels of difficulty: easy, medium, and hard.
+We evaluate EVOAGENT against baselines using
+the multiple-choice questions in the validation
+set of MMMU, which includes 847 questions
+spanning 30 different domains.
+Baselines For NLP tasks, we select LLama2-
+13B-Chat (Touvron et al., 2023), GPT-3.5 (OpenAI,
+2022) and GPT-4 (OpenAI, 2023) as our backbone
+networks. We compare EVOAGENT with 0-shot
+learning (Direct), Chain-of-thought (CoT) prompt-
+ing (Wei et al., 2022a) and Self-Refine (Madaan
+et al., 2023) and Solo Performance Prompting
+(SPP) (Wang et al., 2023). For Self-Refine, we
+follow (Madaan et al., 2023) to design feedback
+and refine prompts with three iterations. SPP is a
+multi-agent collaboration prompting strategy that
+asks a single LLM to identify and discuss with
+multiple personas with few-shot learning. For
+SPP, we follow the original setting (Wang et al.,
+2023). We also compare EVOAGENT with some
+pre-defined multi-agent agent generation frame-
+works, i.e., AgentVerse (Chen et al., 2024b) and
+AutoAgent (Chen et al., 2023b). For MMMU, we
+select GPT-4V (Yang et al., 2023) and Gemini-Pro
+as the backbone and compare EVOAGENT with
+CoT prompting, Self-Refine (SR), and SPP.2
+2The detailed model parameters model versions, baseline
+introduction and full prompts for these methods 
+
+=== PAGE 6 ===
+/uni00000026/uni00000052/uni00000037 /uni00000036/uni00000033/uni00000033 /uni00000036/uni00000035/uni00000032/uni00000058/uni00000055/uni00000056/uni00000017/uni00000018/uni00000018/uni00000013/uni00000018/uni00000018/uni00000019/uni00000013/uni00000019/uni00000018/uni00000024/uni00000046/uni00000046/uni00000058/uni00000055/uni00000044/uni00000046/uni0000005c/uni0000000b/uni00000008/uni0000000c/uni00000024/uni0000004f/uni0000004f
+/uni00000026/uni00000052/uni00000037 /uni00000036/uni00000033/uni00000033 /uni00000036/uni00000035/uni00000032/uni00000058/uni00000055/uni00000056/uni00000018/uni00000018/uni00000019/uni00000018/uni0000001a/uni00000018/uni00000028/uni00000044/uni00000056/uni0000005c
+/uni00000026/uni00000052/uni00000037 /uni00000036/uni00000033/uni00000033 /uni00000036/uni00000035/uni00000032/uni00000058/uni00000055/uni00000056/uni00000017/uni00000018/uni00000018/uni00000013/uni00000018/uni00000018/uni00000019/uni00000013/uni00000024/uni00000046/uni00000046/uni00000058/uni00000055/uni00000044/uni00000046/uni0000005c/uni0000000b/uni00000008/uni0000000c/uni00000030/uni00000048/uni00000047/uni0000004c/uni00000058/uni00000050
+/uni00000026/uni00000052/uni00000037 /uni00000036/uni00000033/uni00000033 /uni00000036/uni00000035/uni00000032/uni00000058/uni00000055/uni00000056/uni00000015/uni00000018/uni00000016/uni00000018/uni00000017/uni00000018/uni00000018/uni00000018/uni0000002b/uni00000044/uni00000055/uni00000047/uni0000002a/uni00000033/uni00000037/uni00000010/uni00000017/uni00000039 /uni0000002a/uni00000048/uni00000050/uni0000004c/uni00000051/uni0000004c/uni00000010/uni00000033/uni00000055/uni00000052Figure 2: Overall results of GPT-4V and Gemini-Pro
+with different methods on the MMMU validation set.
+We also compare the performance of GPT-4V and
+Gemini-Pro across three difficulty levels.
+Evaluation Metrics We adhere to the evaluation
+metrics specified in the original setting. Specif-
+ically, for Logic Grid Puzzle and MMMU tasks,
+we report the accuracy of all questions. For Trivia
+Creative Writing, we measure the ratio of correctly
+mentioned answers in the trivia questions. For
+Codenames Collaborative, we calculate the over-
+lapping ratio between the predicted words from the
+Guesser and the target words as the metric.
+Result & Analysis In our experiments, we adopt
+the agent settings of (Wang et al., 2023) (for NLP
+tasks) and (Yue et al., 2023) (for MMMU) as the ini-
+tial agent. For our method, we denote it as EVOA-
+GENT (N,T ), where N is the population size gen-
+erated in each iteration, and T is the number of
+iterations. Here, to align with Self-Refine, we set N
+as 1 and T as 3, which means we conduct three iter-
+ations, each of which generates a new specialized
+agent. Thus, for each data sample, EVOAGENT ex-
+tends 3 different specialized agents to collaborate
+with the initial agent. Our results are reported in
+Table 1, and we can observe:
+1.By utilizing multiple generated agents, EVOA-
+GENT can greatly improve LLM performances
+in both NLP knowledge and reasoning tasks.
+Moreover, EVOAGENT outperforms both Agent-
+Verse and AutoAgent, highlighting the effective-
+ness and generality of E VOAGENT .
+2.When using weaker LLMs, SPP usually pro-
+duces poor performances, consistent with the
+findings in (Wang et al., 2023). This suggests
+the limited effectiveness of SPP in smaller and
+less capable models. However, EVOAGENT canModel Overall Long Medium Short
+GPT-3.5 17.12 6.28 19.91 27.90
+w/ E VOAGENT (1,1) 19.02 7.25 18.87 33.26
+GPT-4 27.97 10.58 36.00 42.41
+w/ E VOAGENT (1,1) 30.42 11.38 36.17 48.67
+Table 2: Average Scores of different methods on Sci-
+enceWorld. We also report performance on three
+difficult-level groups based on the average length of
+the oracle agent’s trajectories (Lin et al., 2023).
+provide consistent improvements among each
+LLM, proving its strong generalization by using
+diverse generated agents.
+In addition, Figure 2 shows that Self-Refine (SR)
+and SPP degrade performance compared to CoT
+prompting in MMMU task.
+
+=== PAGE 7 ===
+Model MethodDelivery Commonsense Hard ConstraintFinal
+Rate Micro Macro Micro Macro
+Mistral-7BDirect 100.0 64.7 2.2 3.1 0.0 0.0
+CoT 100.0 60.5 1.1 1.0 0.0 0.0
+SPP 100.0 55.1 0.0 0.7 0.6 0.0
+Self-Refine 3 100.0 58.3 0.0 0.7 0.0 0.0
+EVOAGENT (1,3) 100.0 60.1 2.2 4.5 0.6 0.0
+GPT-3.5Direct 100.0 57.3 3.9 11.0 3.3 0.0
+CoT 100.0 61.0 2.8 10.0 3.3 0.0
+ReAct 82.2 42.3 0.6 11.9 4.6 0.0
+SPP 99.4 54.6 1.7 3.8 1.1 0.0
+Self-Refine 3 100.0 56.0 1.7 3.1 1.1 0.0
+EVOAGENT (1,3) 100.0 64.2 7.8 11.0 4.4 1.1
+Gemini-ProDirect 90.0 61.7 7.8 16.4 7.8 0.6
+CoT 90.0 61.4 7.2 10.0 6.1 1.7
+SPP 100.0 67.6 7.8 10.2 3.9 1.1
+Self-Refine 3 95.6 65.8 6.1 15.0 4.4 0.6
+EVOAGENT (1,3) 100.0 73.5 12.8 16.9 7.2 1.7
+GPT-4Direct 100.0 79.4 15.8 27.5 16.1 2.2
+CoT 100.0 76.7 11.7 22.4 12.8 2.2
+SPP 96.7 70.6 5.6 11.4 7.8 0.6
+Self-Refine 3 98.9 75.3 7.2 12.4 7.2 1.1
+EVOAGENT (1,3) 100.0 81.5 21.1 31.4 18.9 7.2
+Table 3: Main results of different LLMs and planning strategies on the TravelPlanner validation set. EVOAGENT (N,T )
+indicates that the population size per iteration is N and the number of iterations is T. The best results are bolded ,
+and the second best ones are underlined.
+M different specialized agents to collaborate with
+the initial agent, where M is the number of steps in
+this task. Results in Table 2 show that:
+1.EVOAGENT can also extend interactive agents
+to multi-agent systems in solving complete sci-
+entific tasks in dynamic, open-world environ-
+ments and consistently improve the performance
+of LLMs.
+2.Our method exhibits the most substantial im-
+provement in short-trajectory tasks, with less
+significant gains in medium and long-trajectory
+tasks. We argue that the capability of multi-
+agent systems will also be affected by a longer
+context. Future work can investigate the effect
+of long context on multi-agent systems.
+Generally, these results also demonstrate the gen-
+eralization of EVOAGENT , which can also be used
+for solving interactive tasks in an open-world envi-
+ronment.
+4.3 Real-World Scenarios
+Benchmark Planning in complex and realistic
+environments is also a crucial skill for building
+autonomous agents. Thus, we also select Trav-
+elPlanner (Xie et al., 2024), a benchmark designedto evaluate language agents in real-world complex
+planning with multiple constraints.
+Baseline and Evaluation Metrics Following
+(Xie et al., 2024), we select Mistral-7B (Jiang
+et al., 2023), GPT-3.5, Gemini-Pro (Team, 2023)
+and GPT-4 as our backbone models. We compare
+EVOAGENT with 0-shot learning (Direct), CoT
+prompting, ReAcT (Yao et al., 2023), SPP, and
+Self-Refine within each backbone model. Further-
+more, we also attempt the ReAcT method (Yao
+et al., 2023) for GPT-3.5, which introduces a vir-
+tual ‘think’ action to generate sub-tasks during the
+action planning process. For evaluation, we adhere
+to the original metrics from TravelPlanner, report-
+ing the delivery rate, commonsense constraint pass
+rate, hard constraint pass rate, and final pass rate
+for all methods4.
+Result & Analysis ForEVOAGENT , we adopt
+the original settings in TravelPlanner as the initial
+agent. In our main experiment, to fairly compare
+with Self-Refine, we set the population size N as
+1 and the iterations T as 3 for efficiency, denoted
+asEVOAGENT (1,3). Thus, for each user query in
+TravelPlanner, EVOAGENT can extend 3 different
+4Detailed introduction of experiment settings is provided
+in Appendix A.5.
+
+=== PAGE 8 ===
+Methodw/o QC w/ QC
+Com. Hard Com. Hard
+Direct - - 59.5 13.7
+Suggest 3 - - 61.7 8.4
+Overgen 3 - - 61.4 10.7
+PromptRefine 3 - - 63.0 13.8
+Different Population Size
+EVOAGENT (1,3)68.9 14.0 68.9 14.0
+EVOAGENT (1,5)67.5 16.9 67.5 16.9
+EVOAGENT (2,3)62.8 12.7 67.0 15.2
+EVOAGENT (3,3)62.7 13.7 66.8 15.8
+Different Selection Stategies
+Random 62.9 12.7 67.1 15.0
+PK 63.5 13.6 66.4 14.5
+All-in 61.9 13.2 67.1 17.0
+Table 4: Average commonsense constraint pass rate
+(Com. ) and hard constraint pass rate ( Hard ) of ablated
+variants on TravelPlanner.
+specialized agents to collaborate with the initial
+agent. Results in Table 3 show that:
+1.Although existing paradigms (e.g., Self-Refine
+and SPP) have demonstrated decent results in
+some conventional NLP tasks, they still lack
+capability in handling complex planning tasks.
+These results also demonstrate that only using
+human-design prompting strategies is insuffi-
+cient to handle complex planning tasks.
+2.EVOAGENT can automatically generate multi-
+ple agents, such as those focused on culinary
+experiences and transportation, and forming a
+multi-agent collaboration paradigm. Therefore,
+the generated travel plans are more aligned with
+user preferences and commonsense rules.
+3.By using EVOAGENT to automatically gener-
+ate multiple agents and forming a multi-agent
+collaboration paradigm, we can develop higher-
+quality plans that better meet user preferences.
+That also indicates the significance of multi-
+agent systems for complex planning tasks.
+4.4 Ablation Studies
+To better understand the value of EVOAGENT , we
+conduct detailed analyses on TravelPlanner, focus-
+ing on the impact of population size and iteration
+number and the effectiveness of the quality-check
+module in the selection stage.
+Experiment Settings We evaluate the perfor-
+mance of different LLMs at varying population
+sizes N and iteration number T. For each query,EVOAGENT can generate N ×T different special-
+ized agents to collaborate with the initial agent. We
+employ an LLM that shares the same backbone
+as the initial agent for updates. To select results
+from candidates for this LLM to update, we adopt
+three different selection strategies: 1) Random : one
+result is selected randomly from the pool of can-
+didates; 2) PK: we ask an agent with the same
+backbone as the initial agent to identify the opti-
+mal results from the pool of candidates; 3) All-in :
+Rather than selecting a single result, we update
+using all candidates.
+Moreover, we also attempt Suggest 3, Overgen 3
+and PromptRefine 3as variants to prove the effec-
+tiveness of our method. For Suggest 3, instead
+of generating new results, we ask new generated
+agents to only give suggestions for initial agents
+to revise their results. For Overgen 3, we first ask
+initial agents to generate 3 different results at one
+time, and then these agents can output the final
+results based on these multiple candidates. For
+PromptRefine 3, instead of generating agents, we
+ask the initial agent to refine its prompts three times
+to better answer the query.5
+Result & Analysis To obtain stable findings,
+we first obtain results from GPT-3.5 and Gemini-
+Pro across different population sizes and selection
+strategies. We then average their results over var-
+ious metrics to clearly compare the strengths and
+weaknesses of these variants.
+The results are shown in Table 4.6We find that
+EVOAGENT significantly outperforms the Overgen,
+demonstrating the effectiveness of generating spe-
+cialized agents to assist with complex planning. Al-
+though obtaining suggestions from new generated
+agents can improve the performance on common-
+sense constraints, these methods greatly harm the
+agents to meet the user preference. Modifying the
+prompt can improve the performance of agents, yet
+it remains less effective than E VOAGENT .
+When the population size exceeds one (N >1),
+agents may generate similar agents. Thus, lack-
+ing a quality-check module leads to reduced travel
+plan quality. Furthermore, when population size
+and iter
+
+=== PAGE 9 ===
+sistent with the findings in Table 3. We hypothesize
+that this variability stems from the initial agent’s
+bias in adjusting its outputs based on the results
+generated by new agents, notably prioritizing user
+preferences over commonsense rules. Future work
+can explore and alleviate this bias.
+Remarkably, the PK strategy initially yields su-
+perior results without the quality-check module,
+but this trend reverses once quality checks are im-
+plemented. We speculate that, without the quality-
+check module, PK partially fulfills this role, aiding
+in selecting better candidates. However, with the
+quality-check module, PK introduces bias by fa-
+voring specific fields of expertise while neglecting
+others, resulting in a less effective than random
+strategy. Meanwhile, the All-in strategy performs
+optimally when a quality-check module is included.
+Future research can leverage long-context LLMs
+to expand more agents with EVOAGENT to better
+solve complex real-world tasks.
+5 Conclusion
+In this paper, we propose EVOAGENT , an auto-
+matic multi-agent generation system by leveraging
+evolutionary algorithms. EVOAGENT is suitable
+to any existing agent framework and extends it
+to multi-agent systems with diverse and effective
+agents by using a series of evolutionary operations,
+including mutation, crossover, and selection. Ex-
+periments on multiple tasks show that EVOAGENT
+can significantly improve the capabilities of LLM-
+based agents in solving complex tasks.
+Limitations
+First, EVOAGENT requires the model to generate
+multiple specialized agents, which brings more to-
+ken cost than a single agent. Besides, except for
+AgentVerse and AutoAgents in Table 1, we do not
+conduct extensive comparisons with existing multi-
+agent systems frameworks. This is because these
+frameworks require additional design efforts, and
+designing a suitable framework for each bench-
+mark used in our experiment is beyond the scope
+of this paper. Finally, we do not manually evalu-
+ate the quality of the generated agents, but the re-
+sults show that EVOAGENT significantly improves
+the performance of LLM-based agent on complex
+tasks.Ethics Statement
+We acknowledge that all authors are informed
+about and adhere to the ACL ARR Code of Ethics
+and the Code of Conduct.
+Risks The benchmarks in our experiment are
+sourced from publicly available sources. However,
+we cannot guarantee that they are devoid of socially
+harmful or toxic language. We use ChatGPT (Ope-
+nAI, 2022) to correct grammatical errors in this
+paper.
+Acknowledgement
+We thank the anonymous reviewers for their valu-
+able comments. This work is partially sup-
+ported by the Chinese NSF Major Research Plan
+(No.92270121).
+References
+Anthropic. 2024. The claude 3 model family: Opus,
+sonnet, haiku.
+Thomas Bäck and Hans-Paul Schwefel. 1993. An
+overview of evolutionary algorithms for parameter
+optimization. Evol. Comput. , 1(1):1–23.
+Thomas Bartz-Beielstein, Jürgen Branke, Jörn Mehnen,
+and Olaf Mersmann. 2014. Evolutionary algorithms.
+Wiley Interdisciplinary Reviews: Data Mining and
+Knowledge Discovery , 4(3):178–195.
+Angelica Chen, David Dohan, and David R. So. 2023a.
+Evoprompting: Language models for code-level neu-
+ral architecture search. In Advances in Neural In-
+formation Processing Systems 36: Annual Confer-
+ence on Neural Information Processing Systems 2023,
+NeurIPS 2023, New Orleans, LA, USA, December 10
+- 16, 2023 .
+Guangyao Chen, Siwei Dong, Yu Shu, Ge Zhang,
+Jaward Sesay, Börje F Karlsson, Jie Fu, and Yemin
+Shi. 2023b. Autoagents: A framework for automatic
+agent generation. arXiv preprint arXiv:2309.17288 .
+Jiangjie Chen, Xintao Wang, Rui Xu, Siyu Yuan, Yikai
+Zhang, Wei Shi, Jian Xie, Shuang Li, Ruihan Yang,
+Tinghui Zhu, et al. 2024a. From persona to person-
+alization: A survey on role-playing language agents.
+arXiv preprint arXiv:2404.18231 .
+Jiangjie Chen, Siyu Yuan, Rong Ye, Bodhisattwa Prasad
+Majumder, and Kyle Richardson. 2023c. Put your
+money where your mouth is: Evaluating strategic
+planning and execution o
+
+=== PAGE 10 ===
+Ruobing Xie, Zhiyuan Liu, Maosong Sun, and Jie
+Zhou. 2024b. Agentverse: Facilitating multi-agent
+collaboration and exploring emergent behaviors. In
+The Twelfth International Conference on Learning
+Representations .
+Ameet Deshpande, Vishvak Murahari, Tanmay Rajpuro-
+hit, Ashwin Kalyan, and Karthik Narasimhan. 2023.
+Toxicity in chatgpt: Analyzing persona-assigned lan-
+guage models. In Findings of the Association for
+Computational Linguistics: EMNLP 2023 , pages
+1236–1270, Singapore. Association for Computa-
+tional Linguistics.
+Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey,
+Abhishek Kadian, Ahmad Al-Dahle, Aiesha Letman,
+Akhil Mathur, Alan Schelten, Amy Yang, Angela
+Fan, et al. 2024. The llama 3 herd of models. arXiv
+preprint arXiv:2407.21783 .
+Agoston E Eiben, James E Smith, AE Eiben, and
+JE Smith. 2015. What is an evolutionary algorithm?
+Introduction to evolutionary computing , pages 25–
+48.
+Significant Gravitas. 2023. Auto-gpt: An au-
+tonomous gpt-4 experiment. https://github.com/
+Significant-Gravitas/Auto-GPT .
+Qingyan Guo, Rui Wang, Junliang Guo, Bei Li, Kaitao
+Song, Xu Tan, Guoqing Liu, Jiang Bian, and Yu-
+jiu Yang. 2023. Connecting large language models
+with evolutionary algorithms yields powerful prompt
+optimizers. CoRR , abs/2309.08532.
+Zhitao He, Pengfei Cao, Yubo Chen, Kang Liu,
+Ruopeng Li, Mengshu Sun, and Jun Zhao. 2023.
+LEGO: A multi-agent collaborative framework with
+role-playing and iterative feedback for causality ex-
+planation generation. In Findings of the Associa-
+tion for Computational Linguistics: EMNLP 2023 ,
+pages 9142–9163, Singapore. Association for Com-
+putational Linguistics.
+John H Holland. 1992. Adaptation in natural and artifi-
+cial systems: an introductory analysis with applica-
+tions to biology, control, and artificial intelligence .
+MIT press.
+Sirui Hong, Mingchen Zhuge, Jonathan Chen, Xiawu
+Zheng, Yuheng Cheng, Jinlin Wang, Ceyao Zhang,
+Zili Wang, Steven Ka Shing Yau, Zijuan Lin, Liyang
+Zhou, Chenyu Ran, Lingfeng Xiao, Chenglin Wu,
+and Jürgen Schmidhuber. 2024. MetaGPT: Meta pro-
+gramming for a multi-agent collaborative framework.
+InThe Twelfth International Conference on Learning
+Representations .
+Albert Q. Jiang, Alexandre Sablayrolles, Arthur Men-
+sch, Chris Bamford, Devendra Singh Chaplot, Diego
+de las Casas, Florian Bressand, Gianna Lengyel, Guil-
+laume Lample, Lucile Saulnier, Lélio Renard Lavaud,
+Marie-Anne Lachaux, Pierre Stock, Teven Le Scao,
+Thibaut Lavril, Thomas Wang, Timothée Lacroix,
+and William El Sayed. 2023. Mistral 7b.Guohao Li, Hasan Abed Al Kader Hammoud, Hani
+Itani, Dmitrii Khizbullin, and Bernard Ghanem.
+2023a. CAMEL: Communicative agents for ”mind”
+exploration of large language model society. In
+Thirty-seventh Conference on Neural Information
+Processing Systems .
+Yuan Li, Yixuan Zhang, and Lichao Sun. 2023b. Metaa-
+gents: Simulating interactions of human behav-
+iors for llm-based task-oriented coordination via
+collaborative generative agents. arXiv preprint
+arXiv:2310.06500 .
+Bill Yuchen Lin, Yicheng Fu, Karina Yang, Faeze Brah-
+man, Shiyu Huang, Chandra Bhagavatula, Prithviraj
+Ammanabrolu, Yejin Choi, and Xiang Ren. 2023.
+Swiftsage: A generative agent with fast and slow
+thinking for complex interactive tasks. In Thirty-
+seventh Conference on Neural Information Process-
+ing Systems .
+Aman Madaan, Niket Tandon, Prakhar Gupta, Skyler
+Hallinan, Luyu Gao, Sarah Wiegreffe, Uri Alon,
+Nouha Dziri, Shrimai Prabhumoye, Yiming Yang,
+Shashank Gupta, Bodhisattwa Prasad Majumder,
+Katherine Hermann, Sean Welleck, Amir Yazdan-
+bakhsh, and Peter Clark. 2023. Self-refine: Itera-
+tive refinement with self-feedback. In Thirty-seventh
+Conference on Neural Information Processing Sys-
+tems.
+Seyedali Mirjalili, Jin Song Dong, Ali Safa Sadiq, and
+Hossam Faris. 2020. Genetic algorithm: Theory, lit-
+erature review, and application in image reconstruc-
+tion. Nature-inspired optimizers: Theories, literature
+reviews and applications , pages 69–85.
+Melanie Mitchell. 1998. An introduction to genetic
+a
+
+=== PAGE 11 ===
+Chen Qian, Xin Cong, Cheng Yang, Weize Chen,
+Yusheng Su, Juyuan Xu, Zhiyuan Liu, and Maosong
+Sun. 2023. Communicative agents for software de-
+velopment. arXiv preprint arXiv:2307.07924 .
+Jeffrey R Sampson. 1976. Adaptation in natural and
+artificial systems (john h. holland).
+Timo Schick, Jane Dwivedi-Yu, Roberto Dessì, Roberta
+Raileanu, Maria Lomeli, Luke Zettlemoyer, Nicola
+Cancedda, and Thomas Scialom. 2023. Toolformer:
+Language models can teach themselves to use tools.
+CoRR , abs/2302.04761.
+Lothar M Schmitt. 2001. Theory of genetic algorithms.
+Theoretical Computer Science , 259(1-2):1–61.
+Yongliang Shen, Kaitao Song, Xu Tan, Dongsheng Li,
+Weiming Lu, and Yueting Zhuang. 2023a. Hugging-
+gpt: Solving AI tasks with chatgpt and its friends in
+huggingface. CoRR , abs/2303.17580.
+Yongliang Shen, Kaitao Song, Xu Tan, Wenqi Zhang,
+Kan Ren, Siyu Yuan, Weiming Lu, Dongsheng Li,
+and Yueting Zhuang. 2023b. Taskbench: Benchmark-
+ing large language models for task automation. arXiv
+preprint arXiv:2311.18760 .
+Noah Shinn, Beck Labash, and Ashwin Gopinath.
+2023. Reflexion: an autonomous agent with dy-
+namic memory and self-reflection. arXiv preprint
+arXiv:2303.11366 .
+Gemini Team. 2023. Gemini: A family of highly capa-
+ble multimodal models.
+Hugo Touvron, Louis Martin, Kevin Stone, Peter Al-
+bert, Amjad Almahairi, Yasmine Babaei, Nikolay
+Bashlykov, Soumya Batra, Prajjwal Bhargava, Shruti
+Bhosale, Dan Bikel, Lukas Blecher, Cristian Canton
+Ferrer, Moya Chen, Guillem Cucurull, David Esiobu,
+Jude Fernandes, Jeremy Fu, Wenyin Fu, Brian Fuller,
+Cynthia Gao, Vedanuj Goswami, Naman Goyal, An-
+thony Hartshorn, Saghar Hosseini, Rui Hou, Hakan
+Inan, Marcin Kardas, Viktor Kerkez, Madian Khabsa,
+Isabel Kloumann, Artem Korenev, Punit Singh Koura,
+Marie-Anne Lachaux, Thibaut Lavril, Jenya Lee, Di-
+ana Liskovich, Yinghai Lu, Yuning Mao, Xavier Mar-
+tinet, Todor Mihaylov, Pushkar Mishra, Igor Moly-
+bog, Yixin Nie, Andrew Poulton, Jeremy Reizen-
+stein, Rashi Rungta, Kalyan Saladi, Alan Schelten,
+Ruan Silva, Eric Michael Smith, Ranjan Subrama-
+nian, Xiaoqing Ellen Tan, Binh Tang, Ross Tay-
+lor, Adina Williams, Jian Xiang Kuan, Puxin Xu,
+Zheng Yan, Iliyan Zarov, Yuchen Zhang, Angela Fan,
+Melanie Kambadur, Sharan Narang, Aurelien Ro-
+driguez, Robert Stojnic, Sergey Edunov, and Thomas
+Scialom. 2023. Llama 2: Open foundation and fine-
+tuned chat models. CoRR , abs/2307.09288.
+Ruoyao Wang, Peter Jansen, Marc-Alexandre Côté, and
+Prithviraj Ammanabrolu. 2022. ScienceWorld: Is
+your agent smarter than a 5th grader? In Proceedings
+of the 2022 Conference on Empirical Methods in
+Natural Language Processing , pages 11279–11298,Abu Dhabi, United Arab Emirates. Association for
+Computational Linguistics.
+Xintao Wang, Yunze Xiao, Jen tse Huang, Siyu Yuan,
+Rui Xu, Haoran Guo, Quan Tu, Yaying Fei, Ziang
+Leng, Wei Wang, Jiangjie Chen, Cheng Li, and
+Yanghua Xiao. 2024. Incharacter: Evaluating per-
+sonality fidelity in role-playing agents through psy-
+chological interviews.
+Zhenhailong Wang, Shaoguang Mao, Wenshan Wu,
+Tao Ge, Furu Wei, and Heng Ji. 2023. Unleash-
+ing cognitive synergy in large language models:
+A task-solving agent through multi-persona self-
+collaboration. arXiv preprint arXiv:2307.05300 .
+Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten
+Bosma, brian ichter, Fei Xia, Ed H. Chi, Quoc V Le,
+and Denny Zhou. 2022a. Chain of thought prompt-
+ing elicits reasoning in large language models. In
+Advances in Neural Information Processing Systems .
+Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten
+Bosma, Brian Ichter, Fei Xia, Ed H. Chi, Quoc V . Le,
+and Denny Zhou. 2022b. Chain-of-thought prompt-
+ing elicits reasoning in large language models. In
+NeurIPS .
+Jason Weston, Sumit Chopra, and Antoine Bordes. 2015.
+Memory networks. In 3rd International Conference
+on Learning Representations, ICLR 2015, San Diego,
+CA, USA, May 7-9, 2015, Conference Track Proceed-
+ings.
+Qingyun Wu, Gagan Bansal, Jieyu Zhang, Yiran Wu,
+Shaokun Zhang, Erkang Zhu, Beibin Li, Li Jiang,
+Xiaoyun Zhang, a
+
+=== PAGE 12 ===
+Siyu Yuan, Jiangjie Chen, Ziquan Fu, Xuyang Ge, So-
+ham Shah, Charles Robert Jankowski, Yanghua Xiao,
+and Deqing Yang. 2023. Distilling script knowledge
+from large language models for constrained language
+planning. arXiv preprint arXiv:2305.05252 .
+Siyu Yuan, Kaitao Song, Jiangjie Chen, Xu Tan,
+Yongliang Shen, Ren Kan, Dongsheng Li, and De-
+qing Yang. 2024. Easytool: Enhancing llm-based
+agents with concise tool instruction. arXiv preprint
+arXiv:2401.06201 .
+Xiang Yue, Yuansheng Ni, Kai Zhang, Tianyu Zheng,
+Ruoqi Liu, Ge Zhang, Samuel Stevens, Dongfu Jiang,
+Weiming Ren, Yuxuan Sun, et al. 2023. Mmmu:
+A massive multi-discipline multimodal understand-
+ing and reasoning benchmark for expert agi. arXiv
+preprint arXiv:2311.16502 .
+Yikai Zhang, Siyu Yuan, Caiyu Hu, Kyle Richard-
+son, Yanghua Xiao, and Jiangjie Chen. 2024.
+Timearena: Shaping efficient multitasking language
+agents in a time-aware simulation. arXiv preprint
+arXiv:2402.05733 .
+
+=== PAGE 13 ===
+A Experiment Settings
+A.1 Prompt for Baselines and E VOAGENT
+Listing 1 and 2 shows the full prompt for 0-shot
+learning (Direct), Chain-of-thought (CoT) prompt-
+ing (Wei et al., 2022a) and Self-Refine (Madaan
+et al., 2023) and Solo Performance Prompting, i.e.,
+SPP (Wang et al., 2023). Listing 3 and 4 show
+the prompt of EVOAGENT and different ablation
+settings.
+A.2 Model Selection
+For OpenAI models, we use gpt-35-turbo
+and gpt-4-32k with the version of
+2024-02-15-preview in Azure.7For Gemini-pro,
+we use Google Gemini-Pro APIs to obtain results.
+We set the temperature to 0 for all models.
+A.3 Human-designed Agent Framework
+AgentVerse (Chen et al., 2024b) and AutoA-
+gent (Chen et al., 2023b) are frameworks designed
+to generate an unlimited number of agents for col-
+laborative tasks automatically. Despite this automa-
+tion, they still rely on human-designed interven-
+tions. AutoAgents requires agent settings to sat-
+isfy a “Planner - Agent Observer - Plan Observer”
+framework, while AgentVerse formulates a pipeline
+of “Expert Recruitment - Collaborative Decision
+Making - Action Execution - Evaluation” to build
+agents. We argue that these human-designed archi-
+tectures limit their scalability and functionality. We
+follow their experimental settings and compared
+them with our method.
+A.4 Experimental Details of ScienceWorld
+Following (Lin et al., 2023), we adopt the RE-
+ACT (Yao et al., 2023) method for each LLM,
+which introduces a virtual ’think’ action. This ac-
+tion allows LLMs to generate subgoals during the
+action planning process.
+A.5 Evaluation Details of TravelPlanner
+Grounding to travel planning, a real-world use-
+case that inherently involves various constraints
+like user preferences and commonsense rules, Trav-
+elPlanner evaluates whether agents can formulate
+flexible travel plans using gathered information to
+meet these constraints. We test EVOAGENT and
+all baselines on the TravelPlanner validation set,
+7https://azure.microsoft.com/en-us/products/
+ai-services/openai-servicewhich consists of 180 user queries with the col-
+lected information. To evaluate the travel plans
+generated by agents, TravelPlanner adopts the fol-
+lowing evaluation metrics:
+•Delivery Rate: Assesses if agents can complete a
+plan within a limited number of steps (30 in our
+experimental setting). Failures are due to dead
+loops, numerous failed attempts, or exceeding
+the step limit.
+•Commonsense Constraint Pass Rate: Evaluates if
+an agent can incorporate commonsense into their
+plan.
+•Hard Constraint Pass Rate: Measures if a plan
+meets all explicit hard constraints in the query,
+testing the agent’s ability to adapt to diverse user
+preferences.
+•Final Pass Rate: Indicates the proportion of vi-
+able plans that meet all criteria, reflecting the
+agent’s proficiency in creating practical plans.
+Furthermore, TravelPlanner uses micro and
+macro strategies to assess the Commonsense and
+Hard Constraint Pass Rates. The micro strategy cal-
+culates the ratio of met constraints to the total. The
+macro strategy measures the proportion of plans
+that meet all commonsense or hard constraints. To-
+gether, these strategies assess an agent’s ability to
+satisfy individual constraints and all constraints
+comprehensively.
+B More Analysis of E VOAGENT
+B.1 Time Efficiency of E VOAGENT
+We conduct experiments on Logic Grid Puzzle
+(Logic), Trivia Creative Writing (Writing), and Co-
+denames Collaborative (Code) by using Llama-3.1-
+70B-Instruct (Dubey et al., 2024) with SGLang8.
+SGLang is a fast-serving framework that allows
+us to track the time and computational resources
+required for model improvements. Specifically,
+we deploy Llama-3.1-70B-Instruct on an 8-GPU
+setup using RTX 3090 (bf16). We compare EVOA-
+GENT with a single-agent approach and other multi-
+agent systems. The results are presented in Ta-
+ble 5. Our findings show that, compared to a single-
+agent system, EVOAGENT requires more time but
+delivers better performance. When compared to
+multi-agent systems such as AgentVerse 
+
+=== PAGE 14 ===
+Method Logic Logic Time (s) Writing Writing Time (s)Code Code Time (s)
+Direct 50.00 318.00 56.40 441.00 64.32 168.00
+CoT 53.00 443.40 63.20 628.80 62.74 225.00
+SPP 55.50 648.00 58.00 822.00 59.26 445.20
+Self-Refine 53.00 942.00 60.80 1098.00 59.26 628.20
+AgentVerse 60.00 1056.00 70.40 1518.00 68.90 824.40
+AutoAgents 61.50 988.80 69.60 1303.80 68.35 770.40
+EvoAgent 67.00 1060.80 74.50 1209.60 74.62 859.20
+Table 5: Time cost of different methods for Llama-3.1-70B-Instruct.
+while producing the best performance. These re-
+sults highlight the effectiveness and versatility of
+EVOAGENT .
+B.2 More Analysis of Ablation Studies
+The complete results of ablation studies on Trav-
+elPlanner are shown in Table 6. This result indi-
+cates that the absence of the quality-check module
+significantly lowers the delivery pass rate when
+the All-in strategy is applied. To explore the rea-
+sons, we revisit the results and discover that some-
+times unsuitable agents create overly lengthy travel
+plans that fail to meet the criteria. For example,
+the model might erroneously assign a nutrition-
+ist to devise travel plans, resulting in excessively
+detailed meal arrangements and nutritional break-
+downs. Therefore, the input length surpasses the
+context window of LLMs, preventing the final re-
+sult generation.
+Moreover, we also conduct experiments on the
+Trivia Creative Writing task to investigate the im-
+pact of the number of iterations on model perfor-
+mance in traditional NLP tasks. As shown in Fig-
+ure 7, model performance improves with increas-
+ing iterations. However, the improvement plateaus
+when the iteration count exceeds three. We sug-
+gest that traditional NLP tasks are relatively sim-
+ple, and beyond a certain iteration number, even
+with a quality-check module in place, the generated
+agents tend to be similar and thus converge.
+C Examples of E VOAGENT
+C.1 E VOAGENT Examples of NLP reasoning
+and knowledge tasks
+Listing 5, 6 and7 presents some multi-agent gener-
+ation examples generated by GPT-4 based EVOA-
+GENT in Logic Grid Puzzle, Trivia Creative Writing
+and Codenames Collaborative for a better under-
+standing.C.2 E VOAGENT Examples of MMMU
+Listing 8 presents some multi-agent generation ex-
+amples generated by GPT-4 based EVOAGENT in
+MMMU dataset for a better understanding.
+C.3 E VOAGENT Examples of ScienceWorld
+Listing 9 presents some multi-agent generation ex-
+amples generated by GPT-4 based EVOAGENT in
+ScienceWorld for a better understanding.
+C.4 E VOAGENT Examples of TravelPlanner
+Listing 10 presents some multi-agent generation
+examples generated by GPT-4 based EVOAGENT
+in TravelPlanner for a better understanding.
+DExamples of EVOAGENT ’s Adaption to
+Multi-agent Collaboration
+Frameworks
+Previous experiments have demonstrated that our
+method can automatically extend existing agent
+frameworks to multi-agent systems, thus greatly
+improving LLM-based agents in various scenarios.
+We also attempt to extend our work to real-world
+multi-agent applications, to verify it can scale up
+the number of agents in building multi-agent sce-
+narios.
+D.1 E VOAGENT for MetaGPT
+MetaGPT (Hong et al., 2024) is a meta-
+programming framework that enhances LLM-
+based multi-agent collaborations by integrating ef-
+ficient human workflows. It employs an assembly
+line approach to assign diverse roles to agents, ef-
+fectively simplifying complex tasks into manage-
+able subtasks that multiple agents can execute col-
+laboratively. As shown in Figure 3, we choose the
+debate scenario used in MetaGPT, which includes
+two debaters with different opinions, leading to
+dull and repetitive content generation. Here, in-
+stead of manually assigning new roles, we applied
+EVOAGENT to extend each debate team to more
+
+=== PAGE 15 ===
+Model Strategy Methodw/o Quality Check w/ Quality Check
+Delivery Com. Hard Delivery Com. Hard
+GPT-3.5Direct - - - 100.0 57.3 11.0
+Suggest 3 - - - 100.0 57.5 5.7
+Overgen 3 - - - 98.3 56.3 9.0
+PromptRefine 3 - - - 100.0 61.2 11.0
+EVOAGENT (1,3) 100.0 64.2 11.0 100.0 64.2 11.0
+EVOAGENT (1,5) 100.0 61.0 12.6 100.0 61.0 12.6
+RandomEVOAGENT (2,3) 100.0 59.4 10.2 100.0 65.4 13.8
+EVOAGENT (3,3) 98.9 59.2 11.4 100.0 65.8 14.0
+PKEVOAGENT (2,3) 99.4 59.4 7.1 100.0 66.0 11.7
+EVOAGENT (3,3) 98.9 58.5 11.2 100.0 61.3 12.4
+All-inEVOAGENT (2,3) 97.2 59.4 10.0 100.0 64.2 15.5
+EVOAGENT (3,3) 93.3 56.0 8.3 100.0 65.2 12.6
+Gemini-ProDirect - - - 90.0 61.7 16.4
+Suggest 3 - - - 100.0 65.8 11.0
+Overgen 3 - - - 100.0 66.5 12.4
+PromptRefine 3 - - - 96.7 64.9 16.7
+EVOAGENT (1,3) 100.0 73.5 16.9 100.0 73.5 16.9
+EVOAGENT (1,5) 100.0 74.0 21.2 100.0 74.0 21.2
+RandomEVOAGENT (2,3) 96.7 65.9 13.1 99.4 67.3 14.0
+EVOAGENT (3,3) 97.2 67.0 16.0 100.0 70.0 18.1
+PKEVOAGENT (2,3) 97.2 67.4 19.0 99.4 69.8 17.1
+EVOAGENT (3,3) 97.2 68.5 17.1 99.4 68.4 16.7
+All-inEVOAGENT (2,3) 95.0 65.1 16.7 99.4 69.0 19.0
+EVOAGENT (3,3) 95.0 66.9 17.9 100.0 70.1 20.7
+Table 6: Comparison of different popularity selection strategies for LLMs on TravelPlanner. The best results are
+bolded , and the second best ones are underlined.
+/uni00000013/uni00000014 /uni00000016 /uni00000018 /uni0000001a
+/uni0000002c/uni00000057/uni00000048/uni00000055/uni00000044/uni00000057/uni0000004c/uni00000052/uni00000051/uni00000018/uni00000019/uni00000018/uni0000001b/uni00000019/uni00000013/uni00000019/uni00000015/uni00000024/uni00000051/uni00000056/uni0000005a/uni00000048/uni00000055/uni00000003/uni00000035/uni00000044/uni00000057/uni0000004c/uni00000052/uni00000003/uni0000000b/uni00000008/uni0000000c
+Table 7: The performance of GPT-3.5 with EVOAGENT
+under different iterations on Trivia Creative Writing
+task.
+agents with diverse settings, increasing the variety
+of opinions and the quality of the debate.
+D.2 E VOAGENT for Camel
+Camel (Li et al., 2023a) is recognized for its frame-
+work that supports communicative role-playing
+agents. Initially, humans establish this framework
+by conceptualizing an idea and designing specific
+roles, such as the AI assistant role and the AI user
+role. These roles are then assigned to the assistantand user agents, respectively, enabling them to ful-
+fill the task. As illustrated in Figure 4, EVOAGENT
+can be utilized to automatically produce agents
+from AI assistants for interaction with AI users,
+bypassing the need for manual role design.
+D.3 E VOAGENT for AutoGen
+AutoGen (Wu et al., 2023) offers a framework
+that enables the creation of customizable and con-
+versable agents by integrating various LLMs. Ini-
+tially, humans configure the assistant agents along
+with a user proxy agent. Then, a group chat man-
+ager is responsible for selecting a speaker, gather-
+ing responses, and disseminating the message. As
+depicted in Figure 4, EVOAGENT facilitates the
+creation of multiple expert roles from a single as-
+sistant agent, thereby increasing the agent number
+in group chats without the need for manual design.
+

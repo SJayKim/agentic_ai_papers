@@ -1,0 +1,814 @@
+=== PAGE 1 ===
+Published as a conference paper at ICLR 2025
+THINK -ON-GRAPH 2.0: D EEP AND FAITHFUL LARGE
+LANGUAGE MODEL REASONING WITH KNOWLEDGE -
+GUIDED RETRIEVAL AUGMENTED GENERATION
+Shengjie Ma1,2∗, Chengjin Xu1∗ †, Xuhui Jiang1∗, Muzhi Li3, Huaren Qu4,
+Cehao Yang1, Jiaxin Mao2†, Jian Guo1†
+1IDEA Research, International Digital Economy Academy, Shenzhen, Guangdong, China
+2Gaoling School of Artificial Intelligence, Renmin University of China, Beijing, China
+3The Chinese University of Hong Kong, Sha Tin, New Territories, Hong Kong, China
+4The Hong Kong University of Science and Technology, Guangzhou, Guangdong, China
+ABSTRACT
+Retrieval-augmented generation (RAG) has improved large language models
+(LLMs) by using knowledge retrieval to overcome knowledge deficiencies. How-
+ever, current RAG methods often fall short of ensuring the depth and complete-
+ness of retrieved information, which is necessary for complex reasoning tasks.
+In this work, we introduce Think-on-Graph 2.0 (ToG-2), a hybrid RAG frame-
+work that iteratively retrieves information from both unstructured and structured
+knowledge sources in a tight-coupling manner. Specifically, ToG-2 leverages
+knowledge graphs (KGs) to link documents via entities, facilitating deep and
+knowledge-guided context retrieval. Simultaneously, it utilizes documents as en-
+tity contexts to achieve precise and efficient graph retrieval. ToG-2 alternates
+between graph retrieval and context retrieval to search for in-depth clues rele-
+vant to the question, enabling LLMs to generate answers. We conduct a series
+of well-designed experiments to highlight the following advantages of ToG-2:
+1) ToG-2 tightly couples the processes of context retrieval and graph retrieval,
+deepening context retrieval via the KG while enabling reliable graph retrieval
+based on contexts; 2) it achieves deep and faithful reasoning in LLMs through
+an iterative knowledge retrieval process of collaboration between contexts and
+the KG; and 3) ToG-2 is training-free and plug-and-play compatible with vari-
+ous LLMs. Extensive experiments demonstrate that ToG-2 achieves overall state-
+of-the-art (SOTA) performance on 6 out of 7 knowledge-intensive datasets with
+GPT-3.5, and can elevate the performance of smaller models (e.g., LLAMA-2-
+13B) to the level of GPT-3.5’s direct reasoning. The source code is available on
+https://github.com/IDEA-FinAI/ToG-2 .
+1 I NTRODUCTION
+Retrieval-augmented generation (RAG) has significantly enhanced the capabilities of large language
+models (LLMs) by retrieving relevant knowledge from external sources, as a promising solution to
+address the knowledge deficiencies and hallucination issues (Zhao et al., 2024). Despite this poten-
+tial, and researchers’ attempts to incorporate various complex additional processes into RAG (Yu
+et al., 2023; Edge et al., 2024; Li et al., 2024c), LLMs still struggle to maintain human-like reason-
+ing trajectories (Kahneman, 2011) when handling complex tasks, which require continuous effort
+and motivation to integrate fragmented information and the structural relationships between them.
+Many recent implementations of RAG mainly rely on vector retrieval of textual content within doc-
+uments (Ding et al., 2024; Asai et al., 2023; Wang et al., 2023b). Although vector embedding is
+effective for measuring the semantic similarity between two texts, text-based RAG struggles to cap-
+ture the structured relationship between texts and documents (Chen et al., 2023). Specifically, simple
+∗Both authors contributed equally to this research.
+†Corresponding author
+1arXiv:2407.10805v7  [cs.CL]  10 Feb 2025
+
+=== PAGE 2 ===
+Published as a conference paper at ICLR 2025
+Figure 1: The illustration of differences among (a) text-based RAG, (b) KG-based RAG, (c)
+KG+Text (Loose-coupling) Hybrid RAG, and (d) our proposed KG ×Text (Tight-coupling) RAG
+framework.
+vector-based matching may overlook knowledge-level association between entities within different
+texts, e.g., Global Financial Crisis andThe 2008 Recession , which are two surface names that refer
+to the same event; Harry Potter andFantastic Beasts which are both written by J.K. Rowling . This
+limitation results in that most text-based RAG approaches are not suitable for multi-step reasoning or
+tracking logical links between different information fragments. As shown in Figure 1(a), the naive
+RAG, where generic retrievers search through large-scale corpora, the recall often focuses on the
+level of superficial semantic similarity (Edge et al., 2024), but overlooks the structured relationship
+between Craig Virgin andLukas Verzbicas , as well as texts containing one of them.
+Knowledge Graphs (KGs) organize the structural relationships between entities from fragmented
+information and store knowledge in the form of triples. Some researchers have explored KG-based
+RAG approaches (Sun et al., 2024), which prompt LLMs by retrieving KG triples relevant to the
+question. Although KGs are effective for structuring high-level concepts and relationships, they
+inherently suffer from inner incompleteness and a lack of information beyond their ontology Li et al.
+(2024a;b). As shown in Figure 1(b), the KG is unable to provide detailed information about Lukas
+Verzbicas ’s competition records. Some recent works focus on integrating text-based and KG-based
+RAG systems (Li et al., 2024c; Edge et al., 2024). In this approach, information retrieved from
+both structured and unstructured knowledge sources is aggregated to prompt the LLM to answer
+questions but does not improve the retrieval results on one knowledge source through the other.
+As shown in Figure 1(c), such loose-coupling combination (KG+Text) approaches still fall short
+in handling complex queries that require detailed information returned obtained through in-depth
+retrieval.
+Considering the aforementioned challenges, we propose Think- on-Graph 2.0(ToG- 2), a tight-
+coupling hybrid (KG ×Text) RAG paradigm which effectively integrates unstructured knowledge
+from texts with structured insights from KGs, serving as a roadmap to enhance complex problem-
+solving. As shown in Figure 1(d), ToG-2 first initializes the starting point for graph search by
+extracting topic entities from the question. At the beginning of each retrieval round, ToG-2 explores
+more candidate entities by performing relation retrieval on the KG and retrieves relevant text from
+documents associated with these candidate entities. Following knowledge-guided context retrieval,
+ToG-2 prunes the candidate entities based on the results of the context retrieval, updates the set of
+topic entities and uses it as the starting point for the next round of retrieval. After each retrieval
+round, ToG-2 prompts the LLM to answer the question based on the highly relevant knowledge
+triples and contexts obtained during the retrieval process. If the retrieved information is insufficient
+to answer the question, the next round of retrieval continues for searching more in-depth clues. Such
+a tight-coupling hybrid RAG paradigm makes LLM perform closer to human when solving complex
+2
+
+=== PAGE 3 ===
+Published as a conference paper at ICLR 2025
+problems: examining current clues and associating potential entities based on their existing knowl-
+edge framework, continuously digging into the topic until finding the answer.
+The advantage of ToG-2 can be summarized as: (1) In-depth retrieval: ToG-2 achieves in-depth
+and reliable context retrieval through the guide of KGs and performs precise graph retrieval by
+treating documents as node contexts, achieving a tight-coupling combination of KG and text RAG,
+enabling deep and comprehensive retrieval processes. (2) Faithful reasoning: ToG-2 iteratively
+performs a collaborative retrieval process based on KG and text, using retrieved heterogeneous
+knowledge as the basis for LLM reasoning and enhancing the faithfulness of LLM-generated con-
+tent (3) Efficiency and Effectiveness: a) ToG-2 is a training-free and plug-and-play framework that
+can be applied to various LLMs; b) ToG-2 can be executed between any associated KG and docu-
+ment database, while for purely document database, entities can be extracted from the documents
+first, and then a graph can be constructed through relation extraction or entity co-occurrence (Edge
+et al., 2024); c) ToG-2 achieves new SOTA performances on various complex knowledge reasoning
+datasets and can elevate the reasoning capabilities of smaller LLMs, e.g., Llama2-13B to a level
+comparable to direct reasoning with powerful LLMs like GPT-3.5.
+2 R ELATED WORKS
+RAG aims to offer effective utilization of external knowledge sources with high interpretability. An
+important factor is the type of data retrieved. In this section, we will briefly review text-based RAG,
+KG-based RAG and hybrid RAG.
+Text-based RAG approaches retrieve information based on the semantic similarities between ques-
+tions and texts (Gao et al., 2024; Qiu et al., 2024). However, these approaches have difficulties in
+capturing in-depth relationships between texts and the retrieved texts may contain redundant content.
+To address these challenges, ITER-RETGEN (Shao et al., 2023) follows an iterative strategy, merg-
+ing retrieval and generation in a loop, alternating between “retrieval-augmented generation” and
+“generation-augmented retrieval”. Trivedi et al. (2023) combined RAG with the Chain of Thought
+(CoT) (Wei et al., 2022a) method, alternating between CoT-guided retrieval and retrieval-supported
+CoT processes, significantly improving GPT-3’s performance on various Q&A tasks. While these
+optimizations enhance the recall of relevant texts, the whole retrieval process becomes more time-
+consuming and errors may accumulate over iterations, due to the lack of a reliable guide.
+The structured knowledge representation of KGs is particularly beneficial to LLMs because it intro-
+duces a level of interpretability and precision in the knowledge. Early approaches (Sun et al., 2020;
+Peters et al., 2019; Huang et al., 2024; Liu et al., 2020) focused on embedding knowledge from KGs
+directly into the neural networks of LLMs. To maximize the utilization of the interpretability of
+the KG, more recent studies (Jiang et al., 2024; Sun et al., 2024) have shifted towards using KGs to
+augment LLMs externally rather than embedding the knowledge directly into the models. KG-based
+RAG approaches involve translating relevant structured knowledge from KGs into textual prompts
+that are then fed to LLMs, however naturally suffer from the knowledge incompleteness of KGs.
+The most relevant works to ToG-2 are hybrid RAG approaches that aim to integrate both KGs and un-
+structured data with LLM, leveraging the strengths of both to mitigate their respective weaknesses.
+Chain-of-Knowledge (Li et al., 2024c) (CoK) is a hybrid RAG method that retrieves knowledge
+from Wikipedia, Wikidata and Wikitable to ground LLMs’ outputs. GraphRAG (Edge et al., 2024)
+establishes a KG from documents and enables KG-enhanced text retrieval. HybridRAG (Sarmah
+et al., 2024) retrieves information from both vector databases and KGs, achieving sup
+
+=== PAGE 4 ===
+Published as a conference paper at ICLR 2025
+Figure 2: An example illustrating the workflow of ToG- 2.
+tities and relationships with a prompt-driven inferential process. ToG-2 combines the logical chain
+extensions based on triples with unstructured contextual knowledge of relevant entities by iteratively
+performing knowledge-guided context retrieval and context-enhance graph retrieval, thus more ef-
+fectively integrating and utilizing heterogeneous external knowledge.
+Specifically, ToG-2 begins by extracting entities from the given question as initial topic entities.
+It then performs an iterative process of graph retrieval, context retrieval and LLM reasoning. At
+the start of each iteration, ToG-2 selectively explores entities neighboring the current topic entities
+on the KG, using the newly encountered entities to refine the retrieval scope, thereby enhancing
+both efficiency and accuracy. Next, ToG-2 ranks and selects entities based on the query and the
+contextual knowledge retrieved from relevant documents, reducing ambiguity and ensuring accurate
+exploration for the next step. After, the LLM utilizes heterogeneous knowledge, including triple
+paths and entity contexts, to either answer the question or proceed with further rounds of retrieval if
+the information gathered is insufficient. In this section, we will explain each step in detail.
+3.1 I NITIALIZTION
+Given a question q, ToG-2 first identifies the entities present in qand links them to entities in the
+KG. This step can be done by different entity linking (EL) methods, such as LLMs or specialized EL
+tools1. Then, ToG-2 performs a Topic Prune (TP) step to select suitable entities as starting points
+of exploring in a KG, which prompts the LLM to evaluate qand appearing entities, selecting topic
+entities E0
+topic={e1, e2, . . . , e N}andNis determined by LLM.
+Prior to the 1st-round graph retrieval, ToG-2 uses dense retrieval models (DRMs, including dual-
+tower and single-tower models) to extract the top- kchunks from the documents associated with
+the initial topic entities E0
+topic. The LLM then evaluates whether this information is sufficient to
+answer the question, drawing on its own knowledge. If it concludes that the available information is
+adequate, no further steps will be required.
+3.2 H YBRID KNOWLEDGE EXPLORATION
+The following will illustrate how ToG- 2iteratively harmonizes and tightly couples heterogeneous
+knowledge. The iterative process will be explained in two main parts, Context-enhanced Graph
+Search and Knowledge-guided Context Retrieval . Formally, in the i-th iteration, the topic
+entities are denoted as Ei
+topic ={ei
+1, ei
+2, . . . , ei
+j}and their preceding triple paths are Pi−1=
+{Pi−1
+1, Pi−1
+2, . . . , Pi−1
+j},Pi−1
+j={p0
+j, p1
+j, . . . , pi−1
+j}, where j∈[1, W],Wis a hyperparame-
+ter of exploration width (the max number of retained topic entities in each iteration, and pi−1
+jis a
+1We use entity linking API provided by Azure AI for Wikipedia, https://learn.microsoft.com/
+en-us/azure/ai-services/language-service/entity-linking/overview?source=
+recommendations
+4
+
+=== PAGE 5 ===
+Published as a conference paper at ICLR 2025
+single triple (ei−1
+j, ri−1
+j, ei
+j)containing ri−1
+jas the relation between ei−1
+jandei
+jin the KG, which
+could be either direction. Note that i= 0indicates the initialization phase and the P0is empty.
+3.2.1 K NOWLEDGE -GUIDED GRAPH SEARCH
+By leveraging the rich structural connectivity of knowledge on the KG, the graph search aims to
+explore and establish high-level concepts and relationships between the question and target infor-
+mation that are seemingly distant from each other in semantic space.
+Relation Discovery: At the beginning of the i-th iteration, through the function
+Edge(ei
+j) ={(ri
+j,m, hm)|h∈ {True,False}}, (1)
+we can find the relations for all topic entities. Edge ()is a function that searches for relationships of
+entities. hindicates whether the direction of that relation ri
+j,mis pointing to the topic entity ei
+j.
+Relation Prune (RP): From the collected relation set {Edge (ei
+j)}W
+j=1, We prompt the LLM to
+select and score the relations that are likely to find entities containing helpful context information
+for solving q. We design two prompting manners:
+PROMPT RP(ei
+j, q, Edge (ei
+j)), (2)
+PROMPT RPcmb(Ei
+topic, q,{Edge (ei
+j)}W
+j=1). (3)
+The detailed prompt is shown in Appendix E Table 15, 16 and 17. The relations with low scores
+will be pruned. Equation 2 involves multiple calls to the LLM for entity pruning on each topic
+entity individually, while Equation 3 processes the relation selection for all topic entities in a single
+operation. Equation 2 simplifies the task for the LLM, but it is less efficient. Equation 3 reduces
+the number of API calls, thereby enhancing inference speed, and allowing the LLM to consider
+the interconnections between multiple reasoning paths simultaneously, facilitating selections from a
+broader perspective. However, when all topic entities recall an excessive number of relations, this
+may challenge the capacity of a weak LLM to effectively handle long texts. The selected relations
+for all topic entities in the i-th iteration are denoted as Ri={ri
+j,m}(j∈[1, W]). In the case of
+Figure 2, the topic entity e0
+1=Crag Virgin and its relation r0
+1,1=place ofbirth is pruned since it
+may lead to a location that is unlikely to be relevant to a runner’s performance.
+Entity Discovery: Given a topic entity ei
+jinEi
+topic and its corresponding selected relations ri
+j,min
+Ri, function
+Tail(ei
+j,(ri
+j,m, hm)) =ci
+j,m) (4)
+identifies the connected entities {ci
+j,m}of the topic entities ei
+jthrough the relation (ri
+j,m, hm). In
+the case of Figure 2, Crag Sandburg High Shool ,Evan Jager are the connected entities of Crag
+Sandburg High Shool after entity discovery. A context-based entity prune step will be executed
+later to select top- Wentities from all the connected entities as new topic entities Ei+1
+topic, thereby
+completing the entire graph retrieval step.
+3.2.2 K NOWLEDGE -GUIDED CONTEXT RETRIEVAL
+In this step, ToG- 2digs granular information following high-level knowledge guidance provided
+by the KG. Once we get all candidate entities by Function 4, we collect the documents relevant to
+each candidate entity ci
+j,m, forming a context pool of candidate entities for the current iteration. In
+the case of Figure 2, the context pool of the first iteration contains documents relevant to candidate
+entities including Crag Sandburg High School ,Evan Jager ,Lebanon High School ,1984 Summer
+Olympics and so on.
+Entity-guided Context Retrieval: In order to find useful information within the document con-
+text of candidate entities, we apply DRMs to calculate the relevance scores of paragraphs. Rather
+than directly calculating relevance scores between a context and the question—thereby neglecting
+the relationship between each context and its corresponding entity—we translate the current triple
+Pci
+j,m= (ei
+j, ri
+j,m)of candidate entity ci
+j,minto a brief sentence and append it to the context pend-
+ing score calculation. Formally, we formulate the relevance scor
+
+=== PAGE 6 ===
+Published as a conference paper at ICLR 2025
+Then the top- Kscored chunks Ctxiwill be chosen as references for the reasoning phase.
+Context-based Entity Prune: The selection of candidate entities is based on the rank scores of
+their context chunks. The ranking score of a candidate entity ci
+j,mis calculated as the exponentially
+decayed weighted sum of the scores of its chunks that rank in top- K(K denoted the Context Number
+for reasoning), which is formally formulated as:
+score(ci
+j,m) =KX
+k=1sk·wk·I(thek-th ranked chunk is from ci
+j,m), (6)
+where wk=e−α·k,skis the score of the k-th ranked chunk, Iis the indicator function that equals 1
+if the k-th chunk belongs to ei
+j,m, andKandαare hyperparameters. Candidate entities with top- W
+scores will be selected as the topic entities Ei+1
+topic in the next iteration. Candidate Entities with low
+relevance scores like Evan Jager in the Figure 2 are pruned.
+3.3 R EASONING WITH HYBRID KNOWLEDGE
+At the end of the i-th iteration, we prompt LLM with all knowledge found, including Cluesi−1,
+triple paths, top- Kentities and the corresponding context chunks, to evaluate if the given knowledge
+is sufficient to answer the question, where Cluesi−1is the retrieval feedback from the previous
+iteration, aiming to maintain useful knowledge in historical context. If LLM judges the provided
+knowledge is enough to answer the question, it directly outputs the answer. Otherwise, we prompt
+LLM to output helpful clues Cluesisummarized from existing knowledge and then reconstruct an
+optimized query based on accurate information until the maximum depth Dis reached. The process
+is formulated as:
+PROMPT rs(q,Pi, Ctxi, Cluesi−1) =Ans., if the knowledge is sufficient.
+Cluesi,otherwise.(7)
+The details of the prompts are shown in Appendix E Table 18 and 19.
+4 E XPERIMENTS
+4.1 D ATASETS AND METRICS
+We evaluated our method on different knowledge-intensive reasoning benchmark datasets, including
+two multi-hop KBQA datasets WebQSP (Yih et al., 2016) and QALD10-en (Usbeck et al., 2023), a
+multi-hop complex document QA dataset AdvHotpotQA (Ye & Durrett, 2022) which is a challeng-
+ing subset of HotpotQA (Yang et al., 2018), a slot filling dataset Zero-Shot RE(Petroni et al., 2021),
+and two fact verification dataset FEVER (Thorne et al., 2018) and Creak (Onoe et al., 2021). The
+evaluation metric for FEVER and Creak is Accuracy (Acc.), while the metric for other datasets is
+Exact Match (EM). Recall and F1 scores are not used since knowledge sources are not limited to
+document databases. Following previous work (Li et al., 2024c), full Wikipedia and Wikidata are
+used as unstructured and structured knowledge sources for all of these datasets. Compared to the
+distractor setting, this full Wiki setting makes the retrieval process more challenging and can better
+evaluate the effectiveness of various methods on knowledge reasoning tasks.
+Since Wikipedia is commonly used for training LLMs, a domain-specific QA dataset that has not
+been exposed during the pre-training processes of the LLMs is needed for better evaluating different
+LLM-based approaches. We collect thousands of 2023-year Chinese financial statements as a new
+corpus, and further build a KG and manually design 97 multi-hop questions based on the corpus. In
+this paper, we refer to this dataset as ToG-FinQA. Companies and other organizations are extracted
+as entities in the KG, with 7 types of relationships defined ( subsidiary company ,main business ,
+supplier ,sibling company ,bulk transaction ,subsidiary , and customer ). Financial statements are
+used as entity contexts. Please refer to Appendix C for detailed information of ToG-FinQA.
+4.2 B ASELINES
+We compare ToG-2 with both widely-used baselines and state-of-the-art methods to provide a more
+comprehensive overview: 1) LLM-only methods without external knowledge, including Direct Rea-
+6
+
+=== PAGE 7 ===
+Published as a conference paper at ICLR 2025
+Baseline Type MethodDatasets
+WebQSP AdvHotpotQA QALD-10-en FEVER Creak Zero-Shot RE
+(EM) (EM) (EM) (Acc.) (Acc.) (EM)
+LLM-onlyDirect 65.9% 23 .1% 42 .0% 51 .8% 89 .7% 27 .7%
+CoT 59.9% 30 .8% 42 .9% 57 .8% 90 .1% 28 .8%
+CoT-SC 61.1% 34 .4% 45 .3% 59 .9%†(56.2%‡)90.8% 45 .4%
+Text-based RAG Vanilla RAG 67.9% 23 .7% 42 .4% 53 .8% 89 .7% 29 .5%
+KG-based RAG ToG 76.2% 26 .3% 50 .2% 52 .7% 93.8% 88.0%
+Hybrid RAG CoK 77.6% 35 .4%‡(34.1%†) 47.1% 63.5%†(58.5%‡)90.4% 75 .5%
+Proposed ToG-2 81.1% 42.9% 54.1% 63.1†(59.7%‡)93.5% 91.0%
+Table 1: Performance comparison of different methods with GPT-3.5-turbo across various datasets.
+Note that the CoK model has 6-shot and 3-shot settings. We present the best performance of CoK
+under different shot settings for each dataset. For AdvHotpotQA and FEVER, we use the results
+reported in the original paper of CoK, where †represents the 3-shot setting and ‡represents the
+6-shot setting. Bold numbers represent the highest result under parallel settings.
+Model ToG- 2Vanilla RAG CoT ToG GraphRAG
+ToG-FinQA 34.0% 0 0 14 .0% 6 .2%
+Table 2: ToG-FinQA Results
+soning, Chain-of-Thought (Wei et al., 2022b), Self-Consistency (Wang et al., 2023a); 2) Vanilla
+RAG, indicating the text-based RAG method that directly retrieves from entity documents and an-
+swers the question; 3) KG-based RAG method: Think-on-Graph (Sun et al., 2024), a KG-based RAG
+method that searches useful KG triples for reasoning; 4) Chain-of-Knowledge (Li et al., 2024c), a
+hybrid RAG method retrieving knowledge from Wikipedia, Wikidata and Wikitable; 5) GraphRAG
+(Edge et al., 2024), a hybrid RAG method that first builds a KG from documents and enables KG-
+enhanced text retrieval. Notably, we only evaluate GraphRAG on ToG-FinQA due to its unaffordable
+computation cost during the indexing process on a large corpus. For a fair comparison, all baselines
+are used with GPT-3.5-turbo and evaluated under an unsupervised setting.
+4.3 I MPLEMENTATION DETAILS
+We mainly use GPT-3.5-turbo as the backbone LLM for a fair comparison to other baselines. To
+evaluate the effect of backbone LLMs on ToG-2’s performance, we conduct experiments with GPT-
+4o, Llama3-8B and Qwen2-7B. Consistent with the ToG settings, we set the temperature parameter
+to 0 for all generations. The width W= 3 and the maximum number of iterations (depth) is 3.
+During relation prune, we set a threshold of 0.2 to filter relations with low relevance scores and
+then select the top W. For context retrieval, we utilize the BGE-embedding model without any
+fine-tuning. In entity prune, we maintain 10 ( K= 10 ) top-scored sentences for calculating entity
+scores. In the reasoning stage, we employ a 2-shot demonstration for most of the datasets. Following
+CoK (Li et al., 2024c), we employ 3-shot and 6-shot demonstration for FEVER and make the LLM
+execute a self-consistency reasoning step first.
+4.4 M AINRESULTS
+The main results of several open-source datasets are shown in Table 1. We note that ToG- 2out-
+performs other baselines on WebQSP, AdvHotpotQA, QALD-10-en, and Zero-Shot RE. Notably,
+WebQSP, AdvHotpotQA and QALD-10-en are multi-hop reasoning datasets. On Fever, ToG- 2has
+a competitive performance to CoK since the fact statements in Fever mainly are about single-hop
+relations and thus do not need in-depth information retrieval. In another fact verification dataset
+Creak, all fact statements can be verified based on Wikidata. Thus, ToG- 2and ToG have similar per-
+formances on Creak. Meanwhile, compared to original ToG, ToG- 2achieved a substantial improve-
+ment on AdvHotpotQA (16.6%) and also demonstrated notable enhancements on other datasets
+(4.93% on WebQSP, 3.85% on QALD-10-en, 3% on Zero-Shot RE, and 10.4% on FEVER). This
+demonstrates the advantages of our KG ×Text RAG framework in addressing complex problems.
+7
+
+=== PAGE 8 ===
+Published as a conference paper at ICLR 2025
+Llama-3-8B Qwen2-7B GPT-3.5-turbo GPT-4o
+Direct ToG-2 Direct ToG-2 Direct ToG-2 Direct ToG-2
+AdvHotpotQA 20.8 34 .7(66.8% ↑)17.9 30 .8(72.1% ↑)23.1 42 .9(85.7% ↑)47.7 53 .3(11.3% ↑)
+FEVER 35.5 52 .9(49.0% ↑)38.6 53 .1(38.1% ↑)51.8 63 .1(21.8% ↑)66.2 70 .1(5.9%↑)
+ToG-FinQA 0 8 .2 0 10 .3 0 34.0 0 36 .1
+Table 3: Performance comparison of direct reasoning and ToG-2 with different backbone models.
+Most LLMs have been pre-trained on Wikipedia which is also the unstructured knowledge source
+of datasets like AdvHotpotQA and Fever, and thus LLM-only methods can work on these datasets.
+To further evaluate the effectiveness of different methods on domain-specific reasoning scenarios
+where it is essential to retrieve information from specific knowledge sources since LLMs themselves
+usually lack relevant knowledge, we conduct an extra evaluation in our established ToG-FinQA
+dataset. Table 2 shows a comparison of ToG- 2with CoT and the original RAG based on GPT-
+3.5-turbo. ToG- 2demonstrates a notable advantage over other baselines in this task. Both vanilla
+RAG and CoT struggled, indicating that traditional RAG and CoT methods may not enable LLMs to
+solve unseen complex problems. GraphRAG only answered correctly 6.2%, suggesting that while
+loosely coupled hybrid RAG can retrieve information from both knowledge graphs and documents,
+it fails to perform multi-hop context retrieval and reasoning with the help of the KG. Compared
+to GraphRAG, ToG shows improved effectiveness, albeit limited, indicating that the knowledge
+framework provided by triples can better support multi-hop reasoning.
+4.5 A BLATION STUDY
+4.5.1 A BLATION OF LLM BACKBONES
+To what extent do LLMs with varying capabilities benefit from the knowledge enhancement of
+ToG-2? To answer this research question, we analyzed the enhancement of ToG- 2under different
+LLM backbone selections through experiments on AdvHotpotQA and FEVER. The experimental
+results are shown in Table 3.
+We observe that ToG-2 can elevate the reasoning capability of weaker LLMs, e.g., Llama-3-8B,
+Qwen2-7B to the level of direct reasoning by more powerful LLMs, e.g., GPT-3.5-turbo, which
+supports our intuition that ToG-2 helps LLMs with knowledge and comprehension bottlenecks. On
+the other hand, powerful LLMs, e.g., GPT-3.5-turbo and GPT-4o, can still benefit from ToG-2 to
+improve their own performances on complex knowledge reasoning tasks, indicating that ToG-2 may
+achieve even higher performance with stronger LLMs. On AdvHotpotQA and FEVER which use
+Wikipedia as knowledge sources, the most powerful LLMs among all backbone LLMs, GPT-4o
+experiences the least improvement since GPT-4o has a better memory for knowledge related to
+Wikipedia than other backbone LLMs, making its direct reasoning performance on these datasets
+already desirable. It is evident that LLMs with stronger reasoning ability like GPT-4o benefit more
+significantly from ToG-2 on ToG-FinQA when the relevant knowledge has not been exposed during
+pre-training and a knowledge retrieval process is necessary. In such scenarios, ToG-2 enables more
+in-depth knowledge retrieval and more reliable reasoning with stronger LLMs.
+4.5.2 C HOICES OF ENTITY -PRUNING TOOLS
+At the step of context-based entity prune , the selection of new topic entities should be based on the
+relevance of the corresponding contexts, which then reversely guides the next round of graph path
+exploration. In this experiment, we evaluate different methods for relevance scoring on a sampled
+set from AdvHotpotQA. In addition to the three DRM models—BGE-Embedding, BGE-reranker,
+and Minilm—we also tested the sparse retrieval model BM25 and generative ranking with LLMs.
+What kind of tools are most suitable for tight coupling graph-based knowledge and document-
+based knowledge? First, Figure 3a presents various choices of pruning tools with a fixed number
+K= 10 of entity contexts. The BGE-Reranker demonstrates the best performance, followed by
+Mini
+
+=== PAGE 9 ===
+Published as a conference paper at ICLR 2025
+Figure 3: Comparative analysis of Entity-Pruning Tools.
+balance of both. The observation also suggests that classic retrieval techniques like BM25 alongside
+more sophisticated models can still yield good results in a resource-efficient manner.
+Then we conduct another experiment in Figure 3b to find the best setting of context numbers K.
+Our findings indicate that BGE-Reranker tends to yield better results with longer context inputs,
+whereas LLM shows diminished effectiveness. Nevertheless, the overall performance of the pruning
+tool using BGE-Reranker slightly exceeds that of the LLM. We attribute this outcome to the fact that
+reasonably more contexts allow for greater tolerance toward irrelevant documents, and DRMs can
+handle a large number of candidates. While LLM possesses strong discriminative capabilities and
+offers greater flexibility, its performance is significantly constrained by the input length. Thus, we
+opt for entity pruning based on the DRM approach, considering its advantages in cost-effectiveness
+and enhanced generalization.
+4.5.3 W IDTH & D EPTH SETTINGS
+Figure 4: Width and depth settings analysis.Is a broader exploration scope necessarily better?
+To answer this research question, we analyze the im-
+pacts of maximum width Wand depth Dsettings.
+Figure 4 illustrates the performance of ToG- 2on
+AdvHotpotQA across varying maximum inference
+width and depth configurations. The results demon-
+strate a gradual improvement in model performance
+as the width increases from 2; however, the marginal
+gains diminish beyond a width of 3. This trend is at-
+tributed to the inference width, which corresponds to the number of top- Wrelevant entities retained
+at each step; a greater width allows for more leniency in topic pruning. With respect to depth, the
+model’s performance plateaus beyond a depth of 3. These observations suggest that a larger search
+scope is not always better; it should be adjusted according to the difficulty of the task.
+4.6 R UNTIME ANALYSIS Answer Type Percentage
+Direct Answer 16.13%
+Triple-enhanced Answer 9.68%
+Doc-enhanced Answer 41.94%
+Both-enhanced Answer 32.26%
+Table 4: Sources of answer clue origins: Di-
+rect Answer refers to questions that can be
+answered directly without additional infor-
+mation. Triple-enhanced Answer refers to
+answers that use triple links as clues. Doc-
+enhanced Answer refers to answers where
+entity context information provides clues for
+generating the answer. Both-enhanced An-
+swer refers to answers where both triple links
+and entity context information contribute.In the above-mentioned experiments, we use Equa-
+tion 3 in Relation Prune for efficiency. Under this
+setting, the reasoning process of ToG-2 needs at
+most2D+(D−1)+1 calls to the LLM. When using
+Equation 2 in relation pruning, ToG-2 needs at most
+WD +D+ 1 LLM calls and can achieve slightly
+higher performances on several datasets as shown in
+Appendix B.3 Table 7. In Table 7, we also report
+the results of an additional ablation study. By con-
+trast, ToG needs at most 2WD+D+ 1LLM calls.
+We compare the specific runtime between ToG and
+ToG-2 on different datasets in Appendix B.4 Table
+8. Even though ToG- 2integrates additional knowl-
+edge through entity context, ToG- 2still manages to
+9
+
+=== PAGE 10 ===
+Published as a conference paper at ICLR 2025
+reduce the entity pruning phase to 68.7% of ToG’s runtime on average. This is because ToG relies
+on LLM-based entity pruning, while ToG- 2leverages DRMs, which can handle more candidates
+and compute relevance scores faster.
+4.7 M ANUAL ANALYSIS
+To what extent does ToG-2 leverage the triple links and the contextual information? To gain a
+deeper understanding of ToG- 2’s behavior, we randomly select 50 AdvHotpotQA reasoning results
+from ToG- 2and perform a manual analysis about how triple link reasoning and the contextual in-
+formation of entities within the links contribute to the correct answers, respectively. As shown in
+Table 4, Doc-enhanced Answers have the highest proportion, at approximately 42%, while Triple-
+enhanced Answers are the least common, indicating that textual context is often the most important
+source of information for complex QA tasks. Triple links alone lack detailed context, making it
+difficult to provide deeper insights, and their role is more of a macro-level guide. Even without
+relying on the text information within the triples, key clues can still be navigated effectively. The
+proportion of Both-enhanced Answer shows significant utilization, suggesting that the combination
+of triple-link reasoning and entity context documents is a highly effective pattern. Direct Answers
+account for 16% of the responses, showing that for complex questions, the LLM can directly answer
+relatively few questions and still relies heavily on advanced information-enhanced pipelines.
+We demonstrate two cases in AdvHotpotQA to show examples of Both-enhanced Answer and Doc-
+enhanced Answer. In the Both-enhanced case, the method not only derives that “the group of Black
+Indians associated with the Seminole people is Black Seminoles” from the triple links information,
+but also leverages the context within the document of Black Seminoles to determine their settlement
+location. In the Doc-enhanced case, the approach utilizes triple links as guidance, ultimately iden-
+tifying the target information from the document context of Billy Corgan , a member of the band in
+the album. More cases in AdvHotpotQA and ToG-FinQA are shown in Appendix D.
+Figure 5: Illustrations of Both-enhanced Answer (left side) and Doc-enhanced Answer (right side).
+We also compare the outputs of ToG-2 and CoT regarding the selected questions. As shown in
+Appendix B.1 Table 5, ToG-2 alleviates the hallucination issues of LLMs compared to CoT with
+in-depth knowledge retrieval, and tends to refuse answers more often when faced with insufficient
+knowledge. We also observe a significant number of false negatives in the responses of ToG- 2when
+using EM as an evaluation metric, suggesting there is still untapped potential for our method.
+5 C ONCLUSION
+Existing RAG systems based on KGs or texts struggle to ensure in-depth knowledge retrieval
+when dealing with complex knowledge reasoning tasks. In this work, we introduce a hybrid RAG
+paradigm, KG ×Text RAG, which tightly couples KG-based and text-based RAG, and propose the
+Think-on-Graph 2.0 (ToG-2) algorithmic framework that enables reliable graph retrieval by using
+textual contexts, achieves knowledge-guided context retrieval via the KG, and iteratively perform a
+cooperative retrieval process to obtain in-depth knowledge for achieving deep and faithful LLM rea-
+soning. Experimental results demonstrate that ToG-2 can significantly improve LLMs of different
+sizes and outperform existing various LLM reasoning methods and RAG methods without additional
+training costs.
+10
+
+=== PAGE 11 ===
+Published as a conference paper at ICLR 2025
+REFERENCES
+Akari Asai, Zeqiu Wu, Yizhong Wang, Avirup Sil, and Hannaneh Hajishirzi. Self-rag: Learning
+to retrieve, generate, and critique through self-reflection, 2023. URL https://arxiv.org/
+abs/2310.11511 .
+Jiawei Chen, Hongyu Lin, Xianpei Han, and Le Sun. Benchmarking large language models in
+retrieval-augmented generation, 2023. URL https://arxiv.org/abs/2309.01431 .
+Yujuan Ding, Wenqi Fan, Liangbo Ning, Shijie Wang, Hengyun Li, Dawei Yin, Tat-Seng Chua, and
+Qing Li. A survey on rag meets llms: Towards retrieval-augmented large language models. arXiv
+preprint arXiv:2405.06211 , 2024.
+Darren Edge, Ha Trinh, Newman Cheng, Joshua Bradley, Alex Chao, Apurva Mody, Steven Truitt,
+and Jonathan Larson. From local to global: A graph rag approach to query-focused summariza-
+tion, 2024. URL https://arxiv.org/abs/2404.16130 .
+Yunfan Gao, Yun Xiong, Xinyu Gao, Kangxiang Jia, Jinliu Pan, Yuxi Bi, Yi Dai, Jiawei Sun, Meng
+Wang, and Haofen Wang. Retrieval-augmented generation for large language models: A survey,
+2024. URL https://arxiv.org/abs/2312.10997 .
+Rikui Huang, Wei Wei, Xiaoye Qu, Wenfeng Xie, Xianling Mao, and Dangyang Chen. Joint multi-
+facts reasoning network for complex temporal question answering over knowledge graph. In
+ICASSP 2024-2024 IEEE International Conference on Acoustics, Speech and Signal Processing
+(ICASSP) , pp. 10331–10335. IEEE, 2024.
+Zhouyu Jiang, Ling Zhong, Mengshu Sun, Jun Xu, Rui Sun, Hui Cai, Shuhan Luo, and Zhiqiang
+Zhang. Efficient knowledge infusion via kg-llm alignment, 2024. URL https://arxiv.
+org/abs/2406.03746 .
+Daniel Kahneman. Thinking, fast and slow. Farrar, Straus and Giroux , 2011.
+Muzhi Li, Minda Hu, Irwin King, and Ho-fung Leung. The integration of semantic and struc-
+tural knowledge in knowledge graph entity typing. In Kevin Duh, Helena Gomez, and Steven
+Bethard (eds.), Proceedings of the 2024 Conference of the North American Chapter of the As-
+sociation for Computational Linguistics: Human Language Technologies (Volume 1: Long Pa-
+pers) , pp. 6625–6638, Mexico City, Mexico, June 2024a. Association for Computational Linguis-
+tics. doi: 10.18653/v1/2024.naacl-long.369. URL https://aclanthology.org/2024.
+naacl-long.369/ .
+Muzhi Li, Cehao Yang, Chengjin Xu, Xuhui Jiang, Yiyan Qi, Jian Guo, Ho fung Leung, and Ir-
+win King. Retrieval, reasoning, re-ranking: A context-enriched framework for knowledge graph
+completion, 2024b. URL https://arxiv.org/abs/2411.08165 .
+Xingxuan Li, Ruochen Zhao, Yew Ken Chia, Bosheng Ding, Shafiq Joty, Soujanya Poria, and Li-
+dong Bing. Chain-of-knowledge: Grounding large language models via dynamic knowledge
+adapting over heterogeneous sources. In International Conference on Learning Representations ,
+2024c. URL https://openreview.net/forum?id=cPgh4gWZlz .
+Daizong Liu, Xiaoye Qu, Jianfeng Dong, and Pan Zhou. Reasoning step-by-step: Temporal sentence
+localization in videos via deep rectification-modulation network. In Proceedings of the 28th
+International Conference on Computational Linguistics , pp. 1841–1851, 2020.
+Yasumasa Onoe, Michael J. Q. Zhang, Eunsol Choi, and Greg Durrett. Creak: A dataset for com-
+monsense reasoning over entity knowledge, 2021. URL https://arxiv.org/abs/2109.
+01653 .
+Matthew E Peters, Mark Neumann, Robert L Logan IV , Roy Schwartz, Vidur Joshi, Sameer Singh,
+and Noah A Smith. Knowledge enhanced contextual word representations. arXiv preprint
+arXiv:1909.04164 , 2019.
+Fabio Petroni, Aleksandra Piktus, Angela Fan, Patrick Lewis, Majid Yazdani, Nicola De Cao,
+James Thorne, Yacine Jernite, Vladimir Karpukhin, Jean Maillard, Vassilis Plachouras, Tim
+Rockt ¨aschel, and Sebastian Riedel. Kilt: a benchmark for knowledge intensive language tasks,
+2021. URL https://arxiv.org/abs/2009.02252 .
+11
+
+=== PAGE 12 ===
+Published as a conference paper at ICLR 2025
+Zexuan Qiu, Zijing Ou, Bin Wu, Jingjing Li, Aiwei Liu, and Irwin King. Entropy-based decoding
+for retrieval-augmented large language models, 2024.
+Bhaskarjit Sarmah, Benika Hall, Rohan Rao, Sunil Patel, Stefano Pasquali, and Dhagash Mehta.
+Hybridrag: Integrating knowledge graphs and vector retrieval augmented generation for efficient
+information extraction. arXiv preprint arXiv:2408.04948 , 2024.
+Zhihong Shao, Yeyun Gong, Yelong Shen, Minlie Huang, Nan Duan, and Weizhu Chen. Enhancing
+retrieval-augmented large language models with iterative retrieval-generation synergy, 2023. URL
+https://arxiv.org/abs/2305.15294 .
+Jiashuo Sun, Chengjin Xu, Lumingyuan Tang, Saizhuo Wang, Chen Lin, Yeyun Gong, Lionel M.
+Ni, Heung-Yeung Shum, and Jian Guo. Think-on-graph: Deep and responsible reasoning of
+large language model on knowledge graph, 2024. URL https://arxiv.org/abs/2307.
+07697 .
+Yawei Sun, Lingling Zhang, Gong Cheng, and Yuzhong Qu. SPARQA: skeleton-based seman-
+tic parsing for complex questions over knowledge bases. CoRR , abs/2003.13956, 2020. URL
+https://arxiv.org/abs/2003.13956 .
+James Thorne, Andreas Vlachos, Christos Christodoulopoulos, and Arpit Mittal. Fever: a large-scale
+dataset for fact extraction and verification. arXiv preprint arXiv:1803.05355 , 2018.
+Harsh Trivedi, Niranjan Balasubramanian, Tushar Khot, and Ashish Sabharwal. Interleaving re-
+trieval with chain-of-thought reasoning for knowledge-intensive multi-step questions, 2023. URL
+https://arxiv.org/abs/2212.10509 .
+Ricardo Usbeck, Xi Yan, Aleksandr Perevalov, Longquan Jiang, Julius Schulz, Angelie Kraft, Cedric
+M¨oller, Junbo Huang, Jan Reineke, Axel-Cyrille Ngonga Ngomo, et al. Qald-10–the 10th chal-
+lenge on question answering over linked data. Semantic Web , (Preprint):1–15, 2023.
+Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc Le, Ed Chi, Sharan Narang, Aakanksha Chowdh-
+ery, and Denny Zhou. Self-consistency improves chain of thought reasoning in language models,
+2023a. URL https://arxiv.org/abs/2203.11171 .
+Zhiruo Wang, Jun Araki, Zhengbao Jiang, Md Rizwan Parvez, and Graham Neubig. Learning to
+filter context for retrieval-augmented generation, 2023b. URL https://arxiv.org/abs/
+2311.08377 .
+Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Ed H. Chi, Quoc Le, and Denny Zhou.
+Chain of thought prompting elicits reasoning in large language models. CoRR , abs/2201.11903,
+2022a. URL https://arxiv.org/abs/2201.11903 .
+Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Fei Xia, Ed Chi, Quoc V Le, Denny
+Zhou, et al. Chain-of-thought prompting elicits reasoning in large language models. Advances in
+neural information processing systems , 35:24824–24837, 2022b.
+Zhilin Yang, Peng Qi, Saizheng Zhang, Yoshua Bengio, William W Cohen, Ruslan Salakhutdinov,
+and Christopher D Manning. Hotpotqa: A dataset for diverse, explainable multi-hop question
+answering. arXiv preprint arXiv:1809.09600 , 2018.
+Xi Ye and Greg Durrett. The unreliability of explanations in few-shot prompting for textual reason-
+ing. In Advances in Neural Information Processing Systems , 2022.
+Wen-tau Yih, Matthew Richardson, Christopher Meek, Ming-Wei Chang, and Jina Suh. The value
+of semantic parse labeling for knowledge base question answering. In Proceedings of the 54th
+Annual Meeting of the Association for Computational Linguistics (Volume 2: Short Papers) , pp.
+201–206, 2016.
+Wenhao Yu, Hongming Zhang, Xiaoman Pan, Kaixin Ma, Hongwei Wang, and Dong Yu. Chain-
+of-note: Enhancing robustness in retrieval-augmented language models, 2023. URL https:
+//arxiv.org/abs/2311.09210 .
+Penghao Zhao, Hailin Zhang, Qinhan Yu, Zhengren Wang, Yunteng Geng, Fangcheng Fu, Ling
+Yang, Wentao Zhang, and Bin Cui. Retrieval-augmented generation for ai-generated content: A
+survey. arXiv preprint arXiv:2402.19473 , 2024.
+12
+
+=== PAGE 13 ===
+Published as a conference paper at ICLR 2025
+A P SEUDOCODE
+Algorithm 1: The ToG-2 Algorithm
+Input: Question q
+Output: Answer Ans
+//Initialization ;
+Clues =Null;
+Topic entities E0
+topic←Perform NER then Topic Prune;
+Ctx0←Retrieve top- kchunks from documents associated with E0
+topic using DRM;
+Prompt LLM evaluates the sufficiency of knowledge to answer q:
+PROMPT rs(q, Ctx0, Clues0)
+ifInformation is sufficient then
+Output Ans;
+return
+end
+else
+Outputs Clues0;
+end
+fori= 1toDdo
+//Context Enhanced Graph Retrieval
+forei
+j∈ Ei
+topic do
+Find relations Edge (ei
+j) ={(ri
+j,m, hm)};
+end
+Use LLM to select and score relations: Ri←PROMPT RPcmb(Ei
+topic, q,{Edge (ei
+j)}W
+j=1);
+forri
+j,m∈ Rido
+Find connected entities ci
+j,m=Tail(ei
+j,(ri
+j,m, hm));
+Collect documents of candidate entities ci
+j,mand split into chunks;
+end
+//Knowledge-guided Context Retrieval
+forchunki
+j,m,z ofci
+j,mdo
+Compute relevance score si
+j,m,z =DRM (q,[triple sentence (Pci
+j,m) :chunki
+j,m,z]);
+end
+Ctxi←Select top- Kscored chunks;
+Compute scores for candidate entities based on chunk scores: score (ci
+j,m);
+Ei+1
+topic←Select top- Wentities;
+//Reasoning with Hybrid Knowledge
+Prompt LLM evaluates sufficiency of knowledge to answer q:
+PROMPT rs(q,Pi, Ctxi, Cluesi−1)
+ifKnowledge is sufficient then
+Output Ans;
+return
+end
+else
+Outputs Cluesi;
+end
+end
+Output failure or best effort answer;
+13
+
+=== PAGE 14 ===
+Published as a conference paper at ICLR 2025
+Category Type Definition ToG-2 w/o SC GPT3.5-SC
+CorrectCorrect The answer is correct. 100% 88.3%
+False positive Incorrectly judged as correct. 0% 11.7%
+IncorrectFalse negative Correct answer but judged as
+incorrect due to ambiguous
+questions or labels.38.7% 18.1%
+Hallucination Incorrect answer due to hallu-
+cination.9.7% 72.7%
+No Info. Relevant information missing
+or not found in knowledge
+sources.48.3% —
+Misunderstood LLM misunderstood the
+question and gave an irrele-
+vant response.3.2% 9.1%
+Table 5: Human study for Correct and Incorrect cases from randomly sampled HotpotQA questions.
+B A DDITIONAL EXPERIMENT ANALYSIS
+B.1 M ANUAL ANALYSIS (CONTINUE )
+The manual analysis results presented in Table 5 reveal several additional observations:
+1)Even though ToG- 2consistently outperforms the baselines across various datasets, it still faces
+significant bottlenecks when it comes to information retrieval. These issues are largely due to in-
+complete knowledge sources and the limitations of retrieval models. For instance, Wikidata often
+contains inaccuracies, contradictions, or gaps, and many Wiki entities are missing key details on
+their Wikipedia pages. On the retrieval side, different types of questions require different informa-
+tion, and a one-size-fits-all retrieval model can struggle without specific training. Therefore, ToG- 2
+can be further optimized through plug-ins that incorporate more comprehensive knowledge graphs
+and more advanced retrieval models, which is convenient.
+2)When handling less straightforward or more complex questions, LLMs can sometimes misun-
+derstand the intent. For example, in the question “ What number president nominated Annie Caputo
+to become a member of the Nuclear Regulatory Commission? ” the correct answer is 45th but the
+model might answer Donald Trump (which, while true, isn’t exactly what the question was asking).
+3)EM (Exact Match), while often used to assess model performance on QA problems, is not ideal
+to handle the complexity of such generating. EM struggles to match aliases correctly, and also
+can’t handle answers with different levels of detail. For example, if the question is “ Where was A
+born? ” without specifying the level of detail, both New York andManhattan should be accepted
+as correct answers. Researchers have attempted to use LLMs as evaluators, considering factors
+such as efficiency, cost, and the potential bias in LLM evaluations, we opted to use EM for a rough
+evaluation. While the role of the evaluator is indeed a significant challenge in the era of large
+language models, this work does not delve into that aspect.
+B.2 S UPPLEMENTARY ANALYSIS FOR THEMAINRESULTS
+As we observed a performance discrepancy between ToG and ToG- 2on the Creak dataset in Table 1,
+we aim to provide a more detailed analysis on this particular dataset. This analysis will offer insights
+into the underlying factors contributing to the observed discrepancy. Furthermore, we will showcase
+and discuss the implications of these findings for understanding the strengths and limitations of
+both methods in the context of the Creak dataset. Specifically, we manually analyzed the reasoning
+process for 50 examples. Table 6 provides an overview of the distribution of answer types for ToG- 2,
+following the format of Table 4 in our paper.
+14
+
+=== PAGE 15 ===
+Published as a conference paper at ICLR 2025
+Answer Type ToG- 2
+Triple-enhanced Answer 42%
+Doc-enhanced Answer 24%
+Both-enhanced Answer 34%
+Table 6: Distribution of answer types for ToG- 2on the Creak dataset.
+Due to the relatively simple nature of the questions in the Creak dataset, results can often be inferred
+directly using triples. As a result, ToG already performs well on this dataset, and the richer entity
+document information utilized by ToG- 2does not provide significant additional benefits. As shown
+in the table, ToG- 2produces a higher proportion of Triple-enhanced Answers on Creak compared
+to more complex datasets like HotpotQA.
+We conducted a detailed case study of the behavior of ToG and ToG- 2, highlighting three represen-
+tative cases that elucidate the primary reasons for the observed performance differences. These bad
+cases reveal distinct patterns in how each model approaches reasoning.
+Case 1: One can watch Bugs Bunny on the television.
+ToG-2 Response: {Yes}, Bugs Bunny can be watched on television. The references mention the his-
+tory and success of the Bugs Bunny series, indicating its presence on various channels and streaming
+services over the years. The knowledge triplets also confirm Bugs Bunny’s association with iconic
+works like Looney Tunes and notable creators like Tex Avery and Mel Blanc.
+ToG Response: {Yes}, the claim is {True}. Based on the knowledge triplets, Bugs Bunny is a
+beloved character from iconic works such as Looney Tunes, which was created by Warner Bros, and
+has been featured extensively in television broadcasts since its creation.
+Label: True
+Error Reason: The model failed to produce the expected output format {True}. The LLM did not
+strictly follow the instructions, which is a low-probability event but accounts for a large proportion
+of errors.
+Case 2: Quark served the man a drink on Star Trek: Deep Space Nine.
+ToG-2 Response: {No}, the claim is {False}. The claim that “Quark served the man a drink on
+Star Trek: Deep Space Nine” cannot be evaluated based on the given information. The references
+provide information about the character Quark is a Ferengi bartender on Deep Space Nine, but there
+is no specific mention of him serving a drink to a man.
+ToG Response: {Yes}, the claim is {True}. The knowledge triplets confirm Quark’s association
+with Star Trek: Deep Space Nine and his role as a bartender, serving drinks to patrons in the series.
+Label: True
+Error Reason: The model’s failure stems from two main issues: overcautiousness and semantic
+ambiguity. Despite identifying the golden sentence, “Quark was the bartender on Deep Space Nine,”
+ToG-2’s excessive caution prevented it from making implicit inferences without explicit evidence.
+Additionally, the phrase “the man” implies a specific individual without sufficient context, leading
+to a misinterpretation.
+Case 3: Parkinson’s disease causes various hallucinations in people.
+ToG-2 Response: {Yes}, the claim is {True}. The retrieved references mention that Parkinson’s
+disease psychosis (PDP) is present in around 20 percent of cases and comprises hallucinations, illu-
+sions, and delusions. This confirms that Parkinson’s disease can indeed cause various hallucinations
+in people.
+15
+
