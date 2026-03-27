@@ -1,0 +1,939 @@
+=== PAGE 1 ===
+Preprint
+AGENT SQUARE : A UTOMATIC LLM A GENT
+SEARCH IN MODULAR DESIGN SPACE
+Yu Shang1∗Yu Li2∗Keyu Zhao1Likai Ma1Jiahe Liu1Fengli Xu1†Yong Li1†
+1Department of Electronic Engineering, Tsinghua University
+2Shenzhen International Graduate School, Tsinghua University
+ABSTRACT
+Recent advancements in Large Language Models (LLMs) have led to a rapid
+growth of agentic systems capable of handling a wide range of complex tasks.
+However, current research largely relies on manual, task-specific design, limiting
+their adaptability to novel tasks. In this paper, we introduce a new research prob-
+lem: Mo dularized L LM A gent S earch (MoLAS). We propose a modular design
+space that abstracts existing LLM agent designs into four fundamental modules
+with uniform IO interface: Planning ,Reasoning ,Tool Use , and Memory . Build-
+ing on this design space, we present a novel LLM agent search framework called
+AgentSquare, which introduces two core mechanisms, i.e.,module evolution and
+recombination , to efficiently search for optimized LLM agents. To further ac-
+celerate the process, we design a performance predictor that uses in-context sur-
+rogate models to skip unpromising agent designs. Extensive experiments across
+six benchmarks, covering the diverse scenarios of web, embodied, tool use and
+game applications, show that AgentSquare substantially outperforms hand-crafted
+agents, achieving an average performance gain of 17.2% against best-known hu-
+man designs. Moreover, AgentSquare can generate interpretable design insights,
+enabling a deeper understanding of agentic architecture and its impact on task
+performance. We believe that the modular design space and AgentSquare search
+framework offer a platform for fully exploiting the potential of prior successful
+designs and consolidate the collective efforts of research community. Code repo
+is available at https://github.com/tsinghua-fib-lab/AgentSquare.
+1 I NTRODUCTION
+The past few years have witnessed remarkable progress in the development of Large Language Mod-
+els (LLMs) (Achiam et al., 2023; Touvron et al., 2023), giving rise to the proliferation of numer-
+ous agentic systems (Weng, 2023; Shen et al., 2024). For example, “chain-of-thought” prompting
+has unlocked the general-purpose reasoning capabilities of LLMs (Wei et al., 2022), and memory
+mechanisms have been proven effective in simulating human behavioiur (Park et al., 2023). These
+emerging LLM agents have demonstrated astonishing abilities to transform a wide range of tasks, in-
+cluding solving mathematical problems (Romera-Paredes et al., 2024), navigating the web (Nakano
+et al., 2021), providing financial advice (Ding et al., 2024a) and informing medical decisions (Li
+et al., 2024a). Therefore, the design of agentic systems plays a crucial role in harnessing the power
+of LLMs for various downstream applications.
+However, current research predominantly relies on manually designed agentic systems tailored for
+specific tasks, which often depend heavily on expert insight and intensive human labor. Furthermore,
+these task-specific agent designs frequently struggle to adapt to novel tasks. A few recent studies
+have explored using LLMs to rewrite and optimize the prompts of existing agents (Fernando et al.,
+*Equal contribution.
+†Corresponding author, correspondence to fenglixu@tsinghua.edu.cn, liyong07@tsinghua.edu.cn.
+1arXiv:2410.06153v3  [cs.CL]  27 Feb 2025
+
+=== PAGE 2 ===
+Preprint
+Agent
+Square
+Toolformer
+Toolbench
+DEPS
+COT
+TOT
+Generative
+VOYAGER
+Dilu…Game
+Simulation
+Self-driving  
+General -purpose
+ReasoningTool
+Use
+Performance
+TOT
+VOYAGER
+Genrative
+Toolformer
+Diverse agents
+Planning
+ Reasoning
+ Memory
+ TooluseNEW
+NEW
+Standardized  agents Module pool
+:
+: :
+…
+Evaluation
+Figure 1: AgentSquare is a modular framework for designing and optimizing LLM agents.
+2024; Yang et al., 2024). A more recent work introduces the idea to leverage LLMs to search the
+entire agentic systems defined in code space (Hu et al., 2024), enabling the discovery of agents with
+more flexible prompts, control flows, etc. However, these previous approaches are limited in their
+ability to explicitly recombine the strengths of agentic modules discovered by different researches
+and located in separate codebases. Another line of research focuses on optimizing the configuration
+of multi-agent systems (Chen et al., 2023; Yuan et al., 2024; Li et al., 2023; Zhuge et al., 2024;
+Wang et al., 2023b). These efforts are orthogonal to the optimization of single-agent systems, as
+they focus more on the role-playing and interaction patterns among multiple agents, rather than the
+design of agentic modules.
+This paper addresses a novel research problem — Mo dularized L LM A gent S earch (MoLAS). The
+goal is to automatically optimize LLM agent designs by leveraging the experience of published or
+evaluated modules. Therefore, the core of our work is a modular design space for LLM agents,
+comprising 4 categories of modules: Planning ,Reasoning ,Tool Use , and Memory . This design
+space is abstracted from a thorough literature review of existing agentic systems (details provided in
+Section 2). It is important to note that our goal is not to propose the most comprehensive, one-size-
+fits-all LLM agent design space, but rather to demonstrate that our modular design space enables
+researchers and intelligent search algorithms to fully exploit the potential of prior successful designs.
+MoLAS is a guided and constrained searching problem in the modular design space, which is a
+subset of the entire code search proposed in ADAS (Hu et al., 2024). However, MoLAS has a nice
+feature of providing standardized IO interfaces for agent modules, facilitating easy recombination
+of modules from different agentic systems and hence enabling efficient search for novel agents.
+Our design space is also highly extensible, allowing new agentic systems to be integrated as plug-
+in modules. Therefore, it provides a platform to consolidate the collective efforts of the research
+community on LLM agents. The overview of this work is illustrated in Figure 1.
+Building on this modular design space, we propose a novel LLM agent search framework called
+AgentSquare. Specifically, AgentSquare optimizes LLM agents through the mechanisms of module
+evolution andrecombination . The module evolution mechanism leverages an evolutionary meta-
+prompt to explore new modules through prompt-level optimization, which jointly models task de-
+scriptions, existing modules, and the performance of evaluated modules. Besides, the module re-
+combination mechanism performs module-level optimization by leveraging the reasoning power of
+LLMs to strategically search for promising module combinations. To reduce the expensive eval-
+uation costs of LLM agents, we further introduce a performance predictor that implements an in-
+context surrogate model for newly proposed LLM agents, enabling us to skip unpromising candi-
+dates and significantly accelerate the search process.
+We conduct comprehensive evaluations on six widely adopted benchmarks, covering diverse use
+cases in web, embodied, tool use and game scenarios. Our experiments show AgentSqaure can
+discover novel LLM agents that outperform hand-crafted agents across all six benchmarks, scor-
+ing an average performance gain of 17.2% compared to the best known human designs. Besides,
+AgentSqaure also surpasses other search algorithms in terms of having a stee
+
+=== PAGE 3 ===
+Preprint
+Standard IO InterfaceAbstract
+class  Memory ():
+    Input : current situation
+         if current situation ! = ‘ ‘ :
+                add(current situation)
+         else:
+                Output : retrieve()
+    class  Planning ():
+    Input : task type, task description, 
+feedback
+    Output : planclass  Reasoning ():
+    Input : task description, 
+tool_instruction, feedback
+    Output : reasoning result
+class  Tooluse ():
+    Input : task description, 
+tooluse_instruction,feedback
+   Output : tool responsePlanning
+Reasoning
+Tool UseMemory
+selectfeedback
+AddRetrieve…
+actfeedback
+Agentic
+Workflow
+output
+return
+Modular Agent Design SpaceTool Pool
+Memory
+Database
+: Module
+: Task Description
+: ResourcesTask Description
+Subtask 1 Subtask 2 Subtask n
+Environment
+Figure 2: Illustration of the modular agent design space and agentic workflow (left) and the stan-
+dardized IO interface of four types of modules (right).
+• We propose a novel modular design space for LLM agents, enabling researchers to easily
+build on previous successful designs and accumulate new discoveries as a community.
+• We design the AgentSquare framework that efficiently searches for novel and good-
+performing LLM agents via the novel mechanism of module evolution ,module recom-
+bination , and performance predictor .
+• Experiments across six diverse tasks show that our method discovers novel LLM agents
+that outperform all known human designs. Besides, AgentSqaure can generate human
+interpretable design insights for these novel agents.
+2 A M ODULAR DESIGN SPACE OF LLM A GENTS
+2.1 B ACKGROUND
+Using LLMs for automatic optimization has been a widely explored topic, such as applications
+in code generation (Lehman et al., 2023; Romera-Paredes et al., 2024) and neural architecture
+search (Nasir et al., 2024; Chen et al., 2024a). There are several recent studies that explore the
+problem of prompting LLMs to design LLM agentic systems. OPRO (Yang et al., 2024) and Prompt-
+breeder (Fernando et al., 2024) can be viewed as leveraging the reasoning power of LLMs to improve
+the prompt of LLM agents. More importantly, ADAS introduces the idea of searching the entire
+agentic system defined in code space, and propose a Meta Agent Search algorithm that discovers
+LLM agents outperforming state-of-the-art human designs (Hu et al., 2024). Our main difference
+and contribution lie in introducing a modular design space for LLM agents, which can provide a
+standard framework to support the convenient reuse of existing successful agent components and
+fruitful innovative agent module discovery.
+A modular design space for LLM agents facilitates the reuse of prior successful designs and sup-
+ports the exploration of new architectures. At the core of such modularization is the standardization
+of input-output interfaces, which ensures both extensibility and seamless integration with existing
+designs. Many experts in the field have proposed building LLM agentic systems with key modular
+components from engineering (Weng, 2023) and cognitive perspectives (Sumers et al., 2023). How-
+ever, these proposals remain largely conceptual, lacking implementable solutions to unify existing
+LLM agents. Besides, current LLM workflow program frameworks ( e.g., LangChain and Auto-
+GPT) only provide operation-level components, which cannot support module-level search that best
+exploits the potential of prior successful designs.
+To address these problems, we perform a comprehensive literature review of publications from
+NeurIPS, ICML, and ICLR over the past three years. The review focuses on papers with the key-
+words “LLM”, “Agent”, or “Large Language Model” in their titles while excluding works related to
+multi-agent systems or agents that require additional training. Note that our aim is not to propose
+the most comprehensive, one-for-all LLM agent design space, but to offer a standardized framework
+3
+
+=== PAGE 4 ===
+Preprint
+that enables the recombination of existing agents and facilitates the discovery of new ones. As a
+result, we sort out 16 popular LLM agents and abstract a modular design space with 1050 possible
+combinations, which can be easily extended when new modules are discovered. Below, we describe
+the agentic workflow and the function of four modules in our design space.
+2.2 W ORKFLOW OVERVIEW
+The proposed agent workflow operates through an iterative process with the interconnection of the
+above four modules, as shown in Figure 2. Upon receiving a task d, the agent starts with the planning
+module, decomposing it into nsub-tasks {s1, s2, . . . , s n}. Next, these sub-tasks are passed to the
+reasoning module sequentially. Taking the sub-task sidescription as input, the reasoning module
+explores to prompt LLMs to give the result. When reasoning encounters limitations in internal
+knowledge of LLMs, the tool use module is activated to select an appropriate tool from the pre-
+defined tool pool τ, supporting problem-solving. Besides, the reasoning process also accesses the
+memory module which reads and writes necessary observations and experiences from a memory
+database mem to help reasoning. The reasoning result of each sub-task will be transformed into
+actions, guiding the agent to interact with the external environment. After all sub-tasks are finished
+or the reasoning process gets stacked, the agent will activate the planning module to adjust the
+plan with the received feedback. The agent conducts such a trial-and-error loop until the task dis
+completed or the set maximum trial number is reached.
+Planning. The planning module is responsible for decomposing the targeted task into smaller sub-
+tasks. Given a task description dand optional feedback information f, the planning module P
+strategically decomposes the targeted task into a sub-task sequence {s1, s2, . . . , s n}=P(d, f).
+Such decomposition is critical for handling very complex tasks with long-term characteristics, espe-
+cially for agents in open-world environments such as MineCraft (Wang et al., 2024a;c).
+Reasoning. LLMs have exhibited remarkable reasoning abilities under advanced prompting ap-
+proaches such as CoT (Wei et al., 2022), ToT (Yao et al., 2024), and SoT (Shang et al., 2024),
+shaping the foundation of the intelligence of LLM agents. The reasoning module Ris invoked to
+solve the sub-tasks sequentially after planning, which takes each sub-task siand optional feedback
+information fias input and outputs a solution ri=R(si, fi).
+Tool use. The ability of using external tools (Shen et al., 2024; Schick et al., 2024) overcomes
+the limitations of the LLM’s internal knowledge during the reasoning process. Formally, given
+certain problem pijderived from the reasoning process of sub-task siand a pre-defined tool pool
+τ, the tooluse module Tselects the best-matched tool tijto address the problem, denoted as tij=
+T(pij, τ), where tij∈τ.
+Memory. Memory plays a critical role by storing past thoughts, actions, and observations of
+agents (Park et al., 2023; Shinn et al., 2024). During the reasoning process, these internal logs
+are dynamically written to and retrieved from the memory database mem , controlled by the mem-
+ory module M. The writing process can be expressed as mem =Mwrite(o, mem ), where odenotes
+the current observations. The retrieval process is m=Mretrieve (o, mem ), where mdenotes the
+retrieved knowledge relevant to the current situation.
+3 A GENT SQUARE FRAMEWORK
+3.1 P ROBLEM FORMULATION OF MOLAS
+In the proposed modular design space, an LLM agent Acan be instantiated with the combination
+of a planning module P, a reasoning module R, a tooluse module Tand a memory module M,
+denoted as A= (P, R, T, M ). Given the task description dand the set of all possible modules
+with standardized IO interface {P,R,T,M}. We formulate an optimization problem for searching
+LLM agent architectures within the modular design space. The objective is to identify the optimal
+module co
+
+=== PAGE 5 ===
+Preprint
+LLM
+𝑃′
+𝑅′
+𝑇′
+𝑀′
+𝑃0𝑅0𝑇0𝑀0
+𝑃0𝑅′𝑇0𝑀0𝑃′𝑅0𝑇0𝑀0
+𝑃0𝑅0𝑇′𝑀0
+𝑃0𝑅0𝑇0𝑀′LLM
+𝑃1𝑅′𝑇0𝑀0
+𝑃0𝑅3𝑇0𝑀0
+𝑃0𝑅′𝑇2𝑀0
+𝑃0𝑅′𝑇0𝑀4Initial 
+Agent
+Evolution RecombinationNew
+ModuleNew AgentsNext
+Episode
+Planning
+𝑃0𝑅′𝑇0𝑀0
+𝑃0𝑅′𝑇2𝑀0
+𝑅1
+𝑅2
+𝑅3
+𝑅4
+𝑇1
+𝑇2
+𝑇3
+𝑇4
+𝑀1
+𝑀2
+𝑀3
+𝑀4
+𝑃1
+𝑃2
+𝑃3
+𝑃4
+Module Pool
+𝑃2𝑅2𝑇2𝑀2
+𝑃3𝑅3𝑇3𝑀3
+𝑃4𝑅4𝑇4𝑀4𝑃1𝑅1𝑇1𝑀1
+ :
+:
+:
+:
+…New Agents
+Experience Pool…
+Webshop
+TravelplannerAlfworld
+Sciworld
+M3Tool …Evaluation
+EvaluationTask Evaluation
+Reasoning
+Tooluse
+Memory
+Agent Search
+Feedback
+Figure 3: Overview of AgentSquare search framework. AgentSquare optimizes LLM agents through
+the mechanisms of module evolution and recombination. We further introduce a performance pre-
+dictor that implements an in- context surrogate model for efficient evaluation of novel agents.
+problem of MoLAS is defined as follows:
+arg max
+P∈P,R∈R,T∈T,M∈MEval d(P, R, T, M ). (1)
+3.2 A GENT SQUARE SEARCH ALGORITHM
+Solving the optimization problem of MoLAS features three key challenges: (1) The search space,
+defined as the Cartesian product of four orthogonal modules, is vast and hard to explore; (2) the
+module sets encompass any code with standard IO interfaces, making the module selection an open-
+ended problem; (3) the high costs of agent evaluation during the search process constrain the overall
+search scale. To tackle these issues, we introduce AgentSquare, an automatic search framework to
+optimize LLM agents within the modular design space. Facing the vast search space of MoLAS,
+we propose module recombination operation utilizing LLMs to strategically reason to identify more
+promising module combinations. Such operation broadens the coverage of child samples, overcom-
+ing the limitations of prompt rewrite methods that explore only a restricted space. However, only
+searching in the existing module combinations also narrows the search space, thus we propose mod-
+ule evolution operation which employs an evolutionary meta-prompt to search new modules through
+code-level optimization. This operation, combined with module recombination, enables the search
+of any module combination in the open-ended solution space. Finally, to mitigate the high costs of
+frequent evaluations of searched agents, we design a performance predictor as an in-context surro-
+gate model for evaluating searched agents, significantly accelerating the search process and reducing
+real-valued costs.
+The overall framework of AgentSquare is illustrated in Figure 3 and the algorithm is presented in
+Algorithm 1. Next, we detail the key components of the AgentSquare search process.
+3.3 I NITIALIZATION
+Insights from existing AutoML studies indicate that a well-chosen initialization enhances warm-up
+and improves search efficiency by avoiding unpromising populations (So et al., 2019; Yuan et al.,
+2024). AgentSquare starts by initializing a global experience pool E={(P, R, T, M, v )|P0∈
+P, R0∈R, T0∈T, M0∈M}to seed agents that are well-designed (as mentioned in Section 2)
+along with their real-valued performance v. The module pools {P,R,T,M}are set to the standard-
+ized modules extracted from these seed agents.
+5
+
+=== PAGE 6 ===
+Preprint
+3.4 M ODULE RECOMBINATION
+Given the vast solution space of MoLAS, relying solely on prompt rewriting leads to a lim-
+ited exploration confined to the neighbor of the initial state. To expand the exploration space,
+we propose leveraging LLMs as a self-adaptive proposer , which iteratively reason to identify
+promising module combinations with accumulated experience beyond the original agent config-
+uration. Denote the initial agent of the recombination phase as A0
+r= (P0, R0, T0, M0), where
+P0∈P, R0∈R, T0∈T, M0∈M. The module combination proposer LLM πθincorporates
+targeted task description d, existing module pools {P,R,T,M}and the performance experience of
+searched module combinations Eto propose promising new agents Ar:
+Ar=πθ((P0, R0, T0, M0), d, N, P,R,T,M,E). (2)
+Based on the initial agent configuration A0
+r, the LLM proposes Noffspring {A1
+r, A2
+r, ..., AN
+r}by
+replacing certain modules of A0
+rwith alternatives from the module pool. For instance, a possible
+solution could be (P0, R′, T0, M0), where R′∈Ris a different reasoning module selected from the
+module pool. Then, the created Nnew agents are evaluated with a performance predictor πp(detail
+in Seciton 3.6) and the best one goes to the next episode as initialization.
+3.5 M ODULE EVOLUTION
+As mentioned above, the solution space for each module type is open-ended, allowing any code with
+a standardized I/O interface. Consequently, searching only with module recombination narrows the
+solution space and limits the upper bound of agent performance. To address this problem, we design
+amodule evolution operation with an evolutionary meta-prompt to search for new modules through
+program-level optimization. This design is inspired by the iterative pipeline of FunSearch (Romera-
+Paredes et al., 2024), which prompts LLMs to propose new solutions based on the target problem and
+performance feedback from existing solutions. Building on this concept, we introduce a module-
+programming LLM πξto conduct agent search in our modular design space by jointly modeling task
+descriptions, existing modules, and the performance of previously evaluated modules. Please note
+we reuse parts of the open-source code from ADAS (Hu et al., 2024) to implement the optimization
+procedure. Leveraging LLMs to search in the modular agent design space has several appealing
+advantages. Compared with the unconstrained design space of LLM agents, searching functional
+modules can produce a more focused and fruitful search space. Additionally, integrating existing
+successful module designs with standard IO as in-context examples can better elicit the reflective
+reasoning abilities of LLMs to identify previous key designs to help propose innovative ones. Denote
+the initial agent in the module evolution stage as A0
+e= (P′
+0, R′
+0, T′
+0, M′
+0), the module programmer
+LLM produces a population of child agents by evolving current modules of A0
+e. Formally the module
+evolution operation is denoted as follows:
+Ae=πξ((P′
+0, R′
+0, T′
+0, M′
+0), d, N, P,R,T,M,E). (3)
+The created new modules are appended to the standardized module pools {P,R,T,M}and each
+module is used to individually mutate the initial agent, resulting in Nchild agents {A1
+e, A2
+e, ..., AN
+e}.
+For example, (P∗, R0, T0, M0)represents a solution where the planning module is mutated into a
+new variant P∗. These child agents are then real-tested and updated to the historical experience pool
+E. The best-performing one is selected as the initial agent for the subsequent recombination phase.
+3.6 P ERFORMANCE PREDICTOR
+The last challenge in automatic agent search is the high API cost incurred during the evaluation of
+each candidate agent. Many agent tasks require multiple steps and involve substantial input and
+output tokens, leading to prohibitive evaluation costs. For instance, evaluating a simple CoT agent
+based on GPT-4o in ALFWorld (Shridhar et al., 2021) requires around $60, making the agent search
+economically unsustainable at scale. To tackle this issu
+
+=== PAGE 7 ===
+Preprint
+Web Embodied Tool Game
+Baseline Type Method Webshop ALFWorld SciWorld M3Tool Travel PDDL
+Hand-crafted AgentsCoT 0.485 0.405 0.697 0.448 0.487 0.542
+Cot-SC 0.512 0.426 0.656 0.461 0.413 0.495
+Self-refine 0.461 0.567 0.654 0.442 0.000 0.514
+ToT 0.501 0.437 0.741 0.453 0.380 0.476
+Step Back 0.468 0.279 0.220 0.434 0.000 0.486
+TP 0.398 0.404 0.576 0.387 0.430 0.518
+HuggingGPT 0.519 0.481 0.680 0.354 0.510 0.584
+V oyager 0.366 0.425 0.776 0.247 0.523 0.412
+Generative Agents 0.499 0.477 0.663 0.402 0.480 0.553
+DEPS 0.481 0.459 0.740 0.278 0.540 0.591
+OPENAGI 0.506 0.510 0.718 0.322 0.533 0.616
+Dilu 0.451 0.433 0.682 0.475 0.360 0.463
+Module SearchRandom 0.533 0.620 0.704 0.438 0.563 0.660
+Bayesian 0.549 0.634 0.749 0.502 0.537 0.650
+Prompt Search OPRO 0.505 0.380 0.569 0.309 0.523 0.589
+Agent Search ADAS 0.521 0.543 0.754 0.475 0.373 0.568
+AgentSquare 0.607 0.695 0.781 0.524 0.583 0.669
+Table 1: Performance comparison of searched agents from AgentSquare and (1) existing human-
+designed agents (2) module search baselines (3) prompt search baselines (4) agent search baselines
+based on GPT-4o on six tasks across different domains.
+leveraged to evaluate the performance of generated network architectures (Jawahar et al., 2023;
+Chen et al., 2024a).
+During the search process, newly created agents from module evolution are still tested in the real task
+environment because these new modules never appear in the experience pool, and it is unsuitable to
+use the performance predictor to provide predictions. During the module recombination operation,
+the newly proposed agents are evaluated by the performance predictor, which leverages in-context
+reasoning based on past agent combination performance to provide efficient performance prediction.
+Here, given a newly searched agent A′, the performance predictor πpthoroughly considers task
+descriptions d, module profiles and in-context performance examples of previously tested agents E
+to score novel agents:
+v′=πp(A′, d,P,R,T,M,E), (4)
+where v′is the predicted performance of the evaluated agent. Empirical results demonstrate that the
+predicted performance of agents closely matches their actual performance, verifying the effective-
+ness of the proposed performance predictor, which is detailed in Section 4.3.
+4 E XPERIMENTS
+4.1 E XPERIMENTAL SETUP
+Task setup. We conduct experiments on six representative tasks covering four domains: embodied,
+game, web and tool applications, which are widely adopted by existing LLM agent benchmarks (Ma
+et al., 2024; Xi et al., 2024), more details are presented in Appendix A.1.
+Baselines. We compare AgentSquare with four types of baselines including hand-crafted agents,
+module-level search, prompt-level search and agent-search methods. More details are presented in
+Appendix A.1.
+AgentSquare setup. We implement AgentSquare and conduct experiments using both GPT-3.5-
+turbo-0125 and GPT-4o (Achiam et al., 2023). To ensure a fair comparison, we use the same number
+of few-shot examples across all methods. The initial agent is set as a random module combination,
+and the search process terminates after 5 consecutive iterations without performance improvement.
+7
+
+=== PAGE 8 ===
+Preprint
+123456789101112131415
+Iteration0.350.400.450.500.550.600.65Success rate
+Planning: TD
+Reasoning: CoT
+Memory:  adadda VoyagerPlanning: TD
+Reasoning: SF-TOT
+Memory:  adadddadadaaaa Generative AgentsAgentSquare Search on Alfworld
+123456789101112131415161718
+Iteration0.480.500.520.540.560.580.600.62Score
+Planning: DEPS
+Reasoning: CoT-SC
+Memory: ad DiluPlanning: IO
+Reasoning: HTSS
+Memory: DiluHTSSAgentSquare Search on Webshop
+Bayesian
+Random
+OPRO
+AgentSquare
+Best of human design
+Figure 4: AgentSquare search trajectory on Alfworld and Webshop.
+4.2 E XPERIMENTAL RESULTS
+Main results. We conduct extensive experiments to compare our method against three types of
+baselines on six tasks and present results based on GPT-4o in Table 1 and results on GPT-3.5 in Ta-
+ble A.3. Additionally, we evaluate the agents’ API costs and provide a performance-cost comparison
+in Figure A.7 to Figure A.12. From these results, we have the following observations:
+•AgentSquare can effectively discover better agents compared with human-designed agents.
+On the six representative agent tasks, the best agent searched by AgentSquare consistently out-
+performs human-designed agents in terms of performance. Specifically, as shown in Table 1
+and Table A.3, compared with the best human-designed agent, AgentSquare achieves an average
+14.1% performance improvement on Webshop, 26.1% improvement on ALFWorld, 20.5% im-
+provement on SciWorld, 30.6% improvement on M3Tool, 6.0% improvement on Travelplanner,
+6.0% improvement on PDDL. Simultaneously, the best agent from AgentSquare is commonly
+cost-efficient, which strikes the best performance-cost trade-off among all compared agents as
+seen in Figure A.7 -Figure A.12. Since the search cost is a one-time expense and the searched
+modules can be reused, it is not included in the above analysis, but separately listed in Table A.6.
+•AgentSquare provides a more efficient searching approach for LLM agent optimization. To
+further demonstrate the effectiveness of the search of AgentSquare, we compare three types of
+searching methods including module search, prompt search and agent search. Compared with
+the best agent crafted from these searching methods, AgentSquare achieves an average 8.4% per-
+formance improvement on Webshop, 8.1% improvement on ALFWorld, 11.0% improvement on
+SciWorld, 12.8% improvement on M3Tool, 2.5% improvement on Travelplanner, 1.4% improve-
+ment on PDDL. The comparison of search-based methods is conducted with a fixed LLM token
+budget to ensure fairness by maintaining the same number of search iterations. While in princi-
+ple ADAS has the potential to discover more sophisticated agents by searching in the entire code
+space, it may require more iterations (and thus higher LLM token usage) to achieve this.
+Search trajectory in AgentSquare. We present the search trajectory under 15 iterations using
+AgentSquare based on GPT-4o and other searching methods on ALFWorld and Webhop tasks in
+Figure 4. Results on other tasks are presented in Figure A.13 and A.14. AgentSquare demonstrates a
+steady convergence trajectory, where more advanced agents are continually emerging during search.
+In contrast, module-level searching methods including random and Bayesian search lack a clear and
+insightful search direction. Prompt-level search methods such as OPRO are constrained by a limited
+modification space, leading to minimal performance improvements. As a result, they all encounter
+performance bottlenecks during the search process, resulting in sub-optimal agent architectures. Be-
+sides, we find that simple module-level search methods such as random recombination greatly out-
+performs prompt-level search, indicating the importance of searching in the modular design space.
+4.3 A BLATION STUDY OF AGENT SQUARE
+Effectiveness of module evolution and recombination. There are two key operations in the search-
+ing framework of AgentSquare: module evolution which creates new modules and module recom-
+8
+
+=== PAGE 9 ===
+Preprint
+Method Webshop ALFWorld SciWorld M3Tool TravelPlanner PDDL
+AgentSquare (full) 0.607 0.695 0.781 0.524 0.583 0.669
+w/o module evolution 0.564 0.649 0.736 0.502 0.577 0.614
+w/o module recombination 0.560 0.616 0.710 0.481 0.280 0.669
+Table 2: Ablation study of AgentSquare on GPT-4o on six tasks across different domains.
+0.2 0.3 0.4 0.5 0.6 0.7
+Predicted performance0.20.30.40.50.60.7Actual tested performanceWebshop based on gpt-3.5
+Webshop based on gpt-4o
+Alfworld based on gpt-3.5
+Alfworld based on gpt-4o
+0.2 0.3 0.4 0.5 0.6 0.7
+Predicted performance0.20.30.40.50.60.7Actual tested performanceSciworld based on gpt-3.5
+Sciworld based on gpt-4o
+Travelplanner based on gpt-3.5
+Travelplanner based on gpt-4o
+0.2 0.3 0.4 0.5 0.6 0.7
+Predicted performance0.10.20.30.40.50.60.7Actual tested performanceM3tool based on gpt-3.5
+M3tool based on gpt-4o
+Pddl based on gpt-3.5
+Pddl based on gpt-4o
+Figure 5: Validation of the effectiveness of the performance predictor (correlation between the actual
+and predicted performance) on each task.
+bination which strategically recombines existing ones. To verify the effectiveness of each design,
+we tested three variants: the full model, a version without module evolution, and a version without
+module recombination. The results based on GPT-4o and GPT-3.5 are presented in Table 2 and Ta-
+ble A.5, respectively. It can be seen that dropping each design results in a noticeable performance
+decline and the module recombination has a larger impact. Module recombination significantly ex-
+pands the search space, reducing the risk of falling into a local optima. Meanwhile, module evolution
+facilitates the discovery of more advanced modules tailored to specific tasks. These two operations
+collaborate well ensuring the effectiveness of the search process in AgentSquare.
+Effectiveness of performance predictor. In this part, we verify the effectiveness of this design
+empirically. Figure 5 illustrates the predicted performance of given agents versus their actual tested
+performance based on both GPT-3.5 and GPT-4o on all six tasks. The tested agents were generated
+through random sampling by randomly combining existing modules. It can be found that the pre-
+dicted performance closely aligns with the actual performance, demonstrating the effectiveness of
+the performance predictor. For instance, the evaluation cost of the predictor is only about 0.025%
+of the cost of a full evaluation based on GPT-4o in ALFWorld, demonstrating its remarkable cost-
+efficiency. We provide more experiment results of predicting the performance of the dynamically
+searched agents in Figure A.15 of the Appendix.
+4.4 D ISCOVERED BESTAGENTS FROM AGENT SQUARE
+In this section, we provide some illustrations of the searched best agents, especially some discovered
+promising modules. Table A.4 summarizes the searched best agent from AgentSquare and the best
+hand-crafted agents on all tasks. We can observe that AgentSquare can adaptively identify promising
+agents with both previously existing and newly programmed modules tailored to the given task.
+For instance, the discovered best agent for ALFWorld combines an existing well-designed memory
+module from Generative Agents with newly created planning (named TD) and reasoning modules
+(named SF-ToT ). By comparison, the best hand-crafted agent Self-refine focuses only on reasoning
+module design while overlooking other functional modules, leading to suboptimal performance.
+Moreover, we illustrate two new modules and the human interpretable design insights discovered on
+ALFWorld in Figure 6. More illustrations are listed in the Figure A.16 to Figure A.21.
+5 R ELATED WORK
+5.1 LLM- BASED AUTONOMOUS AGENTS
+LLM-based autonomous agents are an advanced AI system using a core LLM to manage external
+functional modules and interact with the world (Ding et al., 2024b). Recent studies have equipped
+9
+
+=== PAGE 10 ===
+Preprint
+432
+433
+434
+435
+436
+437
+438
+439
+440
+441
+442
+443
+444
+445
+446
+447
+448
+449
+450
+451
+452
+453
+454
+455
+456
+457
+458
+459
+460
+461
+462
+463
+464
+465
+466
+467
+468
+469
+470
+471
+472
+473
+474
+475
+476
+477
+478
+479
+480
+481
+482
+483
+484
+485Under review as a conference paper at ICLR 2025
+2 3 4 5 6 7 8 9
+API cost($)0.300.350.400.450.500.550.600.65Accuracy
+CoTCoT-SCSelf-refine
+T oT Step Back
+TPHuggingGPT
+VoyagerGenerative AgentsDEPS
+OPENAGI
+DiluAgentSquareAlfworld based on GPT-3.5
+20 40 60 80 100
+API cost($)0.30.40.50.60.7Accuracy
+CoTCoT-SCSelf-refine
+T oT
+Step BackTPHuggingGPT
+VoyagerGenerative Agents
+DEPSOPENAGI
+DiluAgentSquareAlfworld based on GPT-4o
+Figure 4: Performance versus API costs visualization on each task. (All)
+123456789101112131415
+Iteration0.350.400.450.500.550.600.65Success rate
+Replace the memory module with 
+Voyager after module recombinationPlanning moule = TD, Reasoning module = SF-TOT
+Memory module = Generative AgentsAgentSquare Search on Alfworld
+Bayesian
+Random
+Qpro
+AgentSquare
+Best of human design
+123456789101112131415161718
+Iteration0.480.500.520.540.560.580.600.62Score
+Replace the memory module with 
+Dilu after module recombinationPlanning moule = IO, Reasoning module = HTSS
+Memory module = DiluAgentSquare Search on Webshop
+Bayesian
+Random
+Qpro
+AgentSquare
+Best of human design
+Figure 5: MetaAgent search trajectory (more human-design agents, specific module combinations
+when surpassing best human-design and the final evolved agent, other search baselines).
+Effectiveness of performance predictor. In this part, we verify the effectiveness of this design
+empirically, taking Webshop, ALFWorld and M3Tool tasks as illustrative examples. Figure 6 il-
+lustrates the predicted performance of given agents versus their actual tested performance based on
+both GPT-3.5 and GPT-4o on the three tasks. It can be found that the predicted performance closely
+aligns with the actual performance, demonstrating the effectiveness of the introduced performance
+predictor. For instance, the evaluation cost of the predictor is only about 0.025% of the cost of a full
+evaluation based on GPT-4o in ALFWorld, demonstrating its remarkable cost-efficiency.
+SF-TOT
+Insights: Develop a module that not only
+generates multiple paths and evaluates
+them but also incorporates self-reflection
+and self-improvement strategies.
+class REASONING_SF_TOT():
+def __call__(self, ...):
+prompt = f’’’Interact with a
+household to solve a task. Your
+instructions must follow the
+examples. Here are some
+examples. ... ’’’
+responses = llm_response(...)
+response = self.get_votes(...)
+response = self.refine(response, ...)
+return responseTD
+Insights: Use a timeline-based approach,
+where tasks are decomposed into sub-
+tasks with explicit temporal dependen-
+cies.
+class PLANNING_TD():
+def __call__(self, ...):
+prompt = f’’’You are a planner who
+divides a {task_type} task into
+several subtasks with explicit
+temporal dependencies. Consider
+the order of actions and their
+dependencies to ensure logical
+sequencing. ...’’’
+sub_plans = llm_response(...)
+return sub_plans
+9
+Figure 6: New module discovered through AgentSquare search on ALFWorld.
+LLM agents with several LLM-centric functional modules including planning (Hao et al., 2023;
+Zeng et al., 2024; Shao et al., 2025), reasoning (Wei et al., 2022; Yao et al., 2024; Shang et al., 2024;
+Xu et al., 2025), using tools (Shen et al., 2024; Schick et al., 2024), and monitoring memory (Wang
+et al., 2024a; Park et al., 2023), greatly enhancing the capabilities of LLM agents. Along with the
+improvement of the single agent, there’s another line of work trying to build more advanced multi-
+agent systems by strategically organizing individual agents for both simulation (Li et al., 2023; Chen
+et al., 2023) and targeted task solving (Qian et al., 2024; Chen et al., 2024b; Li et al., 2024b). The
+emergence of more and more sophisticated agent produces remarkable performance improvement,
+however, their architectures and codebases differ greatly with each other
+
+=== PAGE 11 ===
+Preprint
+REFERENCES
+Josh Achiam, Steven Adler, Sandhini Agarwal, Lama Ahmad, Ilge Akkaya, Florencia Leoni Ale-
+man, Diogo Almeida, Janko Altenschmidt, Sam Altman, Shyamal Anadkat, et al. Gpt-4 technical
+report. arXiv preprint arXiv:2303.08774 , 2023.
+Angelica Chen, David Dohan, and David So. Evoprompting: language models for code-level neural
+architecture search. Advances in Neural Information Processing Systems , 36, 2024a.
+Lin Chen, Fengli Xu, Nian Li, Zhenyu Han, Meng Wang, Yong Li, and Pan Hui. Large language
+model-driven meta-structure discovery in heterogeneous information network. In Proceedings of
+the 30th ACM SIGKDD Conference on Knowledge Discovery and Data Mining , pp. 307–318,
+2024b.
+Weize Chen, Yusheng Su, Jingwei Zuo, Cheng Yang, Chenfei Yuan, Chi-Min Chan, Heyang Yu,
+Yaxi Lu, Yi-Hsin Hung, Chen Qian, et al. Agentverse: Facilitating multi-agent collaboration and
+exploring emergent behaviors. In The Twelfth International Conference on Learning Representa-
+tions , 2023.
+Han Ding, Yinheng Li, Junhao Wang, and Hang Chen. Large language model agent in financial
+trading: A survey. arXiv preprint arXiv:2408.06361 , 2024a.
+Jingtao Ding, Yunke Zhang, Yu Shang, Yuheng Zhang, Zefang Zong, Jie Feng, Yuan Yuan,
+Hongyuan Su, Nian Li, Nicholas Sukiennik, et al. Understanding world or predicting future?
+a comprehensive survey of world models. arXiv preprint arXiv:2411.14499 , 2024b.
+Chrisantha Fernando, Dylan Sunil Banarse, Henryk Michalewski, Simon Osindero, and Tim
+Rockt ¨aschel. Promptbreeder: Self-referential self-improvement via prompt evolution. In Forty-
+first International Conference on Machine Learning , 2024.
+Yingqiang Ge, Wenyue Hua, Kai Mei, Juntao Tan, Shuyuan Xu, Zelong Li, Yongfeng Zhang, et al.
+Openagi: When llm meets domain experts. Advances in Neural Information Processing Systems ,
+36, 2024.
+Shibo Hao, Yi Gu, Haodi Ma, Joshua Hong, Zhen Wang, Daisy Wang, and Zhiting Hu. Reasoning
+with language model is planning with world model. In Proceedings of the 2023 Conference on
+Empirical Methods in Natural Language Processing , pp. 8154–8173, 2023.
+Shengran Hu, Cong Lu, and Jeff Clune. Automated design of agentic systems. arXiv preprint
+arXiv:2408.08435 , 2024.
+Ganesh Jawahar, Muhammad Abdul-Mageed, Laks VS Lakshmanan, and Dujian Ding. Llm perfor-
+mance predictors are good initializers for architecture search. arXiv preprint arXiv:2310.16712 ,
+2023.
+Joel Lehman, Jonathan Gordon, Shawn Jain, Kamal Ndousse, Cathy Yeh, and Kenneth O Stanley.
+Evolution through large models. In Handbook of Evolutionary Machine Learning , pp. 331–366.
+Springer, 2023.
+Junkai Li, Siyu Wang, Meng Zhang, Weitao Li, Yunghwei Lai, Xinhui Kang, Weizhi Ma, and Yang
+Liu. Agent hospital: A simulacrum of hospital with evolvable medical agents. arXiv preprint
+arXiv:2405.02957 , 2024a.
+Songwei Li, Jie Feng, Jiawei Chi, Xinyuan Hu, Xiaomeng Zhao, and Fengli Xu. Limp: Large
+language model enhanced intent-aware mobility prediction. arXiv preprint arXiv:2408.12832 ,
+2024b.
+Yuan Li, Yixuan Zhang, and Lichao Sun. Metaagents: Simulating interactions of human behav-
+iors for llm-based task-oriented coordination via collaborative generative agents. arXiv preprint
+arXiv:2310.06500 , 2023.
+Chang Ma, Junlei Zhang, Zhihao Zhu, Cheng Yang, Yujiu Yang, Yaohui Jin, Zhenzhong Lan, Ling-
+peng Kong, and Junxian He. Agentboard: An analytical evaluation board of multi-turn llm agents.
+arXiv preprint arXiv:2401.13178 , 2024.
+11
+
+=== PAGE 12 ===
+Preprint
+Aman Madaan, Niket Tandon, Prakhar Gupta, Skyler Hallinan, Luyu Gao, Sarah Wiegreffe, Uri
+Alon, Nouha Dziri, Shrimai Prabhumoye, Yiming Yang, et al. Self-refine: Iterative refinement
+with self-feedback. Advances in Neural Information Processing Systems , 36, 2024.
+Reiichiro Nakano, Jacob Hilton, Suchir Balaji, Jeff Wu, Long Ouyang, Christina Kim, Christo-
+pher Hesse, Shantanu Jain, Vineet Kosaraju, William Saunders, et al. Webgpt: Browser-assisted
+question-answering with human feedback. arXiv preprint arXiv:2112.09332 , 2021.
+Muhammad Umair Nasir, Sam Earle, Julian Togelius, Steven James, and Christopher Cleghorn.
+Llmatic: Neural architecture search via large language models and quality diversity optimization.
+InProceedings of the Genetic and Evolutionary Computation Conference , pp. 1110–1118, 2024.
+Joon Sung Park, Joseph O’Brien, Carrie Jun Cai, Meredith Ringel Morris, Percy Liang, and
+Michael S Bernstein. Generative agents: Interactive simulacra of human behavior. In Proceedings
+of the 36th annual acm symposium on user interface software and technology , pp. 1–22, 2023.
+Chen Qian, Wei Liu, Hongzhang Liu, Nuo Chen, Yufan Dang, Jiahao Li, Cheng Yang, Weize Chen,
+Yusheng Su, Xin Cong, et al. Chatdev: Communicative agents for software development. In Pro-
+ceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume
+1: Long Papers) , pp. 15174–15186, 2024.
+Bernardino Romera-Paredes, Mohammadamin Barekatain, Alexander Novikov, Matej Balog,
+M Pawan Kumar, Emilien Dupont, Francisco JR Ruiz, Jordan S Ellenberg, Pengming Wang,
+Omar Fawzi, et al. Mathematical discoveries from program search with large language models.
+Nature , 625(7995):468–475, 2024.
+Timo Schick, Jane Dwivedi-Yu, Roberto Dess `ı, Roberta Raileanu, Maria Lomeli, Eric Hambro,
+Luke Zettlemoyer, Nicola Cancedda, and Thomas Scialom. Toolformer: Language models can
+teach themselves to use tools. Advances in Neural Information Processing Systems , 36, 2024.
+Yu Shang, Yu Li, Fengli Xu, and Yong Li. Defint: A default-interventionist framework for efficient
+reasoning with hybrid large language models. arXiv preprint arXiv:2402.02563 , 2024.
+Chenyang Shao, Xinyuan Hu, Yutang Lin, and Fengli Xu. Division-of-thoughts: Harnessing hybrid
+language model synergy for efficient on-device agents. arXiv preprint arXiv:2502.04392 , 2025.
+Yongliang Shen, Kaitao Song, Xu Tan, Dongsheng Li, Weiming Lu, and Yueting Zhuang. Hugging-
+gpt: Solving ai tasks with chatgpt and its friends in hugging face. Advances in Neural Information
+Processing Systems , 36, 2024.
+Noah Shinn, Federico Cassano, Ashwin Gopinath, Karthik Narasimhan, and Shunyu Yao. Reflexion:
+Language agents with verbal reinforcement learning. Advances in Neural Information Processing
+Systems , 36, 2024.
+Mohit Shridhar, Xingdi Yuan, Marc-Alexandre Cote, Yonatan Bisk, Adam Trischler, and Matthew
+Hausknecht. Alfworld: Aligning text and embodied environments for interactive learning. In
+International Conference on Learning Representations , 2021.
+David So, Quoc Le, and Chen Liang. The evolved transformer. In International conference on
+machine learning , pp. 5877–5886. PMLR, 2019.
+Theodore R Sumers, Shunyu Yao, Karthik Narasimhan, and Thomas L Griffiths. Cognitive archi-
+tectures for language agents. arXiv preprint arXiv:2309.02427 , 2023.
+Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timoth ´ee
+Lacroix, Baptiste Rozi `ere, Naman Goyal, Eric Hambro, Faisal Azhar, et al. Llama: Open and
+efficient foundation language models. arXiv preprint arXiv:2302.13971 , 2023.
+Guanzhi Wang, Yuqi Xie, Yunfan Jiang, Ajay Mandlekar, Chaowei Xiao, Yuke Zhu, Linxi Fan,
+and Anima Anandkumar. V oyager: An open-ended embodied agent with large language models.
+Transactions on Machine Learning Research , 2024a. ISSN 2835-8856.
+12
+
+=== PAGE 13 ===
+Preprint
+Ruoyao Wang, Peter Jansen, Marc-Alexandre C ˆot´e, and Prithviraj Ammanabrolu. Scienceworld:
+Is your agent smarter than a 5th grader? In Proceedings of the 2022 Conference on Empirical
+Methods in Natural Language Processing , pp. 11279–11298, 2022.
+Xingyao Wang, Yangyi Chen, Lifan Yuan, Yizhe Zhang, Yunzhu Li, Hao Peng, and Heng Ji. Exe-
+cutable code actions elicit better llm agents. In Forty-first International Conference on Machine
+Learning , 2024b.
+Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc V Le, Ed H. Chi, Sharan Narang, Aakanksha
+Chowdhery, and Denny Zhou. Self-consistency improves chain of thought reasoning in language
+models. In The Eleventh International Conference on Learning Representations , 2023a.
+Zhenhailong Wang, Shaoguang Mao, Wenshan Wu, Tao Ge, Furu Wei, and Heng Ji. Unleashing the
+emergent cognitive synergy in large language models: A task-solving agent through multi-persona
+self-collaboration. arXiv preprint arXiv:2307.05300 , 2023b.
+Zihao Wang, Shaofei Cai, Guanzhou Chen, Anji Liu, Xiaojian Shawn Ma, and Yitao Liang. De-
+scribe, explain, plan and select: interactive planning with llms enables open-world multi-task
+agents. Advances in Neural Information Processing Systems , 36, 2024c.
+Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Fei Xia, Ed Chi, Quoc V Le, Denny
+Zhou, et al. Chain-of-thought prompting elicits reasoning in large language models. Advances in
+neural information processing systems , 35:24824–24837, 2022.
+Licheng Wen, Daocheng Fu, Xin Li, Xinyu Cai, Tao MA, Pinlong Cai, Min Dou, Botian Shi, Liang
+He, and Yu Qiao. Dilu: A knowledge-driven approach to autonomous driving with large language
+models. In The Twelfth International Conference on Learning Representations , 2024.
+Lilian Weng. Llm-powered autonomous agents. lilianweng.github.io , Jun 2023. URL https:
+//lilianweng.github.io/posts/2023-06-23-agent/ .
+Colin White, Willie Neiswanger, and Yash Savani. Bananas: Bayesian optimization with neural
+architectures for neural architecture search. In Proceedings of the AAAI conference on artificial
+intelligence , volume 35, pp. 10293–10301, 2021.
+Zhiheng Xi, Yiwen Ding, Wenxiang Chen, Boyang Hong, Honglin Guo, Junzhe Wang, Dingwen
+Yang, Chenyang Liao, Xin Guo, Wei He, et al. Agentgym: Evolving large language model-based
+agents across diverse environments. arXiv preprint arXiv:2406.04151 , 2024.
+Jian Xie, Kai Zhang, Jiangjie Chen, Tinghui Zhu, Renze Lou, Yuandong Tian, Yanghua Xiao, and
+Yu Su. Travelplanner: A benchmark for real-world planning with language agents. In Forty-first
+International Conference on Machine Learning , 2024.
+Fengli Xu, Qianyue Hao, Zefang Zong, Jingwei Wang, Yunke Zhang, Jingyi Wang, Xiaochong Lan,
+Jiahui Gong, Tianjian Ouyang, Fanjin Meng, et al. Towards large reasoning models: A survey of
+reinforced reasoning with large language models. arXiv preprint arXiv:2501.09686 , 2025.
+Chengrun Yang, Xuezhi Wang, Yifeng Lu, Hanxiao Liu, Quoc V Le, Denny Zhou, and Xinyun
+Chen. Large language models as optimizers. In The Twelfth International Conference on Learning
+Representations , 2024.
+Shunyu Yao, Howard Chen, John Yang, and Karthik Narasimhan. Webshop: Towards scalable
+real-world web interaction with grounded language agents. Advances in Neural Information Pro-
+cessing Systems , 35:20744–20757, 2022.
+Shunyu Yao, Dian Yu, Jeffrey Zhao, Izhak Shafran, Tom Griffiths, Yuan Cao, and Karthik
+Narasimhan. Tree of thoughts: Deliberate problem solving with large language models. Ad-
+vances in Neural Information Processing Systems , 36, 2024.
+Junchi Yu, Ran He, and Zhitao Ying. THOUGHT PROPAGATION: AN ANALOGICAL AP-
+PROACH TO COMPLEX REASONING WITH LARGE LANGUAGE MODELS. In The
+Twelfth International Conference on Learning Representations , 2024.
+13
+
+=== PAGE 14 ===
+Preprint
+Siyu Yuan, Kaitao Song, Jiangjie Chen, Xu Tan, Dongsheng Li, and Deqing Yang. Evoa-
+gent: Towards automatic multi-agent generation via evolutionary algorithms. arXiv preprint
+arXiv:2406.14228 , 2024.
+Qingbin Zeng, Qinglong Yang, Shunan Dong, Heming Du, Liang Zheng, Fengli Xu, and Yong
+Li. Perceive, reflect, and plan: Designing llm agent for goal-directed city navigation without
+instructions. arXiv preprint arXiv:2408.04168 , 2024.
+Huaixiu Steven Zheng, Swaroop Mishra, Xinyun Chen, Heng-Tze Cheng, Ed H. Chi, Quoc V Le,
+and Denny Zhou. Take a step back: Evoking reasoning via abstraction in large language models.
+InThe Twelfth International Conference on Learning Representations , 2024.
+Hongpeng Zhou, Minghao Yang, Jun Wang, and Wei Pan. Bayesnas: A bayesian approach for neural
+architecture search. In International conference on machine learning , pp. 7603–7613, 2019.
+Mingchen Zhuge, Wenyi Wang, Louis Kirsch, Francesco Faccio, Dmitrii Khizbullin, and J ¨urgen
+Schmidhuber. Gptswarm: Language agents as optimizable graphs. In Forty-first International
+Conference on Machine Learning , 2024.
+14
+
+=== PAGE 15 ===
+Preprint
+A A PPENDIX
+A.1 E XPERIMENTAL SETUP
+Task setup. We evaluate AgentSquare and compared methods on six representative tasks covering
+four key domains which are widely adopted by existing LLM agent benchmarks (Ma et al., 2024;
+Xi et al., 2024):
+•Embodied: ALFWorld (Shridhar et al., 2021) with text-based household tasks where agents nav-
+igate and interact with objects using text commands, ScienceWorld (Wang et al., 2022) with inter-
+active science tasks requiring agents to navigate rooms and perform experiments, testing scientific
+commonsense;
+•Game: PDDL (Ma et al., 2024) including many strategic games where agents use PDDL expres-
+sions to complete tasks;
+•Web: WebShop (Yao et al., 2022) focusing on online shopping tasks where agents browse and
+purchase products based on user instructions;
+•Tool: TravelPlanner (Xie et al., 2024) with many travel planning tasks where agents use tools
+and data to create detailed plans, (6)M3ToolEval (Wang et al., 2024b) including complex tasks
+requiring multi-turn interactions with multiple tools.
+The specific performance evaluation metric varies in different tasks, following the evaluation set-
+tings in their original work. Specifically, the evaluation metric is “success rate” for ALFWorld and
+M3ToolEval, “task score (defined as the average reward obtained across episodes)” for Webshop,
+“progress rate” for SciWorld and PDDL, and “micro pass rate” for TravelPlanner.
+Baselines. We compare AgentSquare with four types of baselines:
+•Hand-crafted agents. We compare with 12 hand-crafted agents including CoT (Wei et al., 2022),
+CoT-SC (Wang et al., 2023a), Self-refine (Madaan et al., 2024), ToT (Yao et al., 2024), Step
+back (Zheng et al., 2024), Thought propagation (Yu et al., 2024), HuggingGPT (Shen et al., 2024),
+V oyager (Wang et al., 2024a), Generative Agents (Park et al., 2023), DEPS (Wang et al., 2024c),
+OPENAGI (Ge et al., 2024)and Dilu (Wen et al., 2024).
+•Module search methods. We compare with two module-level agent optimization methods in-
+cluding the random combination of existing modules and Bayesian (Zhou et al., 2019) module
+combination optimization inspired by Bayesian optimization in NAS (White et al., 2021).
+•Prompt search methods. We select OPRO (Yang et al., 2024) as a representative prompt-level
+optimization approach, which leverages LLMs as optimizers by generating and refining instruc-
+tions through iterative prompts.
+•Agent search methods. We select ADAS (Hu et al., 2024) which optimizes the entire agentic
+system in code space as the agent search baseline. We use the official code of ADAS and make
+slight modifications to adapt it to our tasks.
+AgentSquare setup. We implement AgentSquare and conduct experiments using both GPT-3.5-
+turbo-0125 and GPT-4o (Achiam et al., 2023). To ensure a fair comparison, we use the same number
+of few-shot examples across all methods. The initial agent is set as a random module combination,
+and the search process terminates after 5 consecutive iterations without performance improvement.
+15
+

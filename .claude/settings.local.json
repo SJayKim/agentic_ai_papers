@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "WebSearch",
+      "Bash(curl:*)",
+      "Bash(ls:*)",
+      "Bash(pip install:*)",
+      "Bash(python -c \":*)",
+      "Bash(python notion_upload.py)",
+      "Bash(python notion_fix.py)",
+      "WebFetch(domain:arxiv.org)",
+      "WebFetch(domain:www.microsoft.com)",
+      "WebFetch(domain:openreview.net)",
+      "WebFetch(domain:proceedings.iclr.cc)",
+      "Bash(python notion_update.py)",
+      "Bash(for id:*)",
+      "Bash(do echo:*)",
+      "Bash(done)",
+      "Bash(python notion_upload3.py)",
+      "Bash(python:*)",
+      "Skill(notion-upload)",
+      "Bash(du -sh *.pdf)",
+      "Bash(du -ch *.pdf)",
+      "Bash(wc -l *.md)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(git:*)"
+    ]
+  }
+}

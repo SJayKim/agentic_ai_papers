@@ -1,0 +1,716 @@
+=== PAGE 1 ===
+Preference-Aware Memory Update for Long-Term LLM Agents
+Haoran Sun, Zekun Zhang, Shaoning Zeng
+Abstract
+One of the key factors influencing the reasoning capabili-
+ties of LLM-based agents is their ability to leverage long-
+term memory. Integrating long-term memory mechanisms al-
+lows agents to make informed decisions grounded in histori-
+cal interactions. While recent advances have significantly im-
+proved the storage and retrieval components—e.g., by encod-
+ing memory into dense vectors for similarity search or or-
+ganizing memory as structured knowledge graphs—most ex-
+isting approaches fall short in memory updating. In partic-
+ular, they lack mechanisms for dynamically refining prefer-
+ence memory representations in response to evolving user
+behaviors and contexts. To address this gap, we propose
+a Preference-Aware Memory Update Mechanism (PAMU)
+that enables dynamic and personalized memory refinement.
+By integrating sliding window averages (SW) with expo-
+nential moving averages (EMA), PAMU constructs a fused
+preference-aware representation that captures both short-term
+fluctuations and long-term user tendencies. We conduct ex-
+periments on five task scenarios of the LoCoMo dataset, and
+the results show that our mechanism can significantly im-
+prove the output quality of LLM in five baselines, validating
+its effectiveness in long-term conversations.
+Introduction
+Large Language Model (LLM) agents exhibit strong au-
+tonomous decision-making capabilities across a wide range
+of tasks, particularly excelling in open-domain question an-
+swering (Yao et al. 2024; Huang et al. 2024a; DeepSeek-
+AI 2025). In long-term dialogue scenarios, effective reason-
+ing and decision-making often require integrating past in-
+teractions, making internal memory mechanisms essential
+(Zhang et al. 2024a,b). These mechanisms aim to emulate
+human-like cognitive memory by retaining prior conversa-
+tional context, enabling the agent to retrieve relevant infor-
+mation and generate context-aware, personalized responses.
+The design and adaptation of such memory systems are thus
+critical to the agent’s performance in complex, temporally
+extended tasks (Li et al. 2024; Guo et al. 2024; Sun et al.
+2025; Sun and Zeng 2025).
+The most basic memory approach concatenates prior
+dialogues with the current prompt, but this method is
+constrained by the LLM’s finite context window, limit-
+ing its effectiveness in prolonged interactions (Jin et al.2024; Gu et al. 2024). To address this, recent studies
+have explored more sophisticated architectures: Memory-
+Bank (Zhong et al. 2024) encodes past information into
+dense vectors and retrieves memories via similarity search
+; MemGPT (Packer et al. 2023) introduces a hierarchi-
+cal OS-inspired memory system that combines limited-
+context attention with external memory storage, yet suf-
+fers from a trade-off between retrieval accuracy and effi-
+ciency; MemInsight (Salama et al. 2025) enhances memory
+representation by autonomously extracting structured key-
+value attributes; and A-MEM (Xu et al. 2025), inspired by
+the Zettelkasten method, dynamically constructs evolving
+knowledge graphs for self-organizing memory.
+Despite these advances, existing systems predominantly
+focus on memory storage and retrieval, often overlooking a
+crucial aspect: how to adaptively and continuously update
+memory in response to evolving user behavior during long-
+term interactions (Wu et al. 2025; Huang et al. 2024b). In
+real-world deployment, users are non-stationary—their in-
+tents, preferences, and goals shift over time. Without dy-
+namic memory updating, agents risk relying on outdated
+or misaligned information, leading to degraded performance
+and user trust.
+To bridge this gap, we propose a Preference-Aware Mem-
+ory Update Mechanism that enables LLMs to perceive,
+adapt to, and respond in alignment with evolving user pref-
+erences. At its core is a novel Preference Change Percep-
+tion Module, which combines a sliding window average
+and an exponenti
+
+=== PAGE 2 ===
+Figure 1:Illustration of PAMU method.PAMU extracts user preferences from dialogue, models short- and long-term trends
+via SW and EMA, detects preference shifts, and updates the prompt to guide personalized generation.
+ReadAgent (Lee et al. 2024) segments and compresses doc-
+uments into key-point memories for retrieval-augmented
+reading comprehension. MemGPT (Packer et al. 2023) uses
+OS-inspired virtual memory management, combining hier-
+archical memory with external storage via dynamic func-
+tion calls. SCM (Wang et al. 2023) enables agents to au-
+tonomously decide when and how to access memory through
+a controller-stream-agent framework. MemoryBank (Zhong
+et al. 2024), grounded in the Ebbinghaus forgetting curve,
+supports memory storage, retrieval, and update for user-
+aware personalization. A-MEM (Xu et al. 2025), inspired
+by Zettelkasten, organizes memory as evolving, self-linked
+knowledge notes. MemInsight enhances memory represen-
+tation by extracting structured attributes for more accurate
+semantic retrieval (Salama et al. 2025).
+While these approaches have advanced memory model-
+ing in LLMs—especially in storage, retrieval, and organi-
+zation—they largely assume static user behavior. In prac-
+tice, user preferences and goals evolve dynamically. How-
+ever, existing systems lack mechanisms to adaptively track
+and update memory in response to such changes. This high-
+lights a critical gap: the need for a dynamic, preference-
+aware memory update mechanism that supports long-term
+personalization in LLM agents.
+Methodology
+In this section, we introduce our Preference-Aware Memory
+Update (PAMU) mechanism.
+Preference Extractor
+The system constructs a user preference vectorP=
+{p1, p2, . . . , p D}by extracting multidimensional preference
+signals from multi-turn interactions between the user and the
+model. Each dimensionp drepresents a specific user pref-
+erence type, such as tone style, response length, emotional
+tone, information density, and degree of formality. After
+each dialogue turn, the system updates the preference vector
+by analyzing user feedback and linguistic features. Specifi-
+cally:
+•Tone Style.A RoBERTa encoder with a multi-class clas-
+sification head is employed to analyze the stylistic fea-
+tures of user utterances. The model produces a probabil-ity distribution over predefined tone categories. The cat-
+egory with the highest probability and its score are con-
+catenated into a tuple to represent the tone dimension.
+•Response Length.This is measured by the number of
+tokens generated by the model. The average response
+length over the past K turns is computed and normalized
+to the [0, 1] range to form the length dimension.
+•Emotional Tone.An emotion classification model iden-
+tifies the dominant emotional categories from both user
+and assistant utterances. A probability vector over prede-
+fined emotional classes is extracted, and the class with
+the highest probability is used, along with its score, to
+represent the emotional tone dimension.
+•Information Density.The system leverages an Ope-
+nIE model to extract structured (subject, predicate, ob-
+ject) triples from the assistant’s responses. Each triple is
+treated as an atomic information unit. The number of ex-
+tracted triples per turn is treated as the count of knowl-
+edge points. The information densityID tof the response
+at turn t is defined as:
+IDt=Kt
+Lt(1)
+Among them,K trepresents the number of triples sam-
+pled in the t-th round, andL trepresents the total number
+of words in the response of that round. This ratio mea-
+sures the average amount of information carried by each
+word, reflecting the compactness of language use and the
+degree of knowledge density.
+•Degree of Formality.A pretrained formality classifica-
+tion model is employed to evaluate the assistant’s re-
+sponse, yielding a normalized formality score within the
+range [0, 1], where 0 indicates fully colloquial (spoken)
+language and 1 denotes fully formal (written) language.
+This score is directly us
+
+=== PAGE 3 ===
+Algorithm 1: Preference-Aware Dialogue Generation
+1:procedureGENERATERESPONSE(H t,xt)▷History
+and current user input
+2:p t←EXTRACTPREFERENCES(H t, xt)▷
+pt= (s t, lt, et, dt, ft)
+3:for alld∈ {tone, length, emotion, density,
+formality}do
+4:SW t[d]←Mean(p t−W+1:t [d])▷Sliding
+window average
+5:EMA t[d]←β·EMA t−1[d] + (1−β)·p t[d]
+6:w t[d]←λ·SW t[d] + (1−λ)·EMA t[d]
+7:end for
+8:desc←FORMATPREFERENCE(w t)▷Natural
+language preference prompt
+9:prompt←"Respond in style: "+desc+
+"\n"+x t
+10:y t←LLM.generate(prompt)
+11:returny t
+12:end procedure
+13:functionEXTRACTPREFERENCES(H t,xt)
+14:s t←ToneClassifier(x t, Ht)▷Categorical:
+RoBERTa-based
+15:l t←Normalize(MeanLength(r t−K:t−1 ))
+16:e t←EmotionAnalyzer(x t, Ht)
+17:d t←InfoDensity(r t−1)▷Triple/token ratio
+18:f t←FormalityDetector(x t)
+19:return(s t, lt, et, dt, ft)
+20:end function
+21:functionFORMATPREFERENCE(w t)
+22:return[Tone:Label(w t[tone]), Emotion:
+Label(w t[emotion]),
+23:Density:Quantize(w t[density]),
+Length:Quantize(w t[length]),
+24:Formality:Quantize(w t[formality])]
+25:end function
+tone, respectively;l t,dt, andf tare normalized scalar val-
+ues representing response length, information density, and
+formality. This vector is then fed into the Preference Shift
+Detector, which models the temporal dynamics of user pref-
+erences using a combination of a sliding window mecha-
+nism and Exponential Moving Average (EMA). This enables
+the system to detect both gradual drifts and abrupt shifts
+in preferences, and to determine whether the model’s re-
+sponse strategy requires adaptation or fine-tuning to better
+align with evolving user intent.
+Preference Change Perception Mechanism
+Following the extraction of multi-dimensional user prefer-
+ence vectors, a Preference Dynamics Perception Module
+is employed to model behavioral shifts and enable person-
+alized response adaptation. This module integrates Sliding
+Window (SW) averaging with Exponential Moving Average
+(EMA) to continuously update preference estimates at each
+dialogue turn, thereby guiding the response generator toward
+controlled, user-aligned outputs.
+Specifically, we uniformly represent user preference vec-tors in the form of:
+pt=h
+p(1)
+t, p(2)
+t, . . . , p(D)
+ti
+(3)
+Among them, D represents the number of preference di-
+mensions. Each dimensional preference valuep(d)
+tmay be
+a continuous variable (such as response length, information
+density, formality level) or a categorical variable (such as
+tone style, emotional intonation). For categorical variables,
+we use the tuple(c(d)
+t, q(d)
+t)to represent, wherec(d)
+tis the
+category index andq(d)
+tis the categorical probability distri-
+bution.
+Dynamic Modeling of Continuous Preference Dimen-
+sions.For continuous preference dimensions (length, in-
+formation density, and Degree of formalization), we define
+a sliding window of length W to calculate the sliding aver-
+age preference value at the current time t.
+SW(d)
+t=1
+WtX
+i=t−W+1p(d)
+i (4)
+Among them,SW(d)
+tis the sliding window average of the
+preference in thed-th dimension at timet;Wis the slid-
+ing window length (the number of historical rounds used to
+calculate the average);p(d)
+irepresents the preference value
+in thed-th dimension of thei-th round;Pt
+i=t−W+1denotes
+the cumulative operation on the preference values from the
+(t−W+ 1)-th round to thet-th round within the window.
+Meanwhile, Exponential Moving Average (EMA) is in-
+troduced to enhance the memory capacity for long-term
+trends. Let EMAt(d) denote the exponential average of pref-
+erence dimension d at time t, then its update formula is:
+EMA(d)
+t=β·EMA(d)
+t−1+ (1−β)·p(d)
+t (5)
+Among them,β∈(0,1)is the decay coefficient, which
+controls the degree of influence of historical preferences on
+the current estimate. SW is more sensitive to recent prefer-
+ence changes, while EMA is used to slowly track long-term
+trends.
+After the combination of the two, the fused perception
+vector is defined as:
+ˆw(d)
+t=λ·SW(d)
+t+ (1−λ)·EMA(d)
+t (6)
+Among them,λ∈[0,1]controls the weight proportion of
+t
+
+=== PAGE 4 ===
+SW(d)
+t=1
+WtX
+i=t−W+1q(d)
+i (7)
+EMA(d)
+t=β·EMA(d)
+t−1+ (1−β)·q(d)
+t (8)
+The fused category probability perception vector is:
+ˆw(d)
+t=λ·SW(d)
+t+ (1−λ)·EMA(d)
+t (9)
+Select the category with the highest probability as the con-
+trol label to be used during generation at the current time:
+c(d)
+t= arg max
+jˆw(d)
+t[j],(10)
+wherejis the category index.
+Preference-Guided Prompting
+To enable personalized generation, we explicitly inject the
+fused user preference vectorw tinto a structured natural
+language prompt. This guides the LLM to produce outputs
+aligned with the user’s desired style and attributes, with-
+out modifying the model architecture or decoder—achieving
+flexible behavior control purely via prompt engineering.
+Compared to fine-tuning-based implicit modeling, this
+approach is more efficient, interpretable, and adaptable at
+inference time, avoiding issues like catastrophic forgetting
+and supporting real-time preference updates in multi-user or
+multi-domain settings.
+Concretely,w tis converted into a textual instruction em-
+bedded in the prompt, e.g., “Please answer the following
+question in the style of: [Tone: humorous], [Emotion: re-
+laxed], [Information density: moderate], [Length: brief].”
+Each preference in the prompt is derived from the cur-
+rent dialogue turn, using a fusion of sliding window aver-
+aging and exponential moving average (EMA) to smooth
+short-term fluctuations. The formatting of different prefer-
+ence types is as follows:
+•Categorical dimensions(e.g., tone style, emotional
+tone) represented as tuples (c, p), where c is the index
+of the most probable category and p its confidence score.
+The selected labelc∗is verbalized into descriptors such
+as “humorous,” “serious,” or “gentle” for prompt inclu-
+sion.
+•Continuous dimensions(e.g., response length, informa-
+tion density, formality) maintained as scalar values, dis-
+cretized into predefined intervals and mapped to inter-
+pretable semantic tags (e.g., “brief,” “detailed”) to en-
+hance the model’s understanding of intensity and align-
+ment strength.
+For the information density valued∈[0,1], we define a dis-
+cretization function that maps continuous preference scores
+into interpretable semantic tags:
+Label(d) =
+
+Sparse, d∈[0,0.33)
+Moderate, d∈[0.33,0.66)
+Dense, d∈[0.66,1](11)This mapping strategy is applied uniformly to all continu-
+ous preference dimensions (e.g., response length, informa-
+tion density, formality). By concatenating the resulting de-
+scriptors across dimensions, a complete structured control
+prompt can be automatically constructed. Such an explicit
+prompting mechanism enables the preference vector to func-
+tion not only as a soft controller for generation, but also as an
+interpretable interface for user-aligned output control. Ow-
+ing to its model-agnostic nature, this mechanism is highly
+extensible and applicable to a wide range of downstream
+tasks, including multi-turn dialogue generation, personal-
+ized question answering, and preference-aware memory sys-
+tems.
+Motivation and Basis
+In long-term human-computer interaction scenarios, user
+behavior exhibits strong non-stationarity. Users’ tone styles,
+emotional states, information density requirements, and de-
+grees of formality often undergo gradual evolution or abrupt
+changes due to factors such as task context, personal emo-
+tions, and interaction stages. Although existing memory
+mechanisms have made progress in information storage and
+retrieval, they generally rely on a core assumption: that user
+preferences are stable or uniformly distributed over time.
+This static assumption may lead the model to generate re-
+sponses based on outdated preferences, reducing dialogue
+consistency and user satisfaction. Therefore, our memory
+update mechanism must possess sensitivity and behavioral
+interpretability.
+In time-series modeling, Sliding Window Average and
+Exponential Moving Average (EMA) are two commonly
+used but complementary techniques. Sliding Window Aver-
+age is sensitive to recent changes a
+
+=== PAGE 5 ===
+whereσ2andτ2denote the variances of the short-term and
+long-term estimators, respectively. This justifiesλas a data-
+dependent confidence weight, supporting the optimality of
+the fusion under uncertainty.
+2. Kalman Filtering Approximation: Recursive Prefer-
+ence Tracking.The update rule resembles a simplified
+Kalman filter:
+ˆw(d)
+t= ˆw(d)
+t−1+K t·(p(d)
+t−ˆw(d)
+t−1)(14)
+with gainK tcomputed as:
+Kt=Pt|t−1
+Pt|t−1+R(15)
+whereP t|t−1 is the prior variance andRis the observation
+noise variance. SettingK t≈(1−β)shows the correspon-
+dence to EMA. This analogy supports the recursive structure
+and temporal filtering behavior of our mechanism.
+3. Change Detection Signal: Behavioral Adaptation Trig-
+ger.The deviation between SW and EMA serves as a
+change indicator:
+∆(d)
+t=SW(d)
+t−EMA(d)
+t (16)
+To normalize the change magnitude, we define a detection
+score:
+C(d)
+t=∆(d)
+t
+ϵ+p
+Var(SW) +Var(EMA)(17)
+WhenC(d)
+texceeds a predefined thresholdδ, the system
+can trigger prompt rewriting, memory graph restructuring,
+or strategy modulation. This confirms the mechanism’s role
+as an interpretable and actionable controller for preference-
+aware behavior.
+This mechanism addresses the core problem proposed
+in this paper: how to dynamically update user preference
+memory within LLM agents and accordingly adjust their re-
+sponses in real time.
+Experiment
+Setup
+Dataset and Evaluation Metrics.To evaluate whether
+our preference update mechanism can effectively guide
+LLMs to generate user-aligned responses in long-term
+multi-turn dialogue scenarios, we adopt the LoCoMo dataset
+(Maharana et al. 2024) following previous related work (Xu
+et al. 2025; Zhong et al. 2024). LoCoMo is specifically de-
+signed to assess the memory and consistency capabilities of
+LLM-based agents in extended multi-session interactions.
+Key characteristics of the dataset include 50 dialogues, each
+with an average of 300 turns, spanning up to 35 distinct
+sessions and approximately 9,000 tokens per dialogue. We
+choose three types of task in it:
+•Single-hop questions (SH.): answerable within a single
+session (2,705 pairs).•Multi-hop questions (MH.): requiring cross-session in-
+formation aggregation (1,104 pairs).
+•Temporal reasoning (T.): testing understanding of time-
+sensitive information (1,547 pairs).
+LoCoMo emphasizes long-range contextual coherence
+across sessions, making it a robust benchmark for evaluat-
+ing LLMs’ ability to handle memory-dependent reasoning
+and maintain response consistency in long-term interactions.
+We employ two primary metrics to comprehensively as-
+sess model performance under different memory settings:
+(1) F1 Score: Measures the harmonic mean of precision and
+recall between the generated and reference answers, cap-
+turing semantic accuracy and completeness;(2) BLEU-1
+Score: Evaluates the surface quality and fluency of gener-
+ated responses via unigram overlap with the gold standard.
+These metrics jointly assess the effectiveness of our mech-
+anism in enhancing user-aligned generation in long-context
+conversational settings.
+Baselines.As our work specifically focuses on prefer-
+ence memory update mechanisms rather than proposing a
+complete memory framework, we evaluate the effective-
+ness of our approach by integrating it into five representa-
+tive long-term memory methods and conducting before-and-
+after comparisons. The selected baselines include:ReadA-
+gent (RA.)(Lee et al. 2024),MemoryBank (MB.)(Zhong
+et al. 2024),MemGPT (MG.)(Packer et al. 2023), andA-
+MEM (AM.)(Xu et al. 2025), all of which are currently
+very mainstream memory frameworks. For each method, we
+augment its original architecture by appending our prefer-
+ence update module, without modifying its internal memory
+operations or update logic. Importantly, our mechanism is
+fully compatible and modular, operating independently of
+each baseline’s native update strategy. The only difference
+between the original and enhanced versions lies in the pres-
+ence of our preference-aware update component, e
+
+=== PAGE 6 ===
+ing inference, each model receives only the input question
+and its respective historical memory. The final preference
+prompt—generated from the computed vector—is appended
+to the original input prompt of each method, providing ex-
+plicit control signals to guide response generation.
+Main Results and Analysis
+Each result represents the average over three independent
+runs with different random seeds. We conducted paired t-
+tests among baselines. Results marked with*indicate sta-
+tistically significant improvements (p<0.05).†indicates
+the model is equipped with our proposed Preference-Aware
+Memory Update (PAMU) mechanism. The format of all re-
+sults isBefore Augment / After Augment.
+Comparison Analysis.As shown in Table 2, 1 and 3, our
+method was evaluated on three representative tasks. For both
+the single-hop and multi-hop reasoning tasks, all baselines
+equipped with PAMU demonstrated significant improve-
+ments in response quality, while maintaining or slightly
+improving accuracy. This highlights the effectiveness and
+generalizability of PAMU in enhancing generation without
+compromising correctness. Notably, in the temporal reason-
+ing task, PAMU led to substantial gains in both accuracy
+and response quality, indicating its ability not only to de-
+tect short-term preference shifts but also to effectively up-
+date long-term user trends.
+MethodsSingle-Hop
+F1 BLUE-1Qwen 2.5
+1.5BRA. / RA.†6.54 /8.274.87 /8.97*
+MB. / MB.†11.14 /12.348.24 /10.57*
+MG. / MG.†10.43 /10.497.54 /11.46*
+AM. / AM.†17.24 /17.9311.35 /15.73*3BRA. / RA.†3.23 / 3.23 2.89 /4.23*
+MB. / MB.†3.54 /3.873.39 /7.35*
+MG. / MG.†5.07 /5.244.28 /8.65*
+AM. / AM.†12.52 /13.239.24 /13.24*
+Table 1: Experimental results on single-hop tasks using
+Qwen 2.5-1.5B/3B models.
+MethodsMulti-Hop
+F1 BLUE-1LLaMA 3.2
+1.5BRA. / RA.†2.45 /2.982.67 /5.34*
+MB. / MB.†7.61 /6.036.56 /9.23*
+MG. / MG.†5.23 /6.785.14 /10.87*
+AM. / AM.†16.57 /17.0211.24 /19.23*3BRA. / RA.†3.05 /3.672.67 /5.45*
+MB. / MB.†3.56 / 3.56 3.02 /7.65*
+MG. / MG.†3.02 / 3.02 2.95 /6.34*
+AM. / AM.†19.35 /20.1413.27 /23.14*
+Table 2: Experimental results on multi-hop tasks using
+LLaMA 3.2-1.5B/3B models.MethodsTemporal Reasoning
+F1 BLUE-1LLaMA
+7BRA. / RA.†12.24 /15.45*11.17 /15.67*
+MB. / MB.†14.56 /19.76*11.95 /17.24*
+MG. / MG.†11.14 /17.54*8.24 /15.57*
+AM. / AM.†17.55 /23.23*14.67 /21.46*30BRA. / RA.†5.57 /7.67*5.22 /7.43*
+MB. / MB.†4.77 /8.98*4.87 /7.34*
+MG. / MG.†5.64 /9.95*5.53 /8.24*
+AM. / AM.†12.54 /19.87*11.85 /18.23*
+Table 3: Experimental results on temporal reasoning tasks
+using LLaMA-7B/30B models.
+Methods RA.†MB.†MG.†AM.†
+w/o. SW 11.24 12.03 10.07 15.36
+w/o. EMA 11.35 12.47 10.78 14.05
+Equal Fusion 13.56 16.45 15.43 20.34
+w/o Detection 12.34 13.28 12.24 16.24
+w/o Prompt 11.13 12.25 9.37 15.45
+Single Pref 12.21 16.78 14.23 18.95
+Static Pref 12.34 16.21 13.24 19.47
+Full 15.56 18.50 16.56 22.35
+Table 4: Ablation Study. We select the experimental results
+of temporal reasoning using LLaMA 7B and took the aver-
+age of F1 and BLUE-1.
+Ablation Study.To systematically evaluate the individ-
+ual contributions of each component in our proposed
+preference-aware memory update mechanism, we conduct
+a comprehensive set of ablation studies. The details of each
+ablation and its corresponding replacement are as follows:
+• Sliding Window Average (w/o SW): Captures short-term
+preference shifts. Ablation removes SW, leaving only
+EMA to simulate lack of short-term responsiveness.
+• Exponential Moving Average (w/o EMA): Models long-
+term preference trends. Removing EMA isolates the ef-
+fect of losing long-term stability.
+• Fusion Mechanism (Equal Fusion): The original model
+learns a dynamic weightλto fuse SW and EMA. Abla-
+tion fixesλ= 0.5, disabling adaptive balancing.
+• Preference Change Detection (w/o Detection): Removes
+the divergence-based change signal, preventing promp-
+t/memory adaptation and reverting to static generation
+templates.
+• Prompt Injection (w/o Prompt): Eliminates explicit pref-
+erence prompts, providing only raw user in
+
+=== PAGE 7 ===
+Turn Tone. Length Emotion Density Formality
+1 (Humor, 0.92) 0.18 (Joy, 0.85) 0.20 0.15
+2 (Humor, 0.93) 0.16 (Joy, 0.86) 0.22 0.17
+3 (Neutral, 0.72) 0.45 (Neutral, 0.70) 0.55 0.48
+4 (Serious, 0.89) 0.71 (Focused, 0.91) 0.78 0.80
+5 (Serious, 0.95) 0.69 (Neutral, 0.88) 0.82 0.85
+Table 5: Data extracted from the designed dialogues using the preference extractor in PAMU.
+vector averaged over the first five turns, simulating static
+memory systems.
+All ablations are conducted under consistent training set-
+tings, model architectures, and evaluation protocols to en-
+sure causal interpretability. Experimental results are shown
+in Table 4, it can be seen that each module plays an es-
+sential and non-redundant role in maintaining consistency,
+personalization, and preference alignment throughout long-
+term interactions.
+Further Analysis
+To further demonstrate the interpretability and responsive-
+ness of our Preference-Aware Memory Update (PAMU)
+mechanism, we design a controlled dialogue-based case
+study simulating a typical shift in user preference.
+Since our mechanism is subjective and there is no objec-
+tive metric to evaluate the specific effectiveness of its com-
+ponents, we incorporate both GPT-4 automatic scoring and
+human judgment. The human evaluation was conducted by
+ten annotators with bachelor’s degrees, completed over a
+two-week period. Annotators were instructed not to use any
+AI tools during the assessment to ensure manual, unbiased
+evaluation. Notably, none of the paper’s authors participated
+in the evaluation phase, ensuring fairness and neutrality.
+We design the following dialogue to evaluate whether the
+components in PAMU mechanism are effective.
+Example Dialogue
+Turn 1 (User): Hey, tell me something and funny!
+Turn 2 (User): That’s good! I like it short and fun.
+Turn 3 (User): Actually, I have a serious task now.
+Can you be more detailed?
+Turn 4 (User): I need a thorough explanation on
+quantum computing basics.
+Assistant (with PAMU): Certainly. Quantum com-
+puting is based on quantum bits, or qubits...
+Assistant: Sure! Here’s another fact to brighten
+you...
+Turn 5 (User): Please just give me clear facts.
+As shown above, the user initially demonstrates a clear
+preference for humorous and concise responses (Turns
+1–2), but this preference abruptly shifts toward formal and
+information-dense content starting from Turn 3. PAMU cap-
+tures this shift in real time by monitoring the divergence be-
+tween the short-term (SW) and long-term (EMA) estimatesfor each preference dimension. At Turn 3, the preference
+change signalC(d)
+tsurpasses the predefined thresholdδin
+multiple dimensions (e.g., tone, length, density), triggering
+an immediate update to the fused preference vectorˆw tand
+rewriting of the prompt. Preference Vector Dynamics (Ex-
+tracted) is shown in Table 5.
+To evaluate the utility of PAMU’s dynamic prompting, we
+compare model outputs with and without PAMU at Turn
+4. Without PAMU, the model continues generating light,
+humorous content, misaligned with the user’s updated in-
+tent. In contrast, the PAMU-augmented response accurately
+adapts in tone, density, and formality, reflecting a meaning-
+ful understanding of user behavior change, as shown in dia-
+logue content. Additionally, results in Tables 6 and 7 further
+demonstrate the effectiveness of PAMU.
+Turn Align(1-5) Cons. Response speed
+w/o PAMU 2.1/2.2✗/✗Two-round delay
+with PAMU 4.8/4.5✓/✓Real-time (Turn 3)
+Table 6: Comparison results, scoring results are in the format
+of (GPT/Human). Cons. represents consistency.
+Methods w/o PAMU with PAMU
+Style Consistency (%) 37/35 92/94
+Preference detection (%) 48/45 97/95
+Table 7: Comparison results, scoring results are in the format
+of (GPT/Human).
+This case study confirms that PAMU can dynamically
+track evolving user preferences, detect both abrupt and grad-
+ual changes, and trigger appropriate generation adaptations,
+leading to more personalized, user-aligned interactions.
+Conclusion
+We propose a Preference-Aware Memory Update 
+
+=== PAGE 8 ===
+References
+DeepSeek-AI. 2025. DeepSeek-R1: Incentivizing Rea-
+soning Capability in LLMs via Reinforcement Learning.
+arXiv:2501.12948.
+Gu, J.; Jiang, X.; Shi, Z.; Tan, H.; Zhai, X.; Xu, C.; Li, W.;
+Shen, Y .; Ma, S.; Liu, H.; et al. 2024. A survey on llm-as-a-
+judge.arXiv preprint arXiv:2411.15594.
+Guo, T.; Chen, X.; Wang, Y .; Chang, R.; Pei, S.; Chawla,
+N. V .; Wiest, O.; and Zhang, X. 2024. Large language model
+based multi-agents: A survey of progress and challenges.
+arXiv preprint arXiv:2402.01680.
+Han, X.; Gao, T.; Yao, Y .; Ye, D.; Liu, Z.; and Sun, M. 2019.
+OpenNRE: An open and extensible toolkit for neural rela-
+tion extraction.arXiv preprint arXiv:1909.13078.
+Huang, X.; Liu, W.; Chen, X.; Wang, X.; Wang, H.; Lian,
+D.; Wang, Y .; Tang, R.; and Chen, E. 2024a. Understand-
+ing the planning of LLM agents: A survey.arXiv preprint
+arXiv:2402.02716.
+Huang, X.; Liu, W.; Chen, X.; Wang, X.; Wang, H.; Lian,
+D.; Wang, Y .; Tang, R.; and Chen, E. 2024b. Understand-
+ing the planning of LLM agents: A survey.arXiv preprint
+arXiv:2402.02716.
+Jin, H.; Huang, L.; Cai, H.; Yan, J.; Li, B.; and Chen, H.
+2024. From llms to llm-based agents for software engi-
+neering: A survey of current, challenges and future.arXiv
+preprint arXiv:2408.02479.
+Lee, K.-H.; Chen, X.; Furuta, H.; Canny, J.; and Fischer, I.
+2024. A Human-Inspired Reading Agent with Gist Memory
+of Very Long Contexts. arXiv:2402.09727.
+Li, Y .; Wen, H.; Wang, W.; Li, X.; Yuan, Y .; Liu, G.; Liu,
+J.; Xu, W.; Wang, X.; Sun, Y .; et al. 2024. Personal llm
+agents: Insights and survey about the capability, efficiency
+and security.arXiv preprint arXiv:2401.05459.
+Maharana, A.; Lee, D.-H.; Tulyakov, S.; Bansal, M.; Bar-
+bieri, F.; and Fang, Y . 2024. Evaluating very long-term
+conversational memory of llm agents.arXiv preprint
+arXiv:2402.17753.
+Packer, C.; Fang, V .; Patil, S.; Lin, K.; Wooders, S.; and
+Gonzalez, J. 2023. MemGPT: Towards LLMs as Operating
+Systems.
+Salama, R.; Cai, J.; Yuan, M.; Currey, A.; Sunkara, M.;
+Zhang, Y .; and Benajiba, Y . 2025. MemInsight: Au-
+tonomous Memory Augmentation for LLM Agents.arXiv
+preprint arXiv:2503.21760.
+Sun, H.; Bian, H.; Zeng, S.; Rao, Y .; Xu, X.; Mei, L.; and
+Gou, J. 2025. DatasetAgent: A Novel Multi-Agent Sys-
+tem for Auto-Constructing Datasets from Real-World Im-
+ages. arXiv:2507.08648.
+Sun, H.; and Zeng, S. 2025. Introspection of Thought Helps
+AI Agents. arXiv:2507.08664.
+Tian, H.; Gao, C.; Xiao, X.; Liu, H.; He, B.; Wu,
+H.; Wang, H.; and Wu, F. 2020. SKEP: Sentiment
+Knowledge Enhanced Pre-training for Sentiment Analysis.
+arXiv:2005.05635.Touvron, H.; Lavril, T.; Izacard, G.; Martinet, X.; Lachaux,
+M.-A.; Lacroix, T.; Rozi `ere, B.; Goyal, N.; Hambro, E.;
+Azhar, F.; Rodriguez, A.; Joulin, A.; Grave, E.; and Lample,
+G. 2023. LLaMA: Open and Efficient Foundation Language
+Models. arXiv:2302.13971.
+Wang, B.; Liang, X.; Yang, J.; Huang, H.; Wu, S.; Wu,
+P.; Lu, L.; Ma, Z.; and Li, Z. 2023. Enhancing large lan-
+guage model with self-controlled memory framework.arXiv
+preprint arXiv:2304.13343.
+Wu, J.; Yang, S.; Zhan, R.; Yuan, Y .; Chao, L. S.; and Wong,
+D. F. 2025. A survey on LLM-generated text detection: Ne-
+cessity, methods, and future directions.Computational Lin-
+guistics, 1–66.
+Xu, W.; Liang, Z.; Mei, K.; Gao, H.; Tan, J.; and Zhang,
+Y . 2025. A-mem: Agentic memory for llm agents.arXiv
+preprint arXiv:2502.12110.
+Yang, A.; Yang, B.; Hui, B.; Zheng, B.; Yu, B.; Zhou, C.; Li,
+C.; Li, C.; Liu, D.; Huang, F.; Dong, G.; Wei, H.; Lin, H.;
+Tang, J.; Wang, J.; Yang, J.; Tu, J.; Zhang, J.; Ma, J.; Xu,
+J.; Zhou, J.; Bai, J.; He, J.; Lin, J.; Dang, K.; Lu, K.; Chen,
+K.; Yang, K.; Li, M.; Xue, M.; Ni, N.; Zhang, P.; Wang,
+P.; Peng, R.; Men, R.; Gao, R.; Lin, R.; Wang, S.; Bai, S.;
+Tan, S.; Zhu, T.; Li, T.; Liu, T.; Ge, W.; Deng, X.; Zhou,
+X.; Ren, X.; Zhang, X.; Wei, X.; Ren, X.; Fan, Y .; Yao, Y .;
+Zhang, Y .; Wan, Y .; Chu, Y .; Liu, Y .; Cui, Z.; Zhang, Z.;
+and Fan, Z. 2024. Qwen2 Technical Report.arXiv preprint
+arXiv:2407.10671.
+Yao, Y .; Duan, J.; X
+

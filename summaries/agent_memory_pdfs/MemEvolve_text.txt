@@ -1,0 +1,886 @@
+=== PAGE 1 ===
+MemEvolve: Meta-Evolution of Agent Memory Systems
+OPPO AI Agent Team, LV-NUS lab
+Abstract
+Self-evolving memory systems are unprecedentedly reshaping the evolutionary paradigm of large language
+model (LLM)-based agents. Prior work has predominantly relied on manually engineered memory
+architectures to store trajectories, distill experience, and synthesize reusable tools, enabling agents to
+evolve on the fly within environment interactions. However, this paradigm is fundamentally constrained
+by thestaticityof the memory system itself: while memory facilitates agent-level evolving, the underlying
+memory architecture cannot be meta-adapted to diverse task contexts. To address this gap, we propose
+MemEvolve, a meta-evolutionary framework that jointly evolves agents’ experiential knowledge and their
+memory architecture, allowing agent systems not only to accumulate experience but also to progressively
+refine how they learn from it. To groundMemEvolvein prior research and foster openness in future self-
+evolving systems, we introduceEvolveLab, a unified self-evolving memory codebase that distills twelve
+representative memory systems into a modular design space (encode,store,retrieve,manage), providing
+both a standardized implementation substrate and a fair experimental arena. Extensive evaluations on
+four challenging agentic benchmarks demonstrate thatMemEvolveachieves (I) substantial performance
+gains, improving frameworks such as SmolAgent and Flash-Searcher by up to 17.06% ; and (II) strong
+cross-task and cross-LLM generalization, designing memory architectures that transfer effectively across
+diverse benchmarks and backbone models.
+ὌDate:December 23, 2025
+/gtbCode:https://github.com/bingreeky/MemEvolve
+xbench -DS WebWalkerQA GAIA
+Figure 1The comparison betweenMemEvolveand several popular self-evolving agent memory systems across benchmarks. The
+underlying framework is Flash-Searcher (Qin et al., 2025)+GPT-5-Mini.
+1arXiv:2512.18746v1  [cs.CL]  21 Dec 2025
+
+=== PAGE 2 ===
+Human Learners
+Agent Memory
+Mediocre
+LearnerSkillful
+LearnerAdapitve
+LearnerTasks
+Evaluate
+$(1+2i)6-3i$.Solu tions
+Disgard The answer seems
+to be 6-9i.Tasks
+Evaluate
+$(1+2i)6-3i$.Solu tions
+The answer seems
+to be 6-9i.
+Feedback: 
+Error
+Notebook
+Previous
+Trajectories
+e.g., MemoryBank,
+JARVIS-1,
+MobileGPT,
+Voyager,
+Mem^p,
+Skills &
+Tools
+e.g., SkillWeaver, Alita
+Tips &
+Inisghts
+e.g., Expel, 
+G-Memory,
+ChemAgent
+Tasks...Solution Solution
+Agents without memory
+Disgard
+ Tasks
+...
+Trajs. & Solutions
+Previous
+Traj.
+Error
+Reflection
+Reusable
+Insights
+TaskTaskSolu tion
+Solu tion
+Error
+Notebook
+Solution
+TemplateFigure 2The paradigm of agent self-evolution admits a natural analogy to human learning. At one extreme, a mediocre learner
+fails to benefit from experience (agents without memory). More capable skillful learners can extract reusable skills from past
+experience, albeit through a fixed and pre-defined abstraction scheme. In contrast, an adaptive learner simultaneously accumulates
+experience and dynamically adjusts the strategy by which experience is consolidated and utilized. This final regime precisely
+characterizes the objective ofMemEvolve.
+1 Introduction
+Language agents and agent systems, empowered by increasingly capable foundation models (Team et al., 2025a,b) and
+sophisticated scaffolding (Wang et al., 2024a; LangChain, 2023), have advanced rapidly, demonstrating unprecedented
+performance across complex tasks such as deep research (Chen et al., 2025), scientific discovery (Bai et al., 2025; Wei
+et al., 2025b), and industrial report generation (Zhang et al., 2025g). A key driving force behind this success is theagent
+memory system(Zhang et al., 2024b; Hu et al., 2025c), which persistently captures interactions between the agent and
+environment, distilling them into diverse forms of knowledge and skills, and thereby enabling large language model
+(LLM)-based agents to evolve continuously in task solving and world exploration (Wu et al., 2025c).
+Naturally, the choice of memory paradigm plays a decisive role in shaping an agent’s capacity for on-the-fly self-
+evolution. Initial designs centered on raw trajectory storage and few-shot prompting (Zhong et al., 2024; Wen
+et al., 2024), which were later superseded by more abstracted textual artifacts such as tips, shortcuts, and reasoning
+templates (Ouyang et al., 2025; Zhang et al., 2025b; Ye et al., 2025; Tang et al., 2025). Recent advances have also explored
+structured tool interfaces (e.g., APIs (Zheng et al., 2025), MCPs (Qiu et al., 2025b,a; Zhang et al., 2025h)) and code-level
+repositories (Zhang et al., 2025e; Wang et al., 2025a) as memory carriers. Amid this growing diversity, an inquisitive
+practitioner might ask:What kind of memory architecture most effectively drives agent self-improving?
+We posit that no universally optimal memory architecture exists. For instance, a memory system that distill reusable
+APIs from past trajectories may excel in tasks such as web browsing, yet offer limited utility for mathematical
+and scientific reasoning. Conversely, memories predicated on self-critique, while powerful in reasoning-intensive
+domains (Cai et al., 2025), show diminished efficacy in coding and tool-use scenarios, as empirically discussed in (Zhang
+et al., 2025d). We contend that these trade-offs arise from thestatic natureof current memory systems. Researchers
+typically design a fixed memory pipeline (i.e., memory ingestion/abstraction/retrieval (Zhang et al., 2025i)) and embed
+it within an agent, assuming it will sustain long-term evolution through mere exposure to new experiences. Yet this
+overlooks a crucial reality: distinct tasks are coupled with distinct memory affordances. A memory system that cannot
+adapt itself to the task at hand is fundamentally misaligned with the very premise of open-ended agent evolution.
+To elucidate this dilemma, consider the analogy of human learning. Both high- and low-performing students inevitably
+make mistakes, yet their distinction lies 
+
+=== PAGE 3 ===
+learner. Herein lies the critical gap: the most effective human learners are not merely skillful, butadaptive. They
+dynamically alter their learning strategies based on the subjects, for instance, prioritizing memorization for literary
+analysis while abstracting solution templates for mathematics. It is precisely this transition, from askillfulto an
+adaptivelearner (as shown in Figure 2), that we argue agent memory systems must undergo. To put it more formally:
+How can a memory system not only facilitate the agent system’s evolution but alsometa-evolve its own architectureto achieve
+superior task-domain performance gains while preserving generalizability?
+To address the challenge, we introduceMemEvolve, a framework that facilitates the dual evolution of an agent’s
+experience and its memory architecture. Conceptually,MemEvolveoperates as a bilevel optimization process: the
+inner loop performs afirst-order evolution, where the agent, guided by a fixed memory system, adapts to a continuous
+stream of new tasks by populating its experience base. The outer loop drives asecond-order evolution, meta-learning a
+more effective memory architecture to accelerate future learning. This allows the agent not only to evolve, but to
+evolve more efficiently and intelligently over time.
+However, the vast and heterogeneous design space of memory systems (e.g., knowledge graphs, skill libraries, vector
+databases) presents a significant challenge to controllable optimization. To render this optimization tractable, we
+introduce a modular design, decomposing any memory architecture into four key components: ♣Encode(perceiving
+and formatting experiences), ♦Store(committing information), ♥Retrieve(context-aware recall), and ♠Manage
+(consolidation and forgetting).MemEvolveevolves the programmatic implementations of these modules in a model-
+driven fashion, using feedback from the agent’s performance in the inner loop. This process establishes a virtuous
+cycle: an improved memory architecture from the outer loop enhances the agent’s learning efficiency. In turn, a more
+capable agent generates higher-quality trajectories, providing a more precise fitness signal for the outer loop to drive
+the next round of architectural evolution.
+To ground our framework within the diverse landscape of existing self-improving agent memories, we systematically
+re-implement twelve representative architectures in a unified modular design space, includingExpeL(Zhao et al.,
+2024),Agent Workflow Memory(Wang et al., 2024b), andDynamic Cheatsheet(Suzgun et al., 2025). The resulting
+framework, denoted asEvolveLab, serves both as an empirical foundation forMemEvolve’s evolutionary process and
+as a standardized codebase to facilitate future research on self-evolving agents. Our contributions are as follows:
+❶Unified Codebase:We introduceEvolveLab, a modular design space for self-improving agent memory systems en-
+compassing four key components (encoding,storage,retrieval, andmanagement), providing unified implementations
+and benchmark support for a wide range of prevailing agent memory systems.
+❷Meta-Evolution Framework:We proposeMemEvolve, a meta-evolutionary framework that jointly evolves both
+agents’ experiential knowledge and their underlying memory architecture, in which agent systems not only
+accumulate experience but also progressively refine their mechanism for learning from it.
+❸Experimental Evaluation:Extensive experiments on four challenging agentic benchmarks demonstrate that
+MemEvolvedelivers (I)substantial performance gains, improving frameworks such as SmolAgent and Flash-
+Searcher by up to 17.06% ; and (II)cross-domain, cross-framework and cross-LLM generalization, where memory
+systems evolved on TaskCraft yield2.0−9.09%gains with unseen benchmarks and backbone models.
+2 Related Work
+LLM Agent Systems.The past two years have witnessed rapid advances in LLM-based agent systems across multiple
+dimensions (Tran et al., 2025; Fang et al., 2025a). In terms ofsystem complex
+
+=== PAGE 4 ===
+Agent Memory Architectures.Agent memory systems can be broadly divided by objective intopersonalized memory
+andself-improving memory(Zhang et al., 2024b; Hu et al., 2025c). The former enables agent chatbots to dynamically
+capture user-specific information and preferences, while the latter focuses on distilling knowledge and skills from
+continual interactions with the environment to enhance performance, a focus adopted in this work. Self-improving
+memories are primarily differentiated by their storage modality. Early systems stored raw agent trajectories as few-shot
+examples (Wang et al., 2023; Zhong et al., 2024; Packer et al., 2023); subsequent designs abstracted these experiences
+into higher-level lessons, insights (Yang et al., 2025; Sun and Zeng, 2025; Wu et al., 2025b), procedural tips (Wang
+et al., 2025c; Zheng et al., 2025; Fang et al., 2025b), and more recently, reusable tools and structured repositories (Zhao
+et al., 2025; Qiu et al., 2025a,b; Zhang et al., 2025e). Despite their differences in representation, there approaches share
+the same ambition,i.e., to enable agents to learn, adapt, and improve in a human-esque manner.
+3 EvolveLab: A Unified Codebase for Self-Evolving Memory
+In this section, we first formalize the LLM-based agentic system and its associated memory architecture, then present
+the modular design space ofEvolveLab, which comprehensively captures the characteristics of existing self-evolving
+agent memories, and finally introduce the unified codebaseEvolveLab.
+3.1 Preliminary
+We formalize an LLM-based agentic system as M=⟨I,S,A,Ψ,Ω⟩ , where Iindexes the {1,⋯, N} agents, S
+denotes the shared state space, A=⋃i∈IAirepresents the joint action space, and Ψ(st+1∣st, at, µ(t)) describes
+the environment dynamics with µ(t)∈I indicating the active agent at time step t. The system leverages a memory
+module Ω, which maintains a continuously evolving memory state Mt. At each step, the active agent observes the
+current state st, considers a task-specific query Q, and interacts with Ωto retrieve contextually relevant memory ct,
+conditioned on its interaction historyH t. The agentµ t’s policyπ µtthen delivers an action:
+at=πµ(t)(st,Ht,Q, c t), ct∼Ω(M t, st,Ht,Q).
+Following task execution, a trajectory τ=(s 0, a0, . . . , s T)is recorded, with an overall performance evaluated via a
+terminal reward R(τ) . The memory system assimilates new experience units ϵ, which can vary in granularity (from
+individual state-action transitions to aggregated segments or complete trajectories), and updates the memory state as
+Mt+1=Ω(M t, ϵ),
+whereΩabstracts the memory’s mechanisms for integrating and organizing new experiences or knowledge.
+3.2 Modular Design Space of Memory Systems
+The heterogeneous and rapidly evolving landscape of self-improving agent memories presents challenges for systematic
+analysis and controlled experimentation. To address this, we propose a modular design space that decomposes any
+memory system Ωinto four functionally distinct yet interdependent components: Ω=(E,U,R,G) , representing
+encode,store,retrieve, andmanageoperations, respectively.
+•Encode ( E): Transforms raw experiences, such as trajectory segments τt=(s t, at, st+1), tool outputs, or self-
+critiques, into structured representations et=E(ϵ t). Encoding may be as simple as compressing raw traces (Zheng
+et al., 2023) or as sophisticated as extracting generalizable lessons (Zheng et al., 2025).
+•Store ( U): Integrates encoded experiences into the persistent memory Mt, yielding Mt+1=U(M t, et). Storage can
+be vector databases (Zhao et al., 2024), knowledge graphs (Zhang et al., 2025b; Rasmussen et al., 2025), or others.
+•Retrieve ( R): Provides task-relevant memory content, formalized as ct=R(M t, st,Q), which informs the agent’s
+policy decision at. Retrieved content may include reusable tools (Zhang et al., 2025f), planning experience (Tang
+et al., 2025), or distilled procedural knowledge (Wu et al., 2025b; Yang et al., 2025; Fang et al., 2025b).
+•Man
+
+=== PAGE 5 ===
+Table 1A taxonomy of self-improving agent memory systems implemented inEvolveLab. In the “Mul.” column, ♂indicates
+support for single-agent settings, while ♂♂denotes compatibility with multi-agent systems. “Gran.” specifies the granularity at
+which memory is provided (step-wisevs.trajectory-wise), and “Online” indicates whether memory is updatedon-the-fly( ὑ7) or
+maintained as an offline experience repository (/u♀k).
+Method Date Mul. Gran. Online Encode Store Retrieve Manage
+I. Voyager 2023.5 ♂traj.ὑ7 Traj. & Tips Vector DB Semantic Search N/A
+II. ExpeL 2023.8 ♂traj.ὑ7 Traj. & Insights Vector DB Contrastive Comparison N/A
+III. Generative 2023.10 ♂♂traj.ὑ7 Traj. & Insights Vector DB Semantic Search N/A
+IV. DILU 2024.2 ♂traj.ὑ7 Traj. Vector DB Semantic Search N/A
+V. AWM 2024.9 ♂traj.ὑ7/u♀k Workflows Vector DB Semantic Search N/A
+VI. Mobile-E 2025.1 ♂step/u♀k Tips & Shortcuts Vector DB Semantic Search N/A
+VII. Cheatsheet 2025.4 ♂traj.ὑ7 Tips & Shortcuts JSON Semantic Search N/A
+VIII. SkillWeaver 2025.4 ♂traj./u♀k APIs Tool Library Function Matching Skill Pruning
+IX. G-Memory 2025.6 ♂♂traj.ὑ7 Tips & Workflow Graph Graph/Semantic Search Episodic Consolidation
+X. Agent-KB 2025.7 ♂♂step/u♀k Tips & Workflow Hybrid DB Hybrid Search Deduplication
+XI. Memp 2025.8 ♂step.ὑ7 Tips & Workflow JSON Semantic Search Failure-driven Adjustment
+XII. EvolveR 2025.10 ♂step.ὑ7 Tips & Workflow JSON Contrastive Comparison Update & Pruning
+3.3 EvolveLab Codebase
+Based on the above design space, we introduceEvolveLab, a unified and extensible codebase designed for the systematic
+implementation and evaluation of self-evolving memories, serving as a standardized resource for the community.
+Implementation.The cornerstone ofEvolveLabis its modular and hierarchical design. Every memory architecture
+re-implemented in our codebase (see Table 1) inherits from a singular abstract base class,BaseMemoryProvider,
+which enforces the unified four-component interface: ♣Encode, ♦Store, ♥Retrieve, and ♠Manage. This ensures
+that diverse memory mechanisms can be managed, modified, and evolved under a consistent programmatic structure.
+More details on the implementations can be found at Section A.
+Evaluation.Beyond unified implementation,EvolveLabprovides a standardized testbed for rigorously assessing mem-
+ory architectures across diverse agentic tasks. The framework offers out-of-the-box support for multiple challenging
+benchmarks, including GAIA (Mialon et al., 2023), xBench (Chen et al., 2025), and DeepResearchBench (Du et al.,
+2025).EvolveLabaccommodates two evaluation paradigms: an ■onlinemode, where the experiential memory base is
+updated on-the-fly as the agent system processes a continuous stream of tasks, and an ■offlinemode, where the
+memory system first accumulates experience from a static set of trajectories before being assessed on separate, unseen
+tasks. To ensure robust and versatile assessment, we support multiple evaluation protocols, including exact string
+matching and flexible LLM-as-a-Judge.
+4 MemEvolve: A Meta-Evolving Memory Framework
+4.1 Dual-Evolution Process
+Traditional self-improving memory systems operate under afixed memory architecture, where the memory interface
+Ωis predefined and remains static. Within this architecture, the agent iteratively populates and updates its memory
+stateMtthrough interaction with the environment and task experiences. For a trajectory τinduced by a query Q, the
+memory evolution follows
+Mt+1=Ω(M t, ϵτ), ϵ τ∈E(τ),
+where E(⋅) denotes an experience extraction operator that maps a trajectory to a set of experience units, and ϵτis
+an element sampled from this set. While this enables the accumulation of knowledge, it fundamentally precludes
+architectural adaptation, as the memory interfaceΩitself remains immutable.
+To transcend this limitation, we propose adual-evolution processthat jointly evolves (i) the agent’s memory base and
+(ii) the underlying memory architectures (as illustrated in Figure 3). Instead of a single stati
+
+=== PAGE 6 ===
+Search Space MemEvolve Evolution
+Encode
+Store
+Retrieve
+Manage
+Iteration 1 Iteration 2 Iteration 3(More iterations)...TrajectoryMemory
+Unit
+Memory
+Unit
+Vec.
+Database
+KG
+Database... ...
+Memory  UnitsStates
+Memory
+Base
+Consolidation
+ Update
+ForgetInitialize Memory SystemTraj. (seg) →   Units
+Base  Mem
+System
+Retrieve
+StoreD&D Evolution
+Traj.
+JSON
+Database
+Task  Query
+semantic
+search
+Retrieve
+semantic →hybrid search
+StoreRaw traj. store →multi-
+granular abstraction
+Traj.summary
+toolsshortcuts
+Task
+semantic &
+skill-based
+probe
+Iter 1,
+Cand. 1
+Iter 1,
+Cand. 2Iter 2,
+Cand. 1
+Iter 2,
+Cand. 2
+Iter 2,
+Cand. 3Memory 
+Candidates:
+Pareto-ranking
+Performance
+API cost
+Exec. Delay
+ Logs:
+Task qjs19ab
+Status: 
+Task cod77mx
+Status: 
+Task dcs01yyb
+Status: 
+... ...
+Meta
+EvolverLook-up
+Support
+Diagnosis Report
+Lack tool/skill
+condensation
+Too lengthy
+memory content
+Vague filtration
+Strategy
+Proposed Evolution
+Encode
+3 level→
+5 levels
+Store
+JSON→Graph
+Retrieve
+Add LLM
+GuardApply toEvolve intoFigure 3The overview of our proposedMemEvolve.
+multiple competing candidates. Given a batch of trajectories T(k)
+jindependently generated by executing the agent
+with memory systemΩ(k)
+j, the dual-evolution process consists of two nested loops:
+•Inner Loop (Experience Evolution).For each candidate memory system Ω(k)
+j, the associated memory state M(k)
+t,j,
+initialized as an empty memory at the beginning of iterationk, is updated along trajectoriesτ∈T(k)
+jvia
+M(k)
+t+1,j=Ω(k)
+j(M(k)
+t,j, ϵτ), ϵ τ∈E(k)
+j(τ).
+Executing the agent with Ω(k)
+joverT(k)
+jyields, for each trajectory τ, a feedback vector fj(τ)∈Rd, where
+d=3 corresponds to the number of evaluation metrics (i.e., task success, token consumption, and latency). An
+aggregation operatorSsummarizes the inner-loop outcomes for each candidate as
+F(k)
+j=S({fj(τ)}τ∈T(k)
+j), j∈J(k).
+•Outer Loop (Architectural Evolution).The set of memory architectures is then updated based on the collection
+of summaries {F(k)
+j}j∈J(k). A meta-evolution operator Fselects high-performing candidates and proposes new
+variants, producing the next iteration’s candidate set:
+{Ω(k+1)
+j′}j′∈J(k+1)=F({Ω(k)
+j}j∈J(k),{F(k)
+j}j∈J(k)).
+Specifically, Franks candidates according to F(k)
+j, retains the top- Kmemory systems, and generates new
+architectures by modifying or recombining all four components (E,U,R,G) of the selected candidates, where K
+denotes a fixed survivor budget. We detail the implementation ofF(⋅)in Section 4.2.
+Unified view.At a higher level, each iteration kalternates between (i) evolving the memory experience base from an
+empty initialization under a fixed set of architectures, and (ii) evolving the memory architectures themselves based
+on the induced performance:
+({∅}j∈J(k),{Ω(k)
+j}j∈J(k))inner/leftr⫯g⊸tl⫯ne/leftr⫯g⊸tl⫯ne→ ({M(k)
+t+1,j}j∈J(k),{Ω(k)
+j}j∈J(k))outer/leftr⫯g⊸tl⫯ne/leftr⫯g⊸tl⫯ne→ ({M(k)
+t+1,j}j∈J(k),{Ω(k+1)
+j′}j′∈J(k+1)).
+By iterating this dual-evolution process, the agent does not merely accumulate experience within a fixed memory
+system; instead, both the memory base and the governing memory architectures co-evolve, yielding increasingly
+adaptive and resource-aware memory-driven behavior over time.
+6
+
+=== PAGE 7 ===
+4.2 Diagnose-and-Design Evolution
+We now detail the meta-evolution operator F, which governs the architectural update in each evolutionary iteration.
+Conceptually, Fdecomposes into two coordinated components: (i) architectural selection , which identifies a subset
+of high-performing memory systems to serve as evolutionary parents, and (ii) diagnose-and-design evolution , which
+generates new memory architectures from each selected parent through a structured diagnosis procedure followed by
+a constrained redesign within the modular memory design space.
+Architectural Selection.Given the candidate set {Ω(k)
+j}j∈J(k)and their corresponding summaries {F(k)
+j}, we define
+each summary vector as
+F(k)
+j≜(Perf(k)
+j,−Cost(k)
+j,−Delay(k)
+j),
+where higher values are preferred in all dimensions. Candidates are first ranked by non-dominated sorting over F(k)
+j,
+yielding a Pareto rank ρ(k)
+j. Within the same Pareto rank, candidates are further ordered by the primary performance
+metric Perf(k)
+j. The top-Kcandidates are selected as the parent set:
+P(k)=Top-K
+j∈J(k)(ρ(k)
+j,Perf(k)
+j).
+This selection step ensures that architectural evolution is guided by systems that exhibit favorable trade-offs between
+task effectiveness and resource efficiency, while prioritizing task performance among Pareto-equivalent candidates.
+Diagnose-and-Design Evolution.For each parent architecture Ω(k)
+p∈P(k),Fgenerates a set of Sdescendants
+{Ω(k+1)
+p,s }S
+s=1through a two-phase process:
+•Diagnosis.Each parent architecture is examined using trajectory-level evidence from its own execution batch
+T(k)
+p. For each trajectory, the agent provides outcome statistics (e.g., success indicators, token costs) together
+with a structured description of the associated task query. A replay interface grants access to the corresponding
+trajectories τ∈T(k)
+p, enabling targeted inspection of memory behavior, including retrieval failures, ineffective
+abstractions, or storage inefficiencies. The diagnosis phase thus produces a structured defect profile D(Ω(k)
+p),
+characterizing architectural bottlenecks across the four memory components (E(k)
+p,U(k)
+p,R(k)
+p,G(k)
+p).
+•Design.Conditioned on the defect profile D(Ω(k)
+p), a redesigned architecture is constructed by modifying only
+the permissible implementation sites within the modular interface, thereby ensuring compatibility and isolating
+architectural changes to the designated design space. The design step produces Svariants by instantiating distinct
+but valid configurations of the four components:
+Ω(k+1)
+p,s=Design (Ω(k)
+p,D(Ω(k)
+p), s), s∈{1, . . . , S}.
+These variants differ in encoding strategies, storage rules, retrieval constraints, or management policies, yet all
+conform to the unified memory-system interface and remain executable by the agent.
+Resulting update.Aggregating all descendants across parents yields the next set of candidate architectures:
+{Ω(k+1)
+j′}j′∈J(k+1)=⋃
+Ω(k)
+p∈P(k){Ω(k+1)
+p,s }S
+s=1.
+This diagnose-and-design evolution operationalizes Ffor producing increasingly adaptive memory systems, ensuring
+that architectural updates are both empirically grounded and structurally constrained within the unified design space.
+5 Experiments
+5.1 Experiment Setup
+Benchmarks.We evaluate the proposed framework across four challenging agentic benchmarks, includingGAIA(Mi-
+alon et al., 2023),WebWalkerQA(Wu et al., 2025a),xBench-DeepSearch(xBench-DS) (Chen et al., 2025), as well as
+TaskCraft(Shi et al., 2025a). Further statistics and details are provided in Section B.1.
+7
+
+=== PAGE 8 ===
+Table 2Performance of various agent frameworks on the WebWalerQA, xBench-Ds, TaskCraft, and GAIA benchmarks.
+Framework Model FamilyWebWalker
+QAxBench
+-DSTask
+CraftGAIA
+Avg. Level 1 Level 2 Level 3
+Closed-source Agent Frameworks
+Langfun Claude 3.7 etc. - - - 71.52 83.02 68.60 57.69
+TraseAgent Claude etc. - - - 70.30 83.02 69.77 46.15
+OpenAI Deep Research o1, o3 etc. - - - 67.36 74.29 69.06 47.60
+h2oGPTe Claude-3.5 - - - 63.64 67.92 67.44 42.31
+Desearch GPT-4o - - - 56.97 71.70 58.14 23.08
+Open-Source Agent Frameworks
+OWL Workforce (pass@3) GPT-4o+o3-mini 57.64 55.0 58.33 60.61 81.14 58.14 26.92
+OWL RP (pass@3) GPT-4o+o3-mini - - - 58.18 81.14 54.65 23.08
+TapeAgents Claude 3.7 etc. - - - 55.76 71.70 53.49 30.77
+AutoAgent Claude 3.5 etc. - - - 55.15 71.70 53.40 26.92
+Smolagents
+ GPT-4.1 - - - 55.15 67.92 53.49 34.62
+Smolagents
+ GPT-5-mini 58.82 51.0 64.00 55.75 69.81 54.65 30.77
+Magnetic-1 OpenAI o1 etc. - - - 46.06 56.60 46.51 23.08
+Cognitive Kernel-Pro (pass@1) Claude-3.7 etc. 60.64 56.0 66.00 60.00 79.25 56.98 30.77
+Cognitive Kernel-Pro (pass@3) Claude-3.7 etc. - - - 75.15 84.91 73.26 61.54
+OAgents Claude-3.7 etc. 58.23 47.0 - 66.67 77.36 66.28 46.15
+JoyAgents Claude-4, o4-mini - - - 75.2 86.8 77.9 42.3
+Agent KB (pass@1) GPT-4.1 60.59 48.0 61.67 61.21 79.25 58.14 34.62
+Agent KB (pass@2) GPT-4.1 68.82 58.0 72.67 67.27 83.02 67.44 34.62
+Agent KB (pass@3) GPT-4.1 73.53 68.0 75.33 73.94 84.91 73.26 53.85
+Flash-Searcher
+ (pass@1) GPT-5-mini 71.18 69.0 69.67 69.09 79.25 69.77 46.15
+Flash-Searcher
+ (pass@1) Kimi K2 52.35 66.0 58.00 52.12 58.49 52.33 34.62
+Flash-Searcher
+ (pass@1) DeepSeek V3.2 69.41 68.0 69.33 60.61 79.25 53.49 46.15
+MemEvolve+
+ (pass@1) GPT-5-mini 61.18 57.0 67.67 64.24 83.02 58.14 46.15
+MemEvolve+
+ (pass@2) GPT-5-mini 67.06 63.0 75.00 67.88 84.91 63.95 46.15
+MemEvolve+
+ (pass@3) GPT-5-mini 71.18 68.0 77.00 72.12 88.68 68.60 50.00
+MemEvolve+
+ (pass@1) GPT-5-mini 74.71 74.0 72.00 73.33 83.02 73.26 53.85
+MemEvolve+
+ (pass@2) GPT-5-mini 79.41 77.0 75.00 77.58 92.45 74.42 57.69
+MemEvolve+
+ (pass@3) GPT-5-mini 81.18 78.0 79.33 80.61 94.34 79.07 57.69
+MemEvolve+
+ (pass@1) Kimi K2 69.41 68.0 68.00 61.21 67.92 63.95 38.46
+MemEvolve+
+ (pass@1) DeepSeek V3.2 72.35 70.0 72.67 67.88 83.02 63.95 50.00
+Method Configurations.We run the dual-evolution process for Kmax=3iterations. In the outer loop, the survivor
+budget is set as K=1 ; at each iteration, only the top-ranked architecture is retained and expanded to S=3 descendants.
+In the inner loop, each candidate architectureΩ(k)
+jis evaluated on a batchT(k)
+jof 60 task trajectories, consisting of
+40 newly sampled tasks and 20 tasks reused from the previous iteration to stabilize inter-iteration comparison.
+Agent Framework.We integrateMemEvolveinto two representative agentic frameworks:
+ SmolAgent(Roucher et al.,
+2025), a lightweight two-agent architecture, and
+ Flash-Searcher(Qin et al., 2025), a high-performance single-agent
+deep research system. To assess the generalization and plug-and-play capability ofMemEvolve, we further evaluate it
+on two held-out multi-agent systems: Tencent’s
+ Cognitive Kernel-Pro (CK-Pro)(Fang et al., 2025c), a three-agent
+framework comprising main/file/web agents; and
+ OWL(Hu et al., 2025b), a hierarchical system including planner,
+coordinator, web, document, and coding agents. This diversity in architecture and system complexity enables a
+comprehensive examination of the adaptability ofMemEvolveacross heterogeneous agentic scaffolds.
+Model Configurations.We instantiateMemEvolveusingGPT-5-mini(OpenAI, 2025) as the LLM backbone for the
+underlying agentic frameworks, and for supporting the meta-evolution operator F(⋅) . To further evaluate the cross-
+LLM generalization capability ofMemEvolve, we additionally consider alternative backbones, includingDeepSeek
+V3.2(DeepSeek-AI et al., 2025), andKimi K2(Team et al., 2025a). For clarity, we explicitly report the specific LLM
+backbone used by each agentic framework in the following experiments.
+8
+
+=== PAGE 9 ===
+Table 3Performance, cost, delay, and steps across datasets under different memory settings for
+ Flash-Searcher. Here,cost
+denotes the average API cost incurred per task query,delaymeasures the average execution latency (seconds) per task, and#steps
+reports the number of agent interaction steps required to complete each task.
+Memory SettingGAIA xBench WebWalkerQA
+Perf. Cost Delay #Steps Perf. Cost Delay #Steps Perf. Cost Delay #Steps
+No-Memory 69.09 0.086 505.46 10.44 69.00 0.141 523.05 14.69 71.18 0.048 251.57 6.91
+Generative 66.67 0.061 436.26 8.87 70.00 0.131 818.37 13.45 72.35 0.045 268.56 6.64
+Voyager 69.70 0.060 499.89 9.25 68.00 0.117 553.46 12.71 73.53 0.049 333.69 6.99
+DILU 66.67 0.059 444.62 8.91 69.00 0.134 500.72 13.83 72.94 0.046 272.16 6.96
+ExpeL 66.06 0.059 500.11 8.68 64.00 0.123 710.32 13.05 69.41 0.076 385.28 10.96
+AWM 67.27 0.062 584.88 10.23 71.00 0.138 761.33 14.12 72.35 0.068 397.20 11.40
+Mobile-E 69.09 0.065 321.80 9.35 68.00 0.120 537.18 13.16 71.76 0.059 296.01 6.52
+Cheatsheet 68.48 0.069 559.81 9.72 65.00 0.174 818.07 15.99 72.94 0.057 367.13 7.59
+MemEvolve73.33 0.085 693.33 10.14 74.00 0.136 773.06 14.20 74.71 0.040 332.49 6.64
+5.2 Main Results
+Figure 4The cross-framework generalization analysis. We trans-
+fer the memory system evolved on TaskCraft+
+ to
+ and
+ . Red
+percentages denote the relative score gains of each framework
+after integratingMemEvolveover its memory-free counterpart.We report the pass@1–3 performance ofMemEvolve
+integrated with SmolAgent and Flash-Searcher in Ta-
+ble 2, together with its generalization results when
+paired with unseen LLMs (Kimi K2,DeepSeek V3.2).
+Notably, on the relatively simple TaskCraft bench-
+mark, we evolve two distinct memory systems us-
+ing MemEvolve+
+ and MemEvolve+
+ , respectively.
+These evolved memory systems are then fixed and eval-
+uated on WebWalkerQA and xBench-DS,i.e., without
+conducting dataset-specific meta-evolution.
+Memory System Matters For Agent Systems.As shown
+in Table 2, equipping agentic systems with effective
+memory architectures is critical to performance. On
+xBench,
+ +GPT-5-Miniachieves an initial pass@1 of 51%; after integratingMemEvolve, pass@1 increases by 6%,
+while pass@3 goes up to 68.0% . Similarly,
+ +GPT-5-Miniimproves from 69% to74% on xBench when augmented
+withMemEvolve. These results clearly demonstrate the substantial impact of a well-designed memory system on agent
+performance. At the same time, memory is not a panacea and remains bounded by the capabilities of the underlying
+agentic framework. On GAIA,MemEvolve+
+ attains a pass@3 of72.12%, comparable to AgentKB, while avoiding
+the construction of large and costly offline knowledge bases. In contrast, the gains withMemEvolve+
+ are even more
+pronounced, achieving a pass@3 of 80.61% , surpassing several strong multi-agent systems such as OWL-Workforce
+and CK-Pro under the same metric.
+MemEvolve Exhibits Cross-Task, Cross-Model, and Cross-Framework Generalization.Recall that the memory systems
+used on WebWalkerQA and xBench are directly inherited from those evolved on TaskCraft, without any task-specific
+meta-evolution. Nevertheless, these transferred memories yield consistent gains on more challenging benchmarks
+(WebWalkerQA+
+ :58.82→61.18% ; xBench+
+ :69.0→74.0% ), indicating thatMemEvolvecaptures task-agnostic
+principles of memory design rather than overfitting to individual datasets.MemEvolvealso demonstrates strong
+cross-LLM generalization. Although meta-evolution is conducted usingGPT-5-Mini, memory systems evolved on
+TaskCraft+
+ transfer effectively toKimi K2andDeepSeek V3.2 without manual adaptation . Notably,Kimi K2+
+improves by 17.06% on WebWalkerQA and 10.0% on TaskCraft. Finally,MemEvolveexhibits compelling cross-
+framework generalization. As shown in Figure 4, directly transferring the memory system evolved on TaskCraft+
+to heterogeneous agentic frameworks, including
+ and
+ , consistently improves performance despite substantial
+architectural differences. These results
+
+=== PAGE 10 ===
+Figure 5Evolution of cumulative accuracy across question indices. Cumulative accuracy at index iis defined as the average
+accuracy over the first iquestions. The curves exhibit larger fluctuations at early indices due to limited sample size, and gradually
+stabilize as more questions are accumulated.
+: AKB Mem
+Encode: freeze
+Store: freeze
+Retrieve: reason-
+retrieve-refine
+Manage: N/A: Adaptive
+Decision
+Encode: 9 skills
+Store: JSON
+Retrieve: Hybrid
+Retrieval + LLM
+refinement
+Manage: N/A
+: Meta Mem
+Encode: tasks/
+strategy /ops/
+checks
+Store: JSON
+Retrieve: Hybrid
+Retrieval+Meta
+Guardrail
+Manage: N/A
+... ...
+Meta
+evolve
+Meta
+evolveMemory System
+Meta-Evolution Path
+(on TaskCraft): Domain Mem
+Encode: failure
+modes/guidance
+Store: Item list
+Retrieve: Context-
+aware scorer +
+LLM guider
+Manage: LLMranker
+: Riva
+Encode: by domain,
+semantic
+Store: Database
+Retrieve: Guide+
+Probe+Gating
+Manage: N/A... ...
+Meta
+evolve
+Meta
+evolve
+: Cerebra Mem
+Encode: graph
+Store: Success
+traj->semantic
+Retrieve: text/tool
+bi-routing
+Manage: node/edge
+pruning/consolidate
+: Omni-Mem
+Encode: traj, tag
+summary
+Store: JSON
+Retrieve: refine+
+reason+synthesize
+Manage: N/A
+... ...
+Meta
+evolve
+Meta
+evolve
+Figure 6Illustration of the progressive evolution from the fixed AgentKB architecture to increasingly agentic and efficient memory
+architectures. Each stage reflects structural and functional modifications in memory encoding, storing, retrieval, and maintenance,
+culminating in high-performing systems such as Riva and Cerebra.
+5.3 Self-Evolving Memory Comparison
+We further compare the memory systems automatically evolved byMemEvolveagainst prevailing human-designed
+self-improving memory systems. In Table 3, we integrate seven representative self-improving memory systems
+implemented inEvolveLabwith Flash-Searcher, and comprehensively report performance, per-task cost/execution
+latency/execution steps. Results forMemEvolveare obtained using the system evolved on TaskCraft+
+ +GPT-5-Mini.
+Existing Memory Systems Fail to Deliver Consistent Gains.Despite faithful re-implementations aligned with the
+original designs, many existing memory systems do not yield stable improvements. For example, DILU improves
+performance on xBench and WebWalkerQA, yet degrades GAIA by 2.42% . Dynamic Cheatsheet achieves a 1.76%
+gain on WebWalkerQA via skill condensation, but performs poorly on GAIA and xBench. More extreme cases are also
+observed: ExpeL underperforms on all three benchmarks. Upon closer inspection, this is unsurprising, as ExpeL was
+originally designed for relatively simple embodied or QA settings (e.g., ALFWorld, HotpotQA), and its prompts and
+mechanisms are ill-suited for long-horizon, long-context deep research. These results underscore the necessity of
+task-aware memory design.
+10
+
+=== PAGE 11 ===
+ Task Query (from GAIA)
+Find the Wikipedia page for the 2019 game that won the British Academy
+Games Awards. How many revisions did that page have before the month listed
+as the game's release date on that Wikipedia page (as of the most recent
+entry from 2022)?
+Agent Execution Trajectory
+Step 1:
+Planning
+Provided Memory (by Lightweight)
+Anti-ambiguity                             Consider ﬁrst locating the
+canonical Wikipedia article with targeted
+site:wikipedia.org queries (use the game title plus
+keywords like \"BAFT A\" or \"British Academy
+Games Awards\") to avoid ambiguity .
+Tool-use Suggestion                                      Based on similar tasks, use
+the MediaWiki API/history endpoints to list revisions
+and apply a cutof f (rvend or equivalent) at the
+release-month datetime so you can count all
+revisions up to that month.
+                               Decompose the work into
+locate →  extract revisions →  count up-to-cutof f →
+corroborate with an archived snapshot
+(Wayback/Wikidata) and save exact URLs/oldids
+so the result is auditable.Planning AdviceStep 2: Locate
+Wiki page
+Step 3: 
+Locate article
+Provided Memory (by Lightweight)
+                                      Use the
+MediaWiki API revisions with rvend
+cutof f to list and count revisions up to the
+release-month cutof f.
+Context Reminder                                     Located the
+canonical Wikipedia article: 'Outer Wilds' at
+https://en.wikipedia.org/wiki/Outer\_Wilds,
+conﬁrmed matching the 2019 BAFT A
+winner .Tool-use Suggestion
+Context Reminer                                  Article body lists
+month-year dates: May 2019 (Windows,
+Xbox One); October 2019 (PS4);
+September 2022 (PS5/Xbox); December
+2023 (Switch).... Task Query (from xBench)
+有⼀个景点，是⼀个⽼太太花了很多年的⼼⾎，⽤⼀⽚⽚瓷⽚建
+成的。这个景点的⻔票上，印着⼀⾏字，请问这⾏字是什么？
+Agent Execution Trajectory
+Step 1:
+Planning
+Step 2:
+Locating
+Viewpoint
+Step 3: 
+Finding
+Text
+Task Status
+The attraction has been identiﬁed as 瓷
+宫. The objective of this subtask is to
+determine the speciﬁc line of text
+printed on its admission ticket.
+                                 A  retrieved
+memory states:  “Past tasks found
+image captions and tourism listings
+often include ticket text when articles
+omit it.”  This suggests that when
+textual descriptions fail to mention
+ticket inscriptions, such information is
+frequently available in image captions
+or online travel booking listings.Possibile Source
+Guided by this memory , the agent systematically queried
+tourism platforms such as Trip.com and Qunar , focusing on
+structured ﬁelds in attraction listings and ticket sales pages.Provided Memory
+Figure 7Illustration of how evolved memories are instantiated during real-world tasks from GAIA and xBench. The memory
+system adaptively provides stage-specific guidance, ranging from high-level planning and task decomposition to fine-grained
+tool-use suggestions and salient context recall, thereby steering the agent toward efficient and successful task completion.
+MemEvolve Delivers Robust and Consistent Improvements.In contrast to prior approaches,MemEvolveyields stable and
+robust performance gains. Although the underlying memory system is evolved on TaskCraft, it consistently achieves
+improvements of 3.54%∼5.0% across all three evaluated benchmarks. Importantly, these gains are not achieved
+by substantially increasing the per-task cost. As shown in Table 3,MemEvolvemaintains API costs comparable to
+the No-Memory baseline across all benchmarks (e.g., GAIA: $0.085 vs. $0.086; xBench: $0.136 vs. $0.141), while its
+execution delay remains on a similar scale to other self-improving baselines (e.g., GAIA: 693.33 s vs. 584.88 s for
+AWM and 559.81 s for Cheatsheet; xBench: 773.06 s vs. 761.33 s for AWM and 818.07 s for Cheatsheet). Figure 5
+further illustrates thecumulative success rateof different self-evolving memory systems as task execution progresses.
+Although performance exhibits higher variance in the early stages due to limited sample size,MemEvolvegradually
+stabilizes
+
+=== PAGE 12 ===
+Starting from this baseline,MemEvolveexplores a spectrum of evolutionary directions. Some candidates are relatively
+aggressive (e.g., Ω(1)
+1, anAdaptive Decision Systemthat decomposes a single agent trajectory into nine skill
+granularities), while others are more conservative (e.g., Ω(1)
+3, anMeta Memory Systemthat stores trajectories at
+four levels and introduces an LLM-based meta-guardrail during retrieval to filter irrelevant information). The latter
+emerges as the winner in the first evolutionary round. The defining characteristic of this stage isagentic: both
+memory encoding and decoding increasingly rely on agent-driven decisions rather than predefined pipelines. The
+third evolution round introduces two further advances. Evolving from Ω(2)
+3Rivato Ω(3)
+1Cerebra, the memory
+system learns to distill not only textual insights but also reusable tools from past experience, while incorporating
+periodic maintenance of the memory database. Together, these enhancements provide faster evolutionary momentum
+for underlying agentic frameworks.
+Evolved Memory Systems Are Effective in Practice.We further present concrete memory examples produced by the
+Lightweightsystem during real executions, as shown in Figure 7. The results illustrate thatLightweightdelivers
+memory content at varying levels of granularity, adaptively tailored to different task stages. During early planning,
+the memory provides high-level guidance, such as task decomposition strategies. As execution proceeds, it offers more
+fine-grained recommendations for tool-use, along with a form ofworking memorythat highlights salient information
+from previous turns. Notably,Lightweightalso exhibits predictive behavior by anticipating that target information
+may appear within image content on online travel websites, successfully guiding the agent to locate the evidence on
+trip.com. Together, these examples demonstrate the practical effectiveness of memory systems evolved byMemEvolve.
+6 Conclusion
+This work provides a unified implementation and design space for the rapidly growing field of self-evolving agent
+memory, together with a standardized codebase, termedEvolveLab, upon which we further buildMemEvolve, a
+meta-evolutionary memory framework. Departing from the conventional paradigm of manually crafting a single
+self-improving memory architecture and expecting it to generalize across all domains,MemEvolveinstead embraces
+adaptive, architecture-level evolution driven by empirical interaction feedback. Extensive experiments across diverse
+agentic benchmarks and backbone models demonstrate the effectiveness, robustness, and generalization of this
+approach. Moreover, analysis of the automatically evolved memory systems reveals several instructive design
+principles, including increased agentic involvement, hierarchical organization, and multi-level abstraction. We hope
+thatMemEvolveserves as a step toward more automated, principled, and meta-evolutionary pathways for building
+continually improving agentic intelligence.
+12
+
+=== PAGE 13 ===
+7 Contributions
+Core Contributors
+•Guibin Zhang
+•Haotian Ren
+Contributors
+•Chong Zhan
+•Zhenhong Zhou
+•Junhao Wang
+•He ZhuCorresponding Authors
+•Wangchunshu Zhou
+•Shuicheng Yan
+If you have any questions regarding the code, paper details, or other aspects of this work, you are very welcome to
+contact the authors atguibinz@outlook.comor via raising a Github issue.
+13
+
+=== PAGE 14 ===
+References
+Bai, L., Cai, Z., Cao, Y., Cao, M., Cao, W., Chen, C., Chen, H., Chen, K., Chen, P., Chen, Y., Chen, Y., Cheng, Y., Chu, P., Chu, T., Cui,
+E., Cui, G., Cui, L., Cui, Z., Deng, N., Ding, N., Dong, N., Dong, P., Dou, S., Du, S., Duan, H., Fan, C., Gao, B., Gao, C., Gao, J., Gao,
+S., Gao, Y., Gao, Z., Ge, J., Ge, Q., Gu, L., Gu, Y., Guo, A., Guo, Q., Guo, X., He, C., He, J., Hong, Y., Hou, S., Hu, C., Hu, H., Hu, J.,
+Hu, M., Hua, Z., Huang, H., Huang, J., Huang, X., Huang, Z., Jiang, Z., Kong, L., Li, L., Li, P., Li, P., Li, S., Li, T., Li, W., Li, Y., Lin,
+D., Lin, J., Lin, T., Lin, Z., Liu, H., Liu, J., Liu, J., Liu, J., Liu, K., Liu, K., Liu, K., Liu, S., Liu, S., Liu, W., Liu, X., Liu, Y., Liu, Z., Lu, Y.,
+Lv, H., Lv, H., Lv, H., Lv, Q., Lv, Y., Lyu, C., Ma, C., Ma, J., Ma, R., Ma, R., Ma, R., Ma, X., Ma, Y., Ma, Z., Mi, S., Ning, J., Ning, W.,
+Pang, X., Peng, J., Peng, R., Qiao, Y., Qiu, J., Qu, X., Qu, Y., Ren, Y., Shang, F., Shao, W., Shen, J., Shen, S., Song, C., Song, D., Song,
+D., Su, C., Su, W., Sun, W., Sun, Y., Tan, Q., Tang, C., Tang, H., Tang, K., Tang, S., Tong, J., Wang, A., Wang, B., Wang, D., Wang,
+L., Wang, R., Wang, W., Wang, W., Wang, J., Wang, Y., Wang, Z., Wu, L.-I., Wu, W., Wu, Y., Wu, Z., Xiao, L., Xing, S., Xu, C., Xu,
+H., Xu, J., Xu, R., Xu, W., Yang, G., Yang, Y., Ye, H., Ye, J., Ye, S., Yu, J., Yu, J., Yu, J., Yuan, F., Zang, Y., Zhang, B., Zhang, C., Zhang,
+C., Zhang, H., Zhang, J., Zhang, Q., Zhang, Q., Zhang, S., Zhang, T., Zhang, W., Zhang, W., Zhang, Y., Zhang, Z., Zhao, H., Zhao,
+Q., Zhao, X., Zhao, X., Zhou, B., Zhou, D., Zhou, P., Zhou, Y., Zhou, Y., Zhu, D., Zhu, L., and Zou, Y. (2025). Intern-s1: A scientific
+multimodal foundation model.
+Cai, Y., Cai, S., Shi, Y., Xu, Z., Chen, L., Qin, Y., Tan, X., Li, G., Li, Z., Lin, H., Mao, Y., Li, K., and Sun, X. (2025). Training-free group
+relative policy optimization.
+Chen, K., Ren, Y., Liu, Y., Hu, X., Tian, H., Xie, T., Liu, F., Zhang, H., Liu, H., Gong, Y., Sun, C., Hou, H., Yang, H., Pan, J., Lou, J., Mao,
+J., Liu, J., Li, J., Liu, K., Liu, K., Wang, R., Li, R., Niu, T., Zhang, W., Yan, W., Wang, X., Zhang, Y., Hung, Y.-H., Jiang, Y., Liu, Z.,
+Yin, Z., Ma, Z., and Mo, Z. (2025). xbench: Tracking agents productivity scaling with profession-aligned real-world evaluations.
+DeepSeek-AI, Liu, A., Mei, A., Lin, B., Xue, B., Wang, B., Xu, B., Wu, B., Zhang, B., Lin, C., Dong, C., Lu, C., Zhao, C., Deng, C., Xu,
+C., Ruan, C., Dai, D., Guo, D., Yang, D., Chen, D., Li, E., Zhou, F., Lin, F., Dai, F., Hao, G., Chen, G., Li, G., Zhang, H., Xu, H., Li, H.,
+Liang, H., Wei, H., Zhang, H., Luo, H., Ji, H., Ding, H., Tang, H., Cao, H., Gao, H., Qu, H., Zeng, H., Huang, J., Li, J., Xu, J., Hu, J.,
+Chen, J., Xiang, J., Yuan, J., Cheng, J., Zhu, J., Ran, J., Jiang, J., Qiu, J., Li, J., Song, J., Dong, K., Gao, K., Guan, K., Huang, K., Zhou,
+K., Huang, K., Yu, K., Wang, L., Zhang, L., Wang, L., Zhao, L., Yin, L., Guo, L., Luo, L., Ma, L., Wang, L., Zhang, L., Di, M. S., Xu,
+M. Y., Zhang, M., Zhang, M., Tang, M., Zhou, M., Huang, P., Cong, P., Wang, P., Wang, Q., Zhu, Q., Li, Q., Chen, Q., Du, Q., Xu, R.,
+Ge, R., Zhang, R., Pan, R., Wang, R., Yin, R., Xu, R., Shen, R., Zhang, R., Liu, S. H., Lu, S., Zhou, S., Chen, S., Cai, S., Chen, S., Hu,
+S., Liu, S., Hu, S., Ma, S., Wang, S., Yu, S., Zhou, S., Pan, S., Zhou, S., Ni, T., Yun, T., Pei, T., Ye, T., Yue, T., Zeng, W., Liu, W., Liang,
+W., Pang, W., Luo, W., Gao, W., Zhang, W., Gao, X., Wang, X., Bi, X., Liu, X., Wang, X., Chen, X., Zhang, X., Nie, X., Cheng, X.,
+Liu, X., Xie, X., Liu, X., Yu, X., Li, X., Yang, X., Li, X., Chen, X., Su, X., Pan, X., Lin, X., Fu, X., Wang, Y. Q., Zhang, Y., Xu, Y., Ma,
+Y., Li, Y., Li, Y., Zhao, Y., Sun, Y., Wang, Y., Qian, Y., Yu, Y., Zhang, Y., Ding, Y., Shi, Y., Xiong, Y., He, Y., Zhou, Y., Zhong, Y., Piao,
+Y., Wang, Y., Chen, Y., Tan, Y., Wei, Y., Ma, Y., Liu, Y., Yang, Y., Guo, Y., Wu, Y., Wu, Y., Cheng, Y., Ou, Y., Xu, Y., Wang, Y., Gong,
+Y., Wu, Y., Zou, Y., Li, Y., Xio
+
+=== PAGE 15 ===
+Hu, M., Zhou, Y., Fan, W., Nie, Y., Xia, B., Sun, T., Ye, Z., Jin, Z., Li, Y., Chen, Q., Zhang, Z., Wang, Y., Ye, Q., Ghanem, B., Luo, P., and
+Li, G. (2025a). Owl: Optimized workforce learning for general multi-agent assistance in real-world task automation.
+Hu, M., Zhou, Y., Fan, W., Nie, Y., Xia, B., Sun, T., Ye, Z., Jin, Z., Li, Y., Zhang, Z., Wang, Y., Ye, Q., Luo, P., and Li, G. (2025b). Owl:
+Optimized workforce learning for general multi-agent assistance in real-world task automation.
+Hu, Y., Liu, S., Yue, Y., Zhang, G., Liu, B., Zhu, F., Lin, J., Guo, H., Dou, S., Xi, Z., Jin, S., Tan, J., Yin, Y., Liu, J., Zhang, Z., Sun, Z., Zhu,
+Y., Sun, H., Peng, B., Cheng, Z., Fan, X., Guo, J., Yu, X., Zhou, Z., Hu, Z., Huo, J., Wang, J., Niu, Y., Wang, Y., Yin, Z., Hu, X., Liao,
+Y., Li, Q., Wang, K., Zhou, W., Liu, Y., Cheng, D., Zhang, Q., Gui, T., Pan, S., Zhang, Y., Torr, P., Dou, Z., Wen, J.-R., Huang, X.,
+Jiang, Y.-G., and Yan, S. (2025c). Memory in the age of ai agents.
+LangChain (2023). Langchain: Build context-aware reasoning applications. [Online]. https://github.com/langchain-ai/
+langchain.
+Mialon, G., Fourrier, C., Wolf, T., LeCun, Y., and Scialom, T. (2023). Gaia: a benchmark for general ai assistants. In TheTwelfth
+International Conference onLearning Representations.
+OpenAI (2025). Introducing GPT-5 — openai.com. https://openai.com/index/introducing-gpt-5/ . [Accessed 16-12-2025].
+Orhan, A. E. (2023). Recognition, recall, and retention of few-shot memories in large language models.
+Ouyang, S., Yan, J., Hsu, I.-H., Chen, Y., Jiang, K., Wang, Z., Han, R., Le, L. T., Daruki, S., Tang, X., Tirumalashetty, V., Lee, G.,
+Rofouei, M., Lin, H., Han, J., Lee, C.-Y., and Pfister, T. (2025). Reasoningbank: Scaling agent self-evolving with reasoning memory.
+Packer, C., Fang, V., Patil, S., Lin, K., Wooders, S., and Gonzalez, J. (2023). Memgpt: Towards llms as operating systems.
+Phan, L., Gatti, A., Han, Z., Li, N., Hu, J., Zhang, H., Zhang, C. B. C., Shaaban, M., Ling, J., Shi, S., et al. (2025). Humanity’s last exam.
+arXiv preprint arXiv:2501.14249.
+Qin, T., Chen, Q., Wang, S., Xing, H., Zhu, K., Zhu, H., Shi, D., Liu, X., Zhang, G., Liu, J., Jiang, Y. E., Gao, X., and Zhou, W. (2025).
+Flash-searcher: Fast and effective web agents via dag-based parallel execution.
+Qiu, J., Juan, X., Wang, Y., Yang, L., Qi, X., Zhang, T., Guo, J., Lu, Y., Yao, Z., Wang, H., Liu, S., Jiang, X., Leqi, L., and Wang, M.
+(2025a). Agentdistill: Training-free agent distillation with generalizable mcp boxes.
+Qiu, J., Qi, X., Zhang, T., Juan, X., Guo, J., Lu, Y., Wang, Y., Yao, Z., Ren, Q., Jiang, X., et al. (2025b). Alita: Generalist agent enabling
+scalable agentic reasoning with minimal predefinition and maximal self-evolution. arXiv preprint arXiv:2505.20286.
+Rasmussen, P., Paliychuk, P., Beauvais, T., Ryan, J., and Chalef, D. (2025). Zep: A temporal knowledge graph architecture for agent
+memory.
+Roucher, A., del Moral, A. V., Wolf, T., von Werra, L., and Kaunismäki, E. (2025). ‘smolagents‘: a smol library to build great agentic
+systems.https://github.com/huggingface/smolagents.
+Shi, D., Cao, J., Chen, Q., Sun, W., Li, W., Lu, H., Dong, F., Qin, T., Zhu, K., Yang, M., Yang, J., Zhang, G., Liu, J., Zhang, C., Wang, J.,
+Jiang, Y. E., and Zhou, W. (2025a). Taskcraft: Automated generation of agentic tasks.
+Shi, Y., Wang, M., Cao, Y., Lai, H., Lan, J., Han, X., Wang, Y., Geng, J., Li, Z., Xia, Z., et al. (2025b). Aime: Towards fully-autonomous
+multi-agent framework. arXiv preprint arXiv:2507.11988.
+Shinn, N., Labash, B., and Gopinath, A. (2023). Reflexion: an autonomous agent with dynamic memory and self-reflection. arXiv
+preprint, abs/2303.11366.
+Significant-Gravitas (2023). Autogpt. [Online].https://github.com/Significant-Gravitas/AutoGPT.
+Sun, H. and Zeng, S. (2025). Hierarchical memory for high-efficiency long-term reasoning in llm agents.
+Suzgun, M., Yuksekgonul, M., Bianchi, F., Jurafsky, D., and Zou, J. (2025). Dynamic cheatsheet: Test-time learning w
+

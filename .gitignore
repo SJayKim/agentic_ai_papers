@@ -1,5 +1,8 @@
-# Claude MCP 설정 (Notion 토큰 포함)
-.claude/
+# Claude MCP 설정 — 토큰/시크릿 파일만 제외
+.claude/.mcp.json
+
+# 잘못 생성된 하위 .claude 디렉토리
+summaries/.claude/
 
 # 임시 파일
 *.tmp

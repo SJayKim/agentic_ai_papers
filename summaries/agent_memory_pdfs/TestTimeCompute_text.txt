@@ -1,0 +1,637 @@
+=== PAGE 1 ===
+arXiv:2501.02497v3  [cs.AI]  29 Jun 2025A Survey of Test-Time Compute: From Intuitive Inference to Deliberate
+Reasoning
+YIXIN JI, Soochow University, China
+JUNTAO LI, Soochow University, China
+YANG XIANG, Soochow University, China
+HAI YE, National University of Singapore, Singapore
+KAIXIN WU, Ant Group, China
+KAI YAO, Ant Group, China
+JIA XU, Ant Group, China
+LINJIAN MO, Ant Group, China
+MIN ZHANG, Soochow University, China
+The remarkable performance of the o1 model in complex reasoning demonstrates that test-time compute scaling can further unlock
+the model’s potential, enabling powerful System-2 thinking. However, there is still a lack of comprehensive surveys for test-time
+compute scaling. We trace the concept of test-time compute back to System-1 models. In System-1 models, test-time compute addresses
+distribution shifts and improves robustness and generalization through parameter updating, input modification, representation
+editing, and output calibration. In System-2 models, it enhances the model’s reasoning ability to solve complex problems through
+repeated sampling, self-correction, and tree search. We organize this survey according to the trend of System-1 to System-2 thinking,
+highlighting the key role of test-time compute in the transition from System-1 models to weak System-2 models, and then to strong
+System-2 models. We also point out advanced topics and future directions.1
+CCS Concepts: •Computer methodologies →Artificial intelligence; Nature language processing; Nature language genera-
+tion.
+Additional Key Words and Phrases: Large Language Models, Test-time compute, Reasoning
+ACM Reference Format:
+Yixin Ji, Juntao Li, Yang Xiang, Hai Ye, Kaixin Wu, Kai Yao, Jia Xu, Linjian Mo, and Min Zhang. 2025. A Survey of Test-Time Compute:
+From Intuitive Inference to Deliberate Reasoning. 1, 1 (July 2025), 36 pages. https://doi.org/10.1145/nnnnnnn.nnnnnnn
+1https://github.com/Dereck0602/Awesome_Test_Time_LLMs.
+Authors’ Contact Information: Yixin Ji, jiyixin169@gmail.com, Soochow University, Suzhou, China; Juntao Li, Soochow University, Suzhou, China,
+ljt@suda.edu.cn; Yang Xiang, Soochow University, Suzhou, China; Hai Ye, National University of Singapore, Singapore; Kaixin Wu, Ant Group, Hangzhou,
+China; Kai Yao, Ant Group, Hangzhou, China; Jia Xu, Ant Group, Hangzhou, China; Linjian Mo, Ant Group, Hangzhou, China; Min Zhang, Soochow
+University, Suzhou, China, minzhang@suda.edu.cn.
+Permission to make digital or hard copies of all or part of this work for personal or classroom use is granted without fee provided that copies are not
+made or distributed for profit or commercial advantage and that copies bear this notice and the full citation on the first page. Copyrights for components
+of this work owned by others than the author(s) must be honored. Abstracting with credit is permitted. To copy otherwise, or republish, to post on
+servers or to redistribute to lists, requires prior specific permission and/or a fee. Request permissions from permissions@acm.org.
+©2025 Copyright held by the owner/author(s). Publication rights licensed to ACM.
+Manuscript submitted to ACM
+Manuscript submitted to ACM 1
+
+=== PAGE 2 ===
+2 Ji et al.
+System-1 model Weak System-2 model
+test-time adaptation test-time reasoning
+PerceptualDistribution Shift Reasoning and PlaningStrong System-2 model
+Cognitive
+Fig. 1. Illustration of test-time compute in the System-1 and System-2 model.
+1 Introduction
+Over the past decades, deep learning with its scaling effects has been the driving engine behind the artificial intelligence
+revolution. Particularly in the text modality, large language models (LLMs) represented by the GPT series [ 24,226,229]
+have demonstrated that larger models and more training data lead to better performance on downstream tasks. However,
+on the one hand, further scaling in the training phase becomes difficult due to the scarcity of data and computational
+resources [ 299]; on the other hand, existing models still perform far below expectations in terms of robustness and
+handling complex tasks. These shortcomings are attributed to the model’s reliance on fast, intuitive System-1 thinking,
+rather than slow, deep System-2 thinking [ 328]. Recently, large reasoning models (LRMs), represented by OpenAI-
+o1/o3 [ 227], DeepSeek-R1 [ 95], and Gemini 2.5 [ 57], equipped with System-2 thinking, have gained attention for their
+outstanding performance in complex reasoning tasks. It demonstrates a test-time compute scaling effect: the greater
+the computational effort in the inference, the better the model’s performance.
+The concept of test-time compute emerged before the rise of LLMs and was initially applied to System-1 models
+(illustrated in Figure 1). These System-1 models can only perform limited perceptual tasks, relying on patterns learned
+during training for predictions. As a result, they are constrained by the assumption that training and testing are
+identically distributed and lack robustness and generalization to distribution shifts [ 423]. Many works have explored
+test-time adaptation (TTA) to improve model robustness by updating parameters [ 302,363], modifying the input [ 61],
+editing representations [ 247], and calibrating the output [ 402]. With TTA, the System-1 model slows down its thinking
+process and has better generalization. However, TTA is an implicit slow thinking, unable to exhibit explicit, logical
+thinking process like humans, and struggles to handle complex reasoning tasks. Thus, TTA-enabled models perform
+weak System-2 thinking.
+Currently, advanced LLMs with chain-of-thought (CoT) prompting [ 326] have enabled language models to perform
+explicit System-2 thinking [ 97]. However, vanilla CoT is limited by error accumulation and linear thinking pattern [ 271],
+making it difficult to fully simulate non-linear human cognitive processes such as brainstorming, reflection, and
+backtracking. To achieve stronger System-2 models, researchers employ test-time compute strategies to extend model
+reasoning’s breadth, depth and accuracy, such as repeated sampling [ 50], self-correction [ 263], and tree search [ 359].
+Repeated sampling simulates the diversity of human thinking, self-correction enables LLMs to reflect, and tree search
+enhances reasoning depth and backtracking.
+To the best of our knowledge, this paper is the first to systematically review test-time compute methods and
+thoroughly explore their critical role in advancing models from System-1 to weak System-2, and ultimately to strong
+System-2 thinking. In Section 2, we present the background of System-1 and System-2 thinking. Section 3 and Section 4
+detail the test-time compute methods for the System-1 and System-2 models. Then, we discuss advanced topics and
+future directions in Section 5 and 6. Additionally, we review benchmarks in Section 7.
+Manuscript submitted to ACM
+
+=== PAGE 3 ===
+A Survey of Test-Time Compute: From Intuitive Inference to Deliberate Reasoning 3
+Test-time ComputingTest-time
+Adaptation (§3)Parameter
+UpdatingTest-time Training TTT [283], TTT++ [192], CPT [422]; etc.
+Fully TTA Tent [302], SAR [224], TPT [264], OIL [361], Anti-CF [277], RLCF [410]; etc.
+Input
+ModificationDemonstration Selection EPR [249], UDR [167], CQL [401], Entropy [202], MDL [334], HiAR [331]; etc.
+Demonstration Creation SG-ICL [136], Self-ICL [38], DAIL [278], Auto-CoT [406], DAWN-ICL [286]; etc.
+Representation
+EditingITI [161], ActAdd [294], SEA [242], CAA [247]; etc.
+Output
+Calibration𝑘NN-MT [133], AdaNPC [402], Bi- 𝑘NN [367]; etc.
+Test-time
+Reasoning (§4)Feedback
+ModelingScore-based Bradley and Terry [22], ORM [50], PAV [258], PRM [179], OmegaPRM [206]; etc.
+Generative-basedLLM-as-a-Judge [414], Auto-J [159], Prometheus [139, 140], Fennec [178],
+GenRM [394], CriticRM [372]; etc.
+Search
+StrategiesRepeated SamplingSC-CoT [318], PROVE [290], Cobbe et al. [50], DiVeRSe [172], PRS [362]; etc.
+Improvement training: ReST [94], vBoN [6], BoNBoN[93], Chow et al. [49]; etc.
+Self-correctionSelf-debug [40], RIC [135], Critic [88], Shepherd [314], MAD [177], IoE [162],
+Refiner [231], Reflexion [263], Du et al. [63], ProgCo [268], S1 [218]; etc.
+Improvement training: GLoRe [103], SCoRe[143], Self-correct [327],
+Qu et al. [243], Zhang et al. [404], GRPO [259], T1 [110]; etc.
+Tree SearchToT [359], RAP [99], rStar [238], TS-LLM [69], AlphaMATH [31]; etc.
+Improvement training: ReST-MCTS* [387], Qin et al. [240],
+MCTS-DPO [341], Zhao et al. [412], Zhang et al. [403]; etc.
+Future
+Directions (§6)Generalization Jia [123], GRM [354], DogeRM [181], GenPRM [409], RM-R1 [39], Search-o1 [164], Deep Research [166]; etc.
+Multi-modal MM-CoT [405], VoT [332], Lee et al. [150], LLaVA-CoT [347], VisualPRM [315], LMM-R1 [234]; etc.
+Efficient Damani et al. [55], OSCA [393], Wang et al. [306], CCoT [45], DEER [353], L1 [2], O1-Pruner [205]; etc.
+Scaling Law Brown et al. [23], Snell et al. [265], Wu et al. [333], Chen et al. [43]; etc.
+Combination Marco-o1 [412], TTT [4], HiAR-ICL [331]; etc.
+Fig. 2. Taxonomy of test-time computing methods and future directions.
+2 Background
+System-1 and System-2 thinking are psychological concepts [ 127]. When recognizing familiar patterns or handling
+simple problems, humans often respond intuitively. This automatic, fast thinking is called System-1 thinking. In contrast,
+when dealing with complex problems like mathematical proofs or logical reasoning, deep and deliberate thought is
+required, referred as System-2 thinking—slow and reflective. In the field of artificial intelligence, researchers also use
+these terms to describe different types of models [ 148]. System-1 models respond directly based on internally encoded
+perceptual information and world knowledge without showing any intermediate decision-making process. In contrast,
+System-2 models explicitly generate reasoning processes and solve tasks incrementally. Before the rise of LLMs, System-1
+models were the mainstream in AI. Although many deep learning models, such as ResNet, Transformer, and BERT,
+achieve excellent performance in various tasks in computer vision and natural language processing, these System-1
+models, similar to human intuition, lack sufficient robustness and are prone to errors [ 62,82,317]. Nowadays, the strong
+generation and reasoning capabilities of LLMs make it possible to build System-2 models. Wei et al . [326] propose the CoT,
+which allows LLMs to generate intermediate reasoning steps progressively during inference. Empirical and theoretical
+Manuscript submitted to ACM
+
+=== PAGE 4 ===
+4 Ji et al.
+......
+ ... ...
+steer vector...
+demonstrationback-
+propagationexternal distribution
+calibrateinput output distribution model block
+(a) Updating the model (b) Modifying the input (c) Editing the representation (d) Calibrating the output
+Fig. 3. Illustration of various kinds of test-time adaptation methods.
+results show that this approach significantly outperforms methods that generate answers directly [ 67,142,174,416].
+However, current System-2 models represented by CoT prompting still have shortcomings. The intermediate processes
+generated by LLMs may contain errors, leading to cumulative mistakes and ultimately resulting in incorrect answers.
+Although retrieval-augmented generation (RAG) helps mitigate factual errors [ 91,292,324], their impact on improving
+reasoning abilities remains limited. As a result, CoT-enabled LLMs are still at the weak system-2 thinking stage.
+3 Test-time Adaptation for System-1 Thinking
+3.1 Updating the Model
+Model updating utilizes test sample information to finetune model parameters during the inference stage, enabling
+the model to adapt to the test distribution. The key lies in obtaining test distribution information to provide learning
+signals and using appropriate parameters and optimization algorithms to achieve efficient and stable updates.
+Learning signal .In the inference stage, the ground-truth of test samples is unavailable. Thus, many works attempt to
+design unsupervised or self-supervised objectives as learning signals. Existing learning signals can be classified into two
+categories based on whether the training process can be modified: test-time training (TTT) and fully test-time adaptation
+(FTTA). TTT assumes users can modify the training process by incorporating distribution-shift-aware auxiliary tasks.
+During test-time adaptation, the auxiliary task loss serves as the learning signal for optimization. Many self-supervised
+tasks have been shown to be effective as auxiliary tasks in image modality, such as rotation prediction [ 283], meta
+learning [ 18], masked autoencoding [ 74] and contrastive learning [ 30,192]. Among them, contrast learning has been
+successfully applied to test-time adaptation for visual-language tasks due to its generalization of self-supervised learning
+within and across modalities [422].
+In contrast, FTTA is free from accessing the training process and instead uses internal or external feedback on
+test samples as learning signals. Uncertainty is the most commonly learned signal, driven by the motivation that
+when test samples shift from the training distribution, the model’s confidence in its predictions is lower, resulting
+in higher uncertainty. Tent [ 302] uses the entropy of model predictions as a measure of uncertainty and updates the
+model by minimizing the entropy. MEMO [ 395] augments the data for a single test sample and then minimizes its
+Manuscript submitted to ACM
+
+=== PAGE 5 ===
+A Survey of Test-Time Compute: From Intuitive Inference to Deliberate Reasoning 5
+marginal entropy, which is more stable compared to Tent in the single-sample TTA setting. However, minimizing
+entropy also has pitfalls, as blindly reducing prediction uncertainty may cause the model to collapse and make trivial
+predictions [ 235,277,408]. Some works propose new regularization terms for minimizing entropy to avoid model
+collapse, including Kullback-Leibler divergence [ 277], moment matching [ 102] and entropy matching [ 17]. For specific
+tasks, a small amount of human feedback or external model rewards can also serve as high-quality learning signals. Gao
+et al. [76] and Li et al . [175] utilize user feedback to adapt the QA model. Zhan et al . [384] apply test-time adaptation to
+multilingual machine translation tasks by using COMET [ 246] for evaluating translation quality. In cross-modal tasks
+such as image-text retrieval and image captioning, RLCF [ 410] demonstrates its effectiveness by using CLIP scores [ 244]
+as TTA signals. In language modeling, training with relevant contextual text at test time can reduce perplexity [ 101,321].
+Hübotter et al. [121] theoretically shows that it reduces the uncertainty of test samples and proposes a more effective
+active learning selection strategy.
+Updating parameters .To advance the application of TTA in real-world scenarios, researchers must address chal-
+lenges of efficiency and stability. To improve efficiency, many methods only fine-tune a small subset of parameters, such
+as normalization layers [ 255], soft prompt [ 66,102,151,212,223,264], low-rank module [ 112,113,122], adapter mod-
+ule [111,219,277] and cross-modality projector [ 410]. Although the number of parameters to fine-tune is reduced, TTA
+still requires an additional backward propagation. Typically, the time cost of a backward propagation is approximately
+twice that of a forward propagation. Thus, Niu et al . [223] propose FOA, which is free from backward propagation by
+adapting soft prompt through covariance matrix adaptation evolution strategy.
+The stability of TTA is primarily shown in two aspects. On the one hand, unsupervised or self-supervised learning
+signals inevitably introduce noise into the optimization process, resulting in TTA optimizing the model in the incorrect
+gradient direction. To address this, Niu et al . [224] and Gong et al . [86] propose noise data filtering strategies and the
+robust sharpness-aware optimizer. On the other hand, in real-world scenarios, the distribution of test samples may
+continually shift, but continual TTA optimization may lead to catastrophic forgetting of the model’s original knowledge.
+Episodic TTA [ 264,410] is a setting to avoid forgetting, which resets the model parameters to their original state after
+TTA on a single test sample. However, episodic TTA frequently loads the original model, leading to higher inference
+latency and also limiting the model’s incremental learning capability. To overcome the dilemma, a common trick is the
+exponential moving average [329, 361], which incorporates information from previous model states.
+3.2 Modifying the Input
+When it comes to LLM, the large number of parameters makes model update-based TTA methods face a tougher
+dilemma of efficiency and stability. As a result, input-modification-based methods, which do not rely on parameter
+updates, have become the mainstream method for TTA in LLMs. The effectiveness of input-modified TTA stems from
+the in-context learning (ICL) capability of LLM, which can significantly improve the performance by adding some
+demonstrations before the test sample. ICL is highly sensitive to the selection and order of demonstrations. Therefore,
+the core objective of input-modification TTA is to select appropriate demonstrations for the test samples and arrange
+them in the optimal order to maximize the effectiveness of ICL.
+First, empirical studies [ 186] show that the more similar the demonstrations are to the test
+
+=== PAGE 6 ===
+6 Ji et al.
+learning. Then, as researchers delve deeper into the mechanisms of ICL, ICL is considered to conduct implicit gradient
+descent on the demonstrations [ 53]. Therefore, from the perspective of training data, demonstrations also need to
+be informative and diverse [ 168,276]. Wang et al . [319] view language models as topic models and formulate the
+demonstration selection problem as solving a Bayesian optimal classifier. Additionally, the ordering of examples is
+another important area for improvement. Lu et al . [202] and Wu et al . [334] use information theory as a guide to select
+the examples with maximum local entropy and minimum description length for ranking, respectively. Scarlatos and Lan
+[254] and Zhang et al . [401] consider the sequential dependency among demonstrations, and model it as a sequential
+decision problem and optimize demonstration selection and ordering through reinforcement learning.
+Another line of work [ 38,136,209,406] argues that in practice, combining a limited set of externally provided
+examples may not always be the optimal choice. LLMs can leverage their generative and annotation capabilities to
+create better demonstrations. DAIL [ 278] constructs a demonstration memory, storing previous test samples and their
+predictions as candidate demonstrations for subsequent samples. DAWN-ICL [ 286] further models the traversal order
+of test samples as a planning task and optimizes it by the Monte Carlo tree search (MCTS).
+3.3 Editing the Representation
+For generative LLMs, some works have found that the performance bottleneck is not in encoding world knowledge,
+but in the large gap between the information in intermediate layers and the output. During the inference phase,
+editing the representation can help externalize the intermediate knowledge into the output. PPLM [ 56] performs
+gradient-based representation editing under the guidance of a small language model to control the style of outputs.
+ActAdd [ 294] selects two semantically contrastive prompts and calculates the difference between their representations
+as a steering vector, which is then added to the residual stream. Representation editing based on contrastive prompts has
+demonstrated its effectiveness in broader scenarios, including instruction following [ 274], alleviating hallucinations [ 9,
+161], reducing toxicity [ 188,200] and personality [ 26]. SEA [ 242] projects representations onto directions with maximum
+covariance with positive prompts and minimum covariance with negative prompts. They also introduce nonlinear
+feature transformations, allowing representation editing to go beyond linearly separable representations. Scalena et al .
+[253] conduct an in-depth study on the selection of steering intensity. They find that applying a gradually decreasing
+steering intensity to each output token can improve control over the generation without compromising quality.
+3.4 Calibrating the Output
+Using external information to calibrate the model’s output distribution is also an efficient yet effective test-time
+adaptation method [ 134]. AdaNPC [ 402] designs a memory pool to store training data. During inference, given a test
+sample, AdaNPC recalls 𝑘samples from the memory pool and uses a 𝑘NN classifier to predict the test sample. It then
+stores the test sample and its predicted label in the memory pool. Over time, the sample distribution in the memory pool
+gradually aligns with the test distribution. In NLP, the most representative application of such methods is 𝑘NN machine
+translation ( 𝑘NN-MT). 𝑘NN-MT [ 133] constructs a datastore to store contextual representations and their corresponding
+target tokens. During translation inference, it retrieves the 𝑘-nearest candidate tokens from the datastore based on
+the decoded context and processes them into probabilities. Finally, it calibrates the translation model’s probability
+distribution by performing a weighted fusion of the model’s probabilities and the retrieved probabilities. 𝑘NN-MT
+has demo
+
+=== PAGE 7 ===
+A Survey of Test-Time Compute: From Intuitive Inference to Deliberate Reasoning 7
+Q
+0.8 0.5 0.1score-based
+The response is not accurate 
+and does not address the 
+question fully [...]generative-basedQ
+Collecting trajectory
+Q SFT
+Q DPO
+(a) Feedback modelingQ
+1 2 3
+Q
+1 2 3
+4 5 6 7 8 9
+Q 1 1 1
+Repeated sampling Self-correction
+Tree search
+(b) Test-time strategies (c) Improvement trainingQ
+ rollout
+... ... ...
++1 +1 -1
+reward
+RL
+Fig. 4. Illustration of feedback modeling, search strategies and improvement training in test-time reasoning.
+Summary 1: Parameter updating and output calibration are the most versatile TTA methods. However, parameter
+updating suffers from training instability and inefficiency in LLMs, while output calibration relies on target domain
+information and risks knowledge leakage. Input modification and representation editing are free from training but have
+limited applicability: input modification is related to ICL capabilities, and representation editing demands manual prior
+knowledge.
+4 Test-time Reasoning for System-2 Thinking
+Test-time reasoning aims to spend more inference time to search for the most human-like reasoning process within the
+vast decoding search space. In this section, we introduce the two core components of test-time reasoning: feedback
+modeling and search strategies (as shown in Figure 4).
+4.1 Feedback Modeling
+Score-based Feedback .Score-based feedback, also known as the verifier, aims to predict scalar scores to evaluate
+the alignment of generated results with ground truth or human cognitive processes. Its training process is typically
+similar to the reward model in RLHF, using various forms of feedback signals and modeling it as a classification [ 50] or
+rank task [ 22,108,375]. In reasoning tasks, verifiers are primarily categorized into two types: outcome-based verifiers
+(ORMs) and process-based verifiers (PRMs). ORMs [ 50] use the correctness of the final CoT result as training signals.
+Liu et al . [196] provide a detailed recipe for training a strong ORM. In contrast, PRMs [ 179,296,390] are trained based
+on the correctness of each reasoning step. Compared to ORMs, PRMs cannot only evaluate intermediate reasoning steps
+but also assess the entire reasoning process more precisely. However, PRMs require more human effort to annotate
+feedback for the intermediate steps. Math-Shepherd [ 311], OmegaPRM [ 206] and EpicPRM [ 282] utilize MCTS algorithm
+to collect high-quality process supervision data automatically. Zhang et al . [407] utilize critic models to evaluate process
+annotations collected by MCTS, filtering out low-quality data to improve the training effectiveness of PRMs. Setlur et al .
+[258] argue that PRMs should evaluate the advantage of each step for subsequent reasoning rather than focusing solely
+on its correctness. They propose process advantage verifiers (PAVs) and efficiently construct training data through
+MCTS. Furthermore, Lu et al . [201] and Yuan et al . [376] notice that ORMs implicitly model the advantage of each step,
+leading them to automatically annotate process supervision data using ORMs or directly train PRMs on outcome labels,
+respectively. Liu et al . [193] adaptively segment reasoning steps based on tokens with higher uncertainty, which is used
+to train better PRMs.
+Manuscript submitted to ACM
+
+=== PAGE 8 ===
+8 Ji et al.
+Category Sub-category Representative Methods Domain Objective Description
+Score-basedORMCobbe et al. [50] Math classification ORM; human annotated data
+Acemath [196] Math list-wise Bradley-Terry ORM; sampling training data from multiple LLMs
+PRMLightman et al. [179] Math classification PRM; human annotated data
+Math-shepherd [311] Math classification PRM; annotating processes via MC estimation
+Zhang et al. [407] Math classification/regression PRM; annotating processes via MCTS and LLM-as-a-judge
+Implicit PRM [376] Math implicit reward modeling PRM; training PRMs with outcome labels
+ASPRM [193] Math, Code classification PRM; adaptive segment step; annotating processes via MC estimation
+Generative-basedTraining-freeLLM-as-a-Judge [414] General - Designing system instructions to mitigate biases
+BSM [250] General - Dividing into multiple criteria and then merging
+Training-basedShepherd [314] General SFT Collecting data from human annotation and the Internet
+Prometheus [140] General SFT Training single and pairwise models and then merging them
+EvalPlanner [251] General DPO Planing evaluation processes and then evaluating
+GenRM [394] Math SFT PRM; synthesizing critique data from external LLMs
+R-PRM [260] Math SFT & DPO PRM; synthesizing critique data from external LLMs
+Critic-RM [372] General SFT & Bradley-Terry ORM; synthesizing and filtering critique data via self-critique
+CLoud [8] General SFT & Bradley-Terry ORM; synthesizing data from external LLMs and self-critique
+Table 1. Overview of feedback modeling methods.
+Generative-based Feedback .Although the verifier can evaluate the correctness of generated answers or steps,
+it lacks interpretability, making it unable to locate the specific cause of errors or provide correction suggestions.
+Generative-based feedback, also referred to critic, fully leverages the LLM’s generative and instruction-following
+ability [ 8,48,260,364]. By designing specific instructions, it can perform pointwise or pairwise evaluation from multiple
+dimensions, and even provide suggestions for revision in natural language. Powerful closed-source LLMs, such as GPT-4
+and Claude, are effective critics. They can perform detailed and controlled assessments of generated texts, such as
+factuality, logical errors, coherence, and alignment, with high consistency with human evaluations [47, 191, 208, 308].
+However, they still face biases such as length, position, and perplexity [ 19,275,310]. LLM-as-a-Judge [ 414] carefully
+designs system instructions to mitigate the interference of biases. BSM [ 250] evaluates based on multiple criteria and then
+merges them. Peng et al. [233] employ multi-agents to jointly evaluate answers’ factuality and instruction-following.
+To obtain cheaper verbal-based feedback, open-source LLMs can also serve as competitive alternatives through
+supervised fine-tuning (SFT) [ 178,231,323,420]. Shepherd [ 314] collects high-quality training data from human
+annotation and online communities to fine-tune an evaluation model. Auto-J [ 159] collects queries and responses from
+various scenarios and designs evaluation criteria for each scenario. GPT-4 then generates critiques of the responses based
+on these criteria and distills its critique ability to open-source LLMs. Prometheus [ 139,140] designs more fine-grained
+evaluation dimensions. It trains a single evaluation model and a pairwise ranking model separately, then unifies them
+into one LLM by weight merging. To reduce reliance on human annotations and external LLMs, Wang et al . [313]
+propose a self-training method: the critique model generates positive and negative responses, then collects critique data
+via rejection sampling to perform iterative finetuning. Building on self-training, EvalPlanner enables [ 251] the critique
+model to plan evaluation processes and criteria, conduct critiques based on these, and then collect positive and negative
+samples to improve the critique model via DPO [ 245]. [370] carefully synthesize and filte
+
+=== PAGE 9 ===
+A Survey of Test-Time Compute: From Intuitive Inference to Deliberate Reasoning 9
+Category sub-category Representative Methods Tasks Verifier/Critic Train-free
+Repeat SamplingMajority votingCoT-SC [318] Math, QA self-consistency ✓
+PROVE [290] Math compiler ✓
+Best-of-NCobbe et al. [50] Math ORM ✗
+DiVeRSe [172] Math PRM ✗
+Knockout [195] Math critic ✓
+Self-correctionHuman feedbackNL-EDIT [64] Semantic parsing Human ✗
+FBNET [285] Code Human ✗
+External toolsDrRepair [360] Code compiler ✗
+Self-debug [40] Code compiler ✓
+CRITIC [88] Math, QA, Detoxifying text-to-text APIs ✓
+External modelsREFINER [231] Math, Reason critic model ✗
+Shepherd [314] QA critic model ✗
+Multiagent Debate [63] Math, Reason multi-agent debate ✓
+MAD [177] Translation, Math multi-agent debate ✓
+Intrinsic feedbackSelf-Refine [214] Math, Code, Controlled generation self-critique ✓
+Reflexion [263] QA self-critique ✓
+RCI [135] Code, QA self-critique ✓
+Tree SearchUninformed searchToT [359] Planing, Creative writing self-critique ✓
+Xie et al. [342] Math self-critique ✓
+Heuristic searchRAP [99] Planing, Math, Logical self-critique ✓
+TS-LLM [69] Planing, Math, Logical ORM ✗
+rStar [238] Math, QA multi-agent consistency ✓
+ReST-MCTS* [387] Math, QA PRM ✗
+Table 2. Overview of search strategies.
+4.2 Search Strategies
+4.2.1 Repeated Sampling .
+Sampling strategies such as top-p and top-k are commonly used decoding algorithms in LLM inference. They introduce
+randomness during decoding to enhance text diversity, allowing for parallelly sampling multiple generated texts.
+Through repeated sampling, we have more opportunities to find the correct answer. Repeated sampling is particularly
+suitable for tasks that can be automatically verified, such as code generation, where we can easily identify the correct
+solution from multiple samples using unit tests [ 169,248]. For tasks that are difficult to verify, like math word problems,
+the key to the effectiveness of repeated sampling is the verification strategy.
+Verification strategy .Verification strategies include two types: majority voting and best-of-N (BoN) sampling.
+Majority voting [160,180] selects the most frequently occurring answer in the samples as the final answer, which is
+motivated by ensemble learning. Majority voting is simple yet effective. For instance, self-consistency CoT [ 318] can
+improve accuracy by 18% over vanilla CoT in math reasoning tasks. However, the majority does not always hold the
+truth, as they may make similar mistakes. Therefore, some studies perform filtering or weighting before voting. For
+example, the PROVE framework [ 290] converts CoT into executable programs, filtering out samples if the program’s
+results are inconsistent with the reasoning chain’s outcomes. Kang et al . [130] propose the self-certainty metric to
+weight votes based on their ranking. Huang et al . [116] use the calibrated confidence as vote weights, and adjust the
+number of samples based on response agreement to improve efficiency [1]. RPC [419] demonstrates theoretically and
+experimentally that filtering low-probability samples improves the performance and efficiency of majority voting.
+Manuscript submitted to ACM
+
+=== PAGE 10 ===
+10 Ji et al.
+toolscalling
+feedbackFirst, ... Then, ... 
+Finally, ... Thus, the 
+answer is \boxed{5}
+Oh, I make a 
+mistake... ...
+(a) Tool checking
+First, ... Then, ... 
+Finally, ... Thus, the 
+answer is \boxed{5}
+Let’s think again... ...
+I disagree with 
+you. I think ... ...
+You are right.
+(b) External model evaluation
+First, ... Wait, ... Then, ... 
+Alternatively, ... Finally, ... 
+Let me check it, ... Thus, the 
+answer is \boxed{3}
+(c) Self-critique 
+Fig. 5. Illustration of self-correction with tool checking, external model evaluation, and self-critique.
+Best-of-N sampling uses a verifier to score each response and selects the one with the highest score as the final
+answer [ 50,184,221,273]. Li et al . [172] propose a voting-based BoN variant, which performs weighted voting on all
+answers based on the verifier’s scores and selects the answer with the highest score. [ 195] design BoN in a knockout
+tournament, using pairwise comparison verifiers to filter out the best response. In addition, some works aim to improve
+the efficiency of BoN. Inspired by speculative decoding, Qiu et al . [241] , Sun et al . [281] , Yu et al . [368] , Zhang et al .
+[397] and Manvi et al . [215] evaluate each reasoning step and prune low-scoring sampled results, halting further
+generation for those paths, thereby significantly reducing the overall time cost. PRS [ 362] enables LLMs to self-critique
+and self-correct, guiding the model to generate expected responses with fewer sampling times. Li et al . [156] compare
+BoN and majority voting, demonstrating that BoN is suitable for harder questions with moderate diversity of response
+distribution.
+Improvement Training .Repeated sampling has proven to be a simple yet effective method, even surpassing models
+fine-tuned with RLHF [ 80,109]. However, it costs much inference time that is difficult to afford in practical applications.
+Therefore, many studies have attempted to train the model by BoN sampling to approximate the BoN distribution,
+thereby reducing the search space during inference. ReST [ 94] samples responses with reward values above a threshold
+from the policy model as self-training data and fine-tunes the policy model by offline reinforcement learning. In each
+iteration, ReST samples new training data. vBoN [ 6], BoNBoN [ 93] and BOND [ 257] derive the BoN distribution and
+minimize the difference between the policy model’s distribution and the BoN distribution. Chow et al . [49] design a
+BoN-aware loss to make the policy model more exploratory during fine-tuning.
+4.2.2 Self-correction .
+Self-correction is a sequential test-time compute method that enables LLMs to iteratively revise and refine generated
+results based on external or internal feedback [263].
+Feedback sources .The feedback used for self-correction is typically presented in natural language and comes from
+various sources, including human evaluation, tool checking, external model evaluation, and intrinsic feedback. Human
+evaluation is the gold standard for feedback, but due to its high cost and limited scalability, it is mainly used in early
+research to explore the upper limits of self-correction capabilities [ 64,284,285]. For certain domain-specific tasks,
+external tool checking provides accurate and efficient feedback [ 40,79,88]. For example, Yasunaga and Liang [360]
+propose to obtain feedback from compilers in code repair and generation tasks. In embodied tasks, the environment can
+provide precise feedback on the action trajectories of LLM-based agents [304].
+Manuscript submitted to ACM
+
+=== PAGE 11 ===
+A Survey of Test-Time Compute: From Intuitive Inference to Deliberate Reasoning 11
+External model evaluation is an effective feedback source for general tasks, such as various verbal-based critique models
+described in Section 4.1. For example, Paul et al. [231] first define multiple error types for natural language reasoning
+tasks and then design the corresponding feedback templates. They train an evaluation model using synthetic feedback
+training data, and with the critic, the reasoning model achieves substantial performance improvement. Multi-agent
+debate [ 34,63,177,309,344] is another mechanism that leverages external feedback to enhance reasoning capabilities. In
+this approach, models do not have distinct roles as reasoners and critics. Instead, multiple models independently conduct
+reasoning, critique each other, and defend or refine their reasoning based on feedback. This process continues until
+agents reach a consensus or a judge model summarizes the final reasoning results. The multi-agent debate has shown
+its potential in fact-checking [ 132,137], commonsense QA [ 344], faithful evaluations [ 28], and complex reasoning [ 63].
+However, multi-agent debate may be unstable, as LLMs are susceptible to adversarial information and may revise correct
+answers to incorrect ones in response to misleading inputs [ 5,144]. Therefore, a successful multi-agent debate requires
+that LLMs maintain their stance when faced with incorrect answers from other models while remaining open to valid
+suggestions [ 272]. In general, the more LLMs involved in the debate, the stronger the overall reasoning performance.
+However, this significantly increases the number of LLM inferences required, and the length of input context, posing a
+major challenge to LLM inference costs [ 190]. To reduce debate inference costs, Li et al . [170] investigate the impact
+of topological connections among multiple agents and show that sparse connections, such as ring structures, are not
+inferior to the fully connected topology. GroupDebate [ 190] divides LLMs into groups that conduct debates internally
+and only share the consensus results between groups.
+Self-critique assumes that LLMs can self-evaluate their outputs and optimize them through intrinsic feedback [ 379].
+This idea stems from a fundamental principle in computational complexity theory: verifying whether a solution is
+correct is typically easier than solving the problem. Bai et al . [16] propose self-correcting harmful responses from
+LLMs by prompting themselves. Self-Refine [ 214] and RCI Prompting [ 135] iteratively prompt LLMs to self-correct
+their responses in tasks such as arithmetic reasoning. IoE [ 162] observes that LLMs may over-criticize themselves
+during self-critique, leading to performance degradation, and designs prompt to guide LLMs in assessing confidence.
+ProgCo [ 268] leverage the advantages of code in expressing complex logic, enabling LLMs to generate responses in
+pseudo-code form, followed by self-critique and refinement. SETS [ 33] combines the strengths of repeated sampling
+and self-critique, applying self-critique and correction to each sampled reasoning path and choosing the final solution
+via majority voting. S1 [218] adds the “wait” to the reasoning process, prompting the LLM to critique its reasoning.
+Arguments .The effectiveness of self-correction, especially the self-critique, has remained controversial. Several
+empirical studies on code generation [ 225], commonsense QA [ 117], math problem-solving [ 307], planning [ 297], and
+graph coloring [ 270] confirm that self-correction is not a guaranteed solution for improving performance. Kamoi et al .
+[128] think the effectiveness of self-correction has been overestimated. Previous successes either rely on oracle answers
+or weak initial answers. Only tasks that can be broken down into easily verifiable sub-tasks can truly benefit from
+self-correction. They suggest fine-tuning specific evaluation models to achieve better self-corr
+
+=== PAGE 12 ===
+12 Ji et al.
+Improvement Training .Most of the aforementioned self-correction methods demonstrate significant performance
+improvements on advanced closed-source large models or open-source LLMs with over 70B parameters. However,
+for medium-scale open-source models with weaker capabilities, we need to further fine-tune them to unlock their
+self-correction capabilities. Supervised fine-tuning optimizes the model using high-quality multi-turn correction
+data, either manually annotated [ 252], self-rationalize [ 378,381], multi-agent debate [ 280] or sampled from stronger
+LLMs [ 7,78,231,243,335,404]. GLoRe [ 103] considers that LLMs need global or local refinement for different types of
+errors. To address this, they construct training sets for global and local refinement, train verifiers to identify global and
+local errors, and develop LLMs for refinement based on different global or local feedback signals. Xi et al . [335] design a
+scalable framework for synthesizing self-correction training data, enabling reasoning models to generate controlled
+errors and receive feedback from critics to self-correct. Although SFT is effective, training data from offline-generated
+self-correction trajectories can only simulate limited correction patterns. This leads to the distribution mismatch with the
+actual self-correction behavior during model inference. Self-correct [ 327] adopts online imitation learning, re-sampling
+new self-correction trajectories for training after each training epoch. To further expand the exploration space of LLMs,
+many studies adopt flexible RL algorithms to surpass the performance limits of SFT. SCoRe [ 143] proposes using the
+multi-turn RL method to improve self-critique and self-correction capability. T1 [ 110] employs self-correction training
+data for SFT cold-start, followed by RL training using the RLOO algorithm [ 3]. During the RL phase, high-temperature
+sampling and entropy rewards encourage the LLM to explore more diverse reasoning paths. Deepseek-R1 [ 95] uses
+rule-based rewards and the GRPO algorithm [ 259] for RL training. It also demonstrates RL’s immense potential, even
+without SFT cold-start, its exploration capabilities suffice to endow LLMs with strong reasoning abilities.
+4.2.3 Tree Searching .
+Repeated sampling and self-correction scale test-time compute in parallel and sequentially, respectively. Human thinking
+is a tree search that combines brainstorming in parallel with backtracking to find other paths to solutions when it
+encounters a dead end. Search algorithms and value functions are two critical components in tree searching.
+Search algorithm .In LLM reasoning, current search algorithms include uninformed search and heuristic search.
+Uninformed search explores the search space according to a fixed rule. For example, tree-of-thought (ToT) [ 359] adopts
+the BFS or DFS to search, while Xie et al . [342] use beam search. Uninformed search is usually less efficient for problems
+with large search spaces, so heuristic search strategies represented by A∗[216,300] and MCTS [ 21,99,230] are widely
+used in reasoning tasks. MCTS, which eliminates the need for explicit heuristics, leverages stochastic simulations
+and adaptive tree expansion under uncertain environments, making it well-suited for large state spaces. It optimizes
+search results gradually through four steps: selection, expansion, simulation, and backpropagation, approaching the
+optimal solution. In contrast, A∗uses a heuristic function-guided deterministic search to guarantee optimal paths, but
+its performance depends on the design of the heuristic function. As a result, MCTS has been successfully applied to
+tasks such as RAG [ 68,114,124,158], QA [ 73,203], hallucinations mitigation [ 46], text-to-SQL [ 377], etc. Additionally,
+Long [198] trains an LLM controller using reinforcement learning to guide the LLM reasoner’s search path, and Chari
+et al. [29] utilizes ant colony evolutionary algorithm to guide tree search.
+Value function .The v
+
+=== PAGE 13 ===
+A Survey of Test-Time Compute: From Intuitive Inference to Deliberate Reasoning 13
+and generalized value functions facilitate the application of MCTS to more complex problems with deeper search
+spaces. AlphaMath [ 31] and TS-LLM [ 69] replace the hand-crafted value function with a learned LLM value function,
+automatically generating reasoning process and step-level evaluation signals in MCTS. VerifierQ [ 236] integrates
+implicit Q-learning and contrastive Q-learning to train the value function, effectively mitigating the overestimation
+issue at the step level. Traditional MCTS methods expand only one trajectory, while rStar [ 238] argues that the current
+value function struggles to guide the selection of the optimal path accurately. Therefore, rStar retains multiple candidate
+paths and performs reasoning with another LLM, ultimately selecting the path where both LLMs’ reasoning results are
+consistent. Gao et al . [81] propose SC-MCTS, which combines multiple reward models, including contrastive reward,
+likelihood, and self-evaluation as value functions. MCTSr [ 385] and SR-MCTS [ 386] take complete responses as nodes,
+expanding the search space through self-critique and correction. SR-MCTS utilizes pairwise preference rewards and
+global quantile score as the value function, offering a more robust value function estimation.
+Improvement Training .Tree search can guide LLMs to generate long reasoning processes, and these data help train
+LLMs with stronger reasoning abilities [ 92,346,383]. ReST-MCTS* [ 387] uses process rewards as a value function to
+guide MCTS, collecting high-quality reasoning trajectories and the value of each step to improve the policy model and
+reward model. Due to the step-by-step exploration of tree search, it can obtain finer-grained step-level feedback signals.
+MCTS-DPO [ 341] collects step-level preference data through MCTS and uses DPO for preference learning. AlphaLLM-
+CPL [ 316] ranks trajectories based on preference reward gaps and policy prediction gaps, employing curriculum learning
+to efficiently utilize MCTS-collected trajectories. Recently, many LMRs [ 240,403,412] have also confirmed the necessity
+of using tree search to construct high-quality long reasoning chain data for training.
+Summary 2: Repeated sampling is easy to implement and improves answer diversity, making it suitable for open-ended
+or easily verifiable tasks, though computationally inefficient. Self-correction relies on precise, fine-grained feedback and
+works well for easily verifiable tasks, but may not perform well with poor feedback or weak reasoning capability. Tree search
+optimizes complex planning tasks globally but involves complex implementation.
+5 Advanced Topics
+5.1 Generalizable System-2 Model
+Currently, most LRMs exhibit strong reasoning performance in specific domains such as math and code, but they
+struggle to generalize to cross-domain, cross-lingual, or general tasks [ 266,411]. On the one hand, as the foundation of
+current System-2 models, CoT shows little effectiveness in non-symbolic reasoning tasks [ 269]. On the other hand,
+verifiers and critics have limited generalization capabilities, making it difficult to provide effective guidance to the
+reasoning model [ 35,138,154]. For the former limitation, integrating external tools and multi-agent feedback is a
+promising direction [ 147,222]. Many works aim to enable reasoning models to learn to perform retrieval or tool use
+during the reasoning process. Search-o1 [ 164] triggers external search tools by generating special tokens that represent
+search actions, and Search-R1 [ 126] further enhances the interaction between the LLM and search tools through RL.
+Deep Research [ 87,166,228,415] integrates various tools such as web search and code execution, demonstrating
+distinguished performance on general tasks like information synthesis, report writing, and complex code generation.
+For the latter challenge, some works utilize multi-objective training [ 305], model en
+
+=== PAGE 14 ===
+14 Ji et al.
+potential [ 141]. GenPRM [ 409] and GRM [ 197] leverage repeated sampling for test-time compute, and GRM trains a
+Meta RM to evaluate the quality of the critic’s outputs. RM-R1 [ 39] and JudgeLRM [ 37] use RL training to enable the
+critic with self-correction ability.
+Additionally, weak-to-strong generalization [ 25] is a topic worth further exploration. People are no longer satisfied
+with solving mathematical problems with standard answers; they hope System-2 models can assist in scientific discovery
+and the proofs of mathematical conjectures. In such cases, even human experts struggle to provide accurate feedback,
+while weak-to-strong generalization offers a promising direction to address this issue [287].
+5.2 Multimodal Test-time Compute
+Visual, audio, video and other modalities are crucial for models understanding and interaction with the world. Like LLMs,
+large multimodal models (LMMs) also face challenges in scaling training compute. Thus, enabling efficient test-time
+scaling for multimodal tasks has become an advanced research topic. In System-1 thinking, TTA has been successfully
+applied to LMMs, improving performance in tasks such as zero-shot image classification, image-text retrieval, and image
+captioning [ 410]. For multimodal reasoning tasks, the exploration of multimodal CoT [ 77,150,217,332,398,405] and
+multimodal critics or verifiers [ 293,345] open up the possibility of building multimodal System-2 models. For example,
+IoT [ 418] and SketchPAD [ 115] utilize visual tools to obtain critical visual information and integrate it into CoT to refine
+multimodal reasoning. VisualPRM [ 315] constructs process annotation data through Monte Carlo estimation and trains
+a lightweight PRM verifier; and cutting-edge LMMs such as GPT-4o and Qwen-VL can serve as critics. Building on
+these foundations, repeated sampling [ 182] and tree search [ 60,358] can effectively further improve LMMs’ multimodal
+reasoning performance. Xu et al . [347] divide the visual reasoning process into four stages: task summary, caption,
+reasoning, and answer conclusion. They propose a stage-level beam search method, which repeatedly samples at each
+stage and selects the best result for the next stage. Audio-Reasoner [ 343] transfers the four-stage CoT framework to the
+audio modality. To equip LMMs with the self-correction ability, Deepseek-R1’s training recipe has also been practiced
+in LMMs [ 32,213,261]. OpenVLThinker [ 58] and Vision-R1 [ 118] convert images into text captions, enabling text-only
+LRMs to incorporate visual information for generating CoTs. This serves as cold-start data for further reinforcement
+learning to train multimodal reasoning models. LMM-R1 [ 234] demonstrates that the reasoning ability acquired through
+text-only reinforcement learning can serve as an effective cold start for multimodal reinforcement learning training.
+Besides understanding and reasoning tasks, multimodal generation tasks can also benefit from test-time compute.
+Mainstream multimodal generative models are divided into diffusion-based [ 232,356] and autoregressive-based [ 289,340]
+models. While diffusion models lack explicit CoTs, they can expand the search space at test time by sampling various
+Gaussian noises [ 339]. For video generation, due to the high computational cost of repeatedly sampling full videos,
+Cong et al . [51] use PRM to verify frames individually and apply beam search to prune low-scoring frames. Liu et al .
+[185] propose frame tree search, using critics to evaluate videos at early, middle, and late stages with different criteria,
+retaining only the top-k scoring frames at each step. Autoregressive models treat intermediate generated images as
+reasoning steps. Guo et al . [96] propose a Potential Assessment Reward Model (PARM) to evaluate the quality potential
+of these intermediate images and introduce a reflection mechanism that enables the generative model to self-correct
+low-quality images.
+5.3 Efficient Test-time Compute
+
+
+=== PAGE 15 ===
+A Survey of Test-Time Compute: From Intuitive Inference to Deliberate Reasoning 15
+optimal performance under a fixed reasoning latency budget. This requires adaptively allocating computational resources
+for each sample. Damani et al . [55] train a lightweight module to predict the difficulty of a question, and allocate
+computational resources according to its difficulty. Zhang et al . [393] further extend the allocation targets to more
+hyperparameters. Chen et al . [41] and Wang et al . [320] systematically evaluate the over-thinking and under-thinking
+phenomena in LRMs, where the former leads models to overcomplicate simple problems, and the latter causes frequent
+switching of reasoning paths on difficult problems, thereby reducing reasoning efficiency. These phenomena even
+cause LRM to perform poorly when dealing with simple problems [ 399]. There are still many open questions worth
+exploring, such as how to integrate inference acceleration strategies, e.g. model compression [ 120,165,176], token
+pruning [ 71,389], and speculative decoding [ 153,337] with test-time compute, and how to allocate optimal reasoning
+budget according to problem difficulty [45, 98, 306].
+Long CoT leads to inference latency and memory footprints of key-value cache. Recently, numerous studies have
+explored various strategies to reduce the reasoning length. Early work primarily focus on SFT models [ 52,129,189,211,
+220,336,355,371] using variable-length CoT data. In contrast, mainstream approaches incorporate length-based rewards
+into reinforcement learning (RL) [ 11,205,288,365,366,374] to encourage concise responses. Xiao et al . [338] measure
+the complexity of vision-language reasoning tasks and design a complexity-aware curriculum learning and GRPO
+algorithm. They organize training samples from hard to easy and dynamically adjust the reward function and KL term
+weights based on task complexity. L1 [ 2] and Elastic Reasoning [ 350] can enable precise control over response length
+based on a given token budget. Further, SelfBudgeter [ 173] can autonomously estimate the optimal token budget before
+generation, and allow users to choose whether to wait for the full response or terminate early during the generation
+process. However, both SFT and RL require substantial computational resources. Several studies have instead explored
+training-free approaches for efficient reasoning, including prompting [ 14,98,149,349], model merging [ 288,330] and
+early exit [ 72,210,353]. Notably, DEER [ 353] makes early-exit decisions during CoT generation based on the confidence
+of intermediate answers, effectively reducing reasoning overhead. Subsequently, Dai et al . [54] introduces a new RL
+paradigm that encourages the model to incentivize early thinking termination when appropriate. Another promising
+approach to achieving efficiency is hybrid reasoning, which dynamically switches between concise responses and
+long-chain reasoning based on task complexity. These methods [ 65,125,199,204,391] follow a similar pipeline: they
+start with SFT on a mixed dataset of long and short CoT samples as a cold start, and then refine the policy optimization
+algorithm to train the model to acquire hybrid reasoning capabilities.
+6 Future Directions
+6.1 Test-time Scaling Law
+Unlike training-time computation scaling, test-time compute still lacks a universal scaling law. Some works have
+attempted to derive scaling laws for specific test-time compute strategies [ 152,333]. Brown et al . [23] demonstrate
+that the performance has an approximately log-linear relationship with repeated sampling times. Chen et al . [43]
+models repeated sampling as a knockout tournament and league-style algorithm, proving theoretically that the failure
+probability of repeated sampling follows a power-law scaling. Snell et al . [265] investigate the scaling laws of repeated
+sampling and self-correction, and propose the computing-optimal scaling strategy. There are two major challenges to
+achieving a universal sc
+

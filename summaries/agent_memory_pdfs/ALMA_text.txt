@@ -1,0 +1,1195 @@
+=== PAGE 1 ===
+Learning to Continually Learn via Meta-learning Agentic Memory Designs
+Yiming Xiong1Shengran Hu1 2Jeff Clune1 2 3
+Abstract
+The statelessness of foundation models bottle-
+necks agentic systems ability to continually learn,
+a core capability for long-horizon reasoning and
+adaptation. To address this limitation, agentic sys-
+tems commonly incorporate memory modules to
+retain and reuse past experience, aiming for con-
+tinual learning during test time. However, most
+existing memory designs are human-crafted and
+fixed, which limits their ability to adapt to the
+diversity and non-stationarity of real-world tasks.
+In this paper, we introduce ALMA (Automated
+meta-Learning ofMemory designs forAgentic
+systems), a framework that meta-learns memory
+designs to replace hand-engineered memory de-
+signs, therefore minimizing human effort and en-
+abling agentic systems to be continual learners
+across diverse domains. Our approach employs a
+Meta Agent that searches over memory designs
+expressed as executable code in an open-ended
+manner, theoretically allowing the discovery of
+arbitrary memory designs, including database
+schemas as well as their retrieval and update mech-
+anisms. Extensive experiments across four se-
+quential decision-making domains demonstrate
+that the learned memory designs enable more
+effective and efficient learning from experience
+than state-of-the-art human-crafted memory de-
+signs on all benchmarks. When developed and
+deployed safely, ALMA represents a step toward
+self-improving AI systems that learn to be adap-
+tive, continual learners. All code is open-sourced
+athttps://github.com/zksha/alma.
+git.
+1. Introduction
+Agentic systems powered by Foundation Models (FMs) have
+enabled autonomous decision-making and task execution
+1University of British Columbia2Vector Institute3Canada
+CIFAR AI Chair. Correspondence to: Yiming Xiong <yim-
+ing33@student.ubc.ca>.
+Preprint. February 10, 2026.across a wide range of domains (Yao et al., 2023; Wang et al.,
+2023; Yang et al., 2024). However, the stateless nature of
+FMs during inference challenges agentic systems to accumu-
+late experience and continually learn from past interactions,
+causing them to repeatedly solve tasks from scratch and lim-
+iting their ability to improve over time (Child et al., 2019;
+Bulatov et al., 2022). Memory addresses this limitation by
+enabling agentic systems to continually store and reuse past
+experiences (Zhong et al., 2024; Packer et al., 2024). This
+allows accumulated experience to inform decision-making
+in future tasks, aiming for continual learning over time.
+However, memory design, the architectural specification
+that determines how memories are represented, stored, re-
+trieved, and updated, is still predominantly handcrafted by
+humans. Diverse domains require distinct memory designs
+to leverage unique aspects of experience, resulting in human
+researchers manually tailoring a wide array of designs to
+specific tasks (Zhang et al., 2024b; Hu et al., 2026). For
+example, in conversational agents, memory may focus on
+retaining facts about the user, such as preferences and per-
+sonal information (Chhikara et al., 2025; Rasmussen et al.,
+2025). In contrast, for strategic games, memory should ex-
+tract abstract skills and strategies from previous interactions
+rather than details that may change across episodes (Tang
+et al., 2025; Ouyang et al., 2025). Therefore, manually iden-
+tifying an optimal memory design for each domain is both
+difficult and labor-intensive.
+A recurring theme in machine learning history is that hand-
+crafted components in AI systems are eventually replaced
+by learned, more effective ones (Clune, 2020; Hutter et al.,
+2019; Sutton, 2019). A classic example of this paradigm is
+the transition from hand-designed features to learned rep-
+resentations in computer vision (Krizhevsky et al., 2012).
+More recently, the trend of “learning to learn” has expanded
+to learning neural architectures (Zoph & Le, 2017), opti-
+mization algorithms (Andrychowic
+
+=== PAGE 2 ===
+Learning to Continually Learn via Meta-learning Agentic Memory Designs
+Sampled
+Memory 
+DesignSample Memory 
+Design and its 
+Evaluation Log
+Memory Design 
+Archive
+New
+Memory
+Design
+Store New 
+Memory 
+Design and its 
+Evaluation Log
+Sampled 
+Memory Design
+Ideate & PlanMeta Agent
+Implement
+Evaluate
+Evaluation Log
+- Success Rate: 0.3
+- Trajectories 
+TasksReflection 
+& 
+Modification Plan
+Reflection 
+& 
+Modification Plan
+Evaluation Log
+- Success Rate: 0.4
+- Trajectories 
+ CodingNew 
+Memory Design
+Agentic
+System++
+New 
+Memory DesignSampled 
+Memory Design
+Figure 1. Open-ended Exploration Process of ALMA.The Meta Agent first ideates and proposes a plan by reflecting on the code and
+evaluation logs of the sampled memory design. It then implements the plan by programming the new design in code. Finally, it verifies
+the correctness of the new memory design and evaluates it with an agentic system. The evaluated memory design is subsequently added to
+the memory design archive for future sampling.
+We propose ALMA (Automated meta-Learning ofMemory
+designs forAgentic systems), a framework that adopts a
+Meta Agent to explore novel memory designs for agentic
+systems through open-ended exploration. We use code as
+the search space, giving ALMA the theoretical potential to
+build any memory design. As shown in Figure 1, the Meta
+Agent samples previously explored memory designs from
+an archive, where all explored memory designs and their
+evaluation logs are stored. Then the Meta Agent reflects
+on the sampled memory designs to generate new ideas and
+plans, which are implemented in code. The new designs
+are subsequently validated and evaluated, with the resulting
+logs added back to the archive to guide future sampling.
+We evaluate our method across four sequential decision-
+making domains, including ALFWorld (Shridhar et al.,
+2021), TextWorld (C ˆot´e et al., 2019), Baba Is AI (Cloos
+et al., 2025), and MiniHack (Samvelyan et al., 2021). These
+domains serve as testbeds for evaluating an agent’s capabil-
+ity to continually learn from experience. In these domains,
+agents benefit from storing and reusing their experiences to
+acquire effective strategies and useful information that is ab-
+sent from the FMs’ pre-trained knowledge. The results show
+that ALMA can discover memory designs that are tailored
+for the needs of different domains, consistently surpassing
+state-of-the-art human-designed memory baselines (Table 1).
+Beyond superior performance, our learned memory designs
+are more cost-efficient than most human-designed mem-
+ory baselines (Figure 6). Furthermore, the learned memory
+designs scale performance more effectively with memory
+size and learn faster when facing task distribution shifts
+(Figures 4 and 5). Overall, the memory designs learned by
+ALMA demonstrate a superior ability to help agentic sys-
+tems continually learn, paving the way towards developing
+lifelong learning agents in dynamic environments.2. Related Work
+Memory for Agentic Systems.Memory enables agen-
+tic systems to continually learn despite the statelessness
+of FMs (Hu et al., 2026; Zhang et al., 2025i). Existing
+work has categorized memory mechanisms into token-level
+memory, parametric memory, and latent memory (Hu et al.,
+2026). Token-level memory defines databases and update
+rules to store information and extract insights from interac-
+tion trajectories between agents and environments. When
+addressing a new task, the system retrieves relevant experi-
+ences via defined procedures, which are then appended to
+the prompts of agentic systems as context (Chhikara et al.,
+2025; Rasmussen et al., 2025; Nan et al., 2025; Zhang et al.,
+2025a; Ouyang et al., 2025; Suzgun et al., 2025; Zhao et al.,
+2024). For example, G-Memory (Zhang et al., 2025a) ex-
+tracts experiences and stores them in a graph-based database,
+and retrieves relevant experiences for new tasks via graph
+traversal. Reasoning Bank (Ouyang et al., 2025) performs
+task-wise experience generation during memory updates,
+while Dyna
+
+=== PAGE 3 ===
+Learning to Continually Learn via Meta-learning Agentic Memory Designs
+AI-generating algorithms and the “Learning to learn”
+paradigm.AI-generating algorithms (Clune, 2020) and
+automated machine learning (Hutter et al., 2019) aim to
+replace hand-engineered components with automatically
+learned ones. The approach has three key pillars: (1)
+meta-learning architectures, (2) meta-learning learning algo-
+rithms, and (3) the automatic generation of learning environ-
+ments (Clune, 2020). Neural Architecture Search (Elsken
+et al., 2019; Lu et al., 2019; Hu et al., 2023) primarily con-
+tributes to the first pillar by automating the discovery of
+neural architectures. Research in MAML (Finn et al., 2017),
+Meta-RL (Wang et al., 2017; Duan et al., 2016; Norman
+& Clune, 2024), and recent Automated Algorithm Design
+(Liu et al., 2024; 2026) has explored the second pillar by
+focusing on “Learning to learn”, developing algorithms that
+enable agents to adapt their learning behavior across tasks
+(Beaulieu et al., 2020; Lu et al., 2024a). The third pillar in-
+cludes approaches such as POET (Wang et al., 2019; 2020),
+as well as more recent work on dynamic environment gen-
+eration with agentic systems (Aki et al., 2024; Guo et al.,
+2025; Zhang et al., 2024a). Our work is more related to
+the second pillar, as ALMA learns how memory designs
+can better enable agentic systems to continually learn. Fur-
+thermore, recent AI-generating algorithms and automated
+machine learning approaches have leveraged FMs to explore
+new components in AI systems through code generation (Hu
+et al., 2025; Zhang et al., 2025e; Faldor et al., 2025; Yamada
+et al., 2025; Lu et al., 2024b;a; 2025b; Lehman et al., 2024).
+Similarly, we adopt a Meta Agent powered by FMs to pro-
+pose novel memory designs by programming in code.
+Automated Design of Agentic Systems.Previous work
+has studied the automated design of agentic systems to
+learn better components in agentic systems (Hu et al., 2025;
+Zhang et al., 2025f; Zhou et al., 2024; Yin et al., 2025;
+Zhuge et al., 2024; Rosser & Foerster, 2025; Zhang et al.,
+2025c; Shang et al., 2025; Zhang et al., 2025h;c; Ye et al.,
+2025; Zhang et al., 2025e). Since recent works such as
+ADAS (Hu et al., 2025) employ code as the search space for
+agentic system designs, they theoretically enable the learn-
+ing of the memory component. For example, AgentSquare
+(Shang et al., 2025) attempts to co-learn memory designs
+along with other components like tools in agentic systems.
+However, while existing works evaluate only the one-shot
+performance of agentic systems, ALMA explicitly optimizes
+for a memory design’s capability to facilitate continual learn-
+ing from past experience, enabling the discovery of more
+effective memory designs. A concurrent work to ALMA
+also explores an approach for learning memory designs
+(Zhang et al., 2025d). However, it relies on the initial-
+ization with many existing handcrafted memory designs
+and greedy selection of top-performing designs, which lim-
+its open-ended exploration. In contrast, ALMA adopts an
+open-ended exploration of memory designs and learns fromscratch. Open-ended exploration is shown to be important to
+search for high-performance structure (Lehman & Stanley,
+2008; 2011a;b; Conti et al., 2018; Stanley, 2019). Therefore,
+incorporating open-ended exploration into the search for op-
+timal memory designs presents a promising avenue. Our ab-
+lation studies show that indeed open-ended exploration can
+learn better memory designs than greedy-selection-based
+optimization (Appendix C.2).
+3. Learning of Memory Designs
+We propose ALMA, a framework for learning memory de-
+signs within a code-based search space via open-ended ex-
+ploration, discovering memory designs that effectively col-
+lect, summarize, and reuse experience. Specifically, a Meta
+Agent (Hu et al., 2025) iteratively proposes a new candidate
+memory design by reflecting on the results of previously dis-
+covered designs, implements the new design through code
+gen
+
+=== PAGE 4 ===
+Learning to Continually Learn via Meta-learning Agentic Memory Designs
+sub-module to store task descriptions, along with an addi-
+tional sub-module that extracts experience learned from in-
+dividual tasks with FMs. Similarly, G-memory (Zhang et al.,
+2025a) incorporates a graph-database sub-module to model
+linkages between extracted insights and a vector-database
+sub-module to store task descriptions. We implement the
+described abstraction in Python Abstract Classes, and the
+code is available in Appendix A.1.
+3.2. Evaluation of Memory Designs
+Based on existing work (Nan et al., 2025; Chhikara et al.,
+2025; Ouyang et al., 2025; Zhang et al., 2025a; Tang et al.,
+2025; Suzgun et al., 2025; Hu et al., 2026; Wang et al.,
+2024b; Zhong et al., 2024; Packer et al., 2024; Fang et al.,
+2026; Zhao et al., 2024), we summarize that memory com-
+ponents in agentic systems generally operate in two phases.
+Memory Collection Phase.The goal of this phase is not
+task success, but rather collecting knowledge and updating
+memory for later use in the Deployment Phase. There are
+two common ways to obtain raw trajectories for updating
+memory at this stage: (1) leveraging existing agent trajecto-
+ries from available datasets (Zhong et al., 2024; Chhikara
+et al., 2025), or (2) starting from an empty memory state and
+collecting trajectories by running the agent on tasks (Fang
+et al., 2026; Tang et al., 2025). This phase typically does
+not involve retrieving from memory (Zhong et al., 2024;
+Chhikara et al., 2025; Wang et al., 2024b; Packer et al.,
+2024; Rasmussen et al., 2025).
+Deployment Phase.This is the main stage where the
+agentic system is deployed to applications and expected
+to achieve task success. Given the memory collected after
+the Memory Collection Phase, the agentic system retrieves
+from memory for each incoming task and attempts to solve
+it. This stage can operate in two modes:dynamic, which
+updates memory with newly collected trajectories from in-
+coming tasks (Zhang et al., 2025a; Ouyang et al., 2025),
+orstatic, which keeps memory fixed (Tang et al., 2025;
+Rasmussen et al., 2025).
+We evaluate each memory design by first running the Mem-
+ory Collection Phase and then recording the success rate dur-
+ing the Deployment Phase, using an identical, fixed agentic
+system, with the memory design being evaluated. The two
+modes in the Deployment Phase serve different purposes:
+static mode assesses how effectively the agent leverages
+a fixed memory to solve new tasks, while dynamic mode
+measures how well a memory design adapts to a new task
+distribution through dynamic updates and retrieval. When
+learning memory designs, we use only static mode to re-
+duce variance during evaluations. The general update
+andgeneral retrieve modules contribute to the per-
+formance of the memory design through memory collection
+and knowledge retrieval, respectively. When testing thebest-learned memory design, we evaluate under both modes.
+More details on evaluations are available in Appendix A.2.
+3.3. Open-Ended Exploration
+Similar to ADAS (Hu et al., 2025), we propose a framework
+for open-ended exploration of memory designs with a Meta
+Agent programming novel memory designs in code. The
+algorithm proceeds as follows: (1) An archive is initialized
+with Python abstract classes as an empty memory design
+template. (2) The Meta Agent samples previously discov-
+ered designs from the archive, reflects on their performance
+outcomes, and proposes new memory designs. (3) The
+newly proposed designs are evaluated on the target domain.
+If errors occur during evaluation, the Meta Agent performs
+self-reflection to refine the design, repeating this process up
+to three times if necessary. (4) Finally, the memory design
+is added to the archive along with its evaluation results and
+logs, and the process continues with the updated archive
+until the maximum number of iterations is reached.
+Sampling Memory Designs.We sample memory de-
+signs from the archive to serve as stepping stones for the
+
+=== PAGE 5 ===
+Learning to Continually Learn via Meta-learning Agentic Memory Designs
+used for memory design learning and for the testing of the
+learned memory designs to ensure testing on unseen data.
+Both sets are further split evenly, with the first half used for
+the Memory Collection Phase and the second half for the
+Deployment Phase (Section 3.2). To reduce variance, we
+execute the Deployment Phase three times for learning and
+testing, and report the average success rate with the standard
+error. For clarity, in the following sections, “success rate”
+refers to the average success rate over three runs.
+At each learning step, we sample up to five memory designs
+from the archive without replacement. We expect the choice
+between sampling with or without replacement to have min-
+imal impact (Appendix B.3). We run ALMA for 11 learning
+steps to discover 43 memory designs.
+During the learning of memory designs, GPT-5 is used in
+the Meta Agent, while GPT-5-nano is used in the fixed
+agentic system for evaluating memory designs. While the
+Meta Agent can choose to use any model (or train models) as
+FMs within memory designs, we provide GPT-4o-mini ,
+GPT-4.1 , and text-embedding-3-small as tools
+for the Meta Agent to explore workflows such as extracting
+insights or computing semantic similarity. More details on
+the learning process setup are available in Appendix B.3.
+During the testing of the learned memory designs, we
+test under two agentic system settings: the first employs
+GPT-5-nano , matching the learning setup. The second
+replaces it with a more capable FM, GPT-5-mini , to
+assess the transferability of memory designs to stronger
+agentic systems (Table 1). We use GPT-4o-mini and
+text-embedding-3-small as FMs across all memory
+designs during testing to ensure a fair comparison. More
+details on the testing setup are available in Appendix B.4.
+4.2. Benchmarks
+We adopt four sequential decision-making benchmarks with
+varying levels of difficulty (Paglieri et al., 2025). In all
+benchmarks, agentic systems perceive the environment
+through text and interact with it by generating actions in
+natural language. The benchmarks are well-suited for evalu-
+ating memory designs because they require acquiring and
+utilizing experience that does not exist in the pre-trained
+knowledge of FMs (Paglieri et al., 2025). We test ALMA
+on four benchmarks: (1) ALFWorld (Shridhar et al., 2021),
+a text-based simulation of embodied household tasks that
+challenges agents to ground language instructions to action
+sequences in kitchen environments; (2) TextWorld (C ˆot´e
+et al., 2019), text adventure games that require systematic
+exploration and reasoning to navigate partially observable
+environments; (3) Baba Is AI (Cloos et al., 2025), a strate-
+gic puzzle game where agents must manipulate the rules of
+the game, requiring complex reasoning and adaptation to
+changing game mechanics; (4) MiniHack (Samvelyan et al.,2021), a simplified version of NetHack (K ¨uttler et al., 2020)
+that challenges agents with long-horizon decision-making
+in procedurally generated dungeon environments.
+For ALFWorld, we are using the default setting (Shridhar
+et al., 2021). For all other benchmarks, we use BALROG
+(Paglieri et al., 2025), following its settings and prompt for
+interactions during learning and final testing. More details
+on benchmarks are available in Appendix B.1.
+4.3. Baselines
+We select four representative state-of-the-art human-
+designed memory systems as baselines. These baselines
+are entirely handcrafted, with all aspects of the design (e.g.,
+what to store, how to update, and how to retrieve) man-
+ually specified and inserted retrieved knowledge into the
+context of agentic systems, representing various mainstream
+approaches in prior work. More details are available in
+Appendix B.2.
+Trajectory Retrieval.A straightforward but strong base-
+line that retrieves similar trajectories (Park et al., 2023; Xu
+et al., 2024). Task descriptions and trajectories are stored
+during memory update. D
+
+=== PAGE 6 ===
+Learning to Continually Learn via Meta-learning Agentic Memory Designs
+Table 1. Comparison of success rates between the learned memory designs and baseline memory designs across environments.
+Top: Learning and testing the memory designs withGPT-5-nanoas the FM in the agentic system.Bottom: Transferring the memory
+designs to test with GPT-5-mini in the agentic system. In both cases, learned memory designs outperform human-designed baselines,
+demonstrating that they are more effective than human-designed memory and generalize robustly across different FMs. Results are
+reported as mean ±standard error in percentages, calculated over three runs of the Deployment Phase. The relative gains over the
+no-memory baseline are color-coded.
+Memory Designs ALFWorld Textworld Baba Is AI MiniHack Overall Avg.
+GPT-5-nano
+No Memory2.9±0.8 5.4±1.0 9.5±2.4 6.7±1.7 6.1
+Manual Memory Designs
+Trajectory Retrieval5.2±1.9+2.32.7±0.9-2.719.0±6.3+9.57.5±1.4+0.88.6+2.5
+Reasoning Bank5.2±1.3+2.35.3±0.8-0.19.5±2.4+0.09.8±1.7+3.77.5+1.4
+Dynamic Cheatsheet5.7±0.8+2.84.3±1.0-1.19.5±4.8+0.09.2±0.8+2.57.2+1.1
+G-Memory7.6±0.5+4.72.1±0.8-3.314.3±4.1+4.86.8±2.3+0.17.7+1.6
+Learned Memory Designs
+ALMA (Ours)12.4±0.5+9.56.2±1.7+0.819.0±2.4+9.511.7±2.2+5.012.3+6.2
+GPT-5-mini
+No Memory67.6±1.0 60.5±4.4 21.4±0.0 15.0±1.4 41.1
+Manual Memory Designs
+Trajectory Retrieval80.0±1.4+12.467.0±1.3+6.530.9±2.4+9.516.7±0.8+1.748.6+7.5
+Reasoning Bank67.1±2.9-0.556.1±3.4-4.421.4±4.1+0.015.8±3.0+0.840.1-1.0
+Dynamic Cheatsheet78.6±3.3+11.057.8±7.9-2.738.0±6.3+16.611.7±3.3-3.346.5+5.4
+G-Memory74.8±0.5+7.268.8±4.7+8.326.2±6.3+4.814.2±2.2-0.846.0+4.9
+Learned Memory Designs (Transferred)
+ALMA (Ours)87.1±1.4+19.575.0±2.3+14.533.3±2.4+11.920.0±2.9+5.053.9+12.8
+As shown in Table 1 Top, with the agentic system powered
+byGPT-5-nano , the learned memory designs achieve
+an overall improvement of 6.2% compared to the no-
+memory baseline, and outperform all state-of-the-art human-
+designed memory baselines. These improvements are con-
+sistent across benchmarks, demonstrating that learned mem-
+ory designs can more effectively store and reuse past experi-
+ence to continually learn than manual designs.
+We further evaluate learned memory designs by chang-
+ing the FM in the agentic system from GPT-5-nano to
+GPT-5-mini (Table 1 Bottom). The learned memory de-
+signs improve the overall average success rate by 12.8%
+over the no-memory baseline and outperform all human-
+designed baselines. These results demonstrate that the dis-
+covered memory designs generalize across different FMs,
+indicating that the improvements are robust and not tied to a
+specific model. The larger improvement observed with more
+capable FMs (12.8% vs 6.2%) yields a delta of 6.6%. This
+delta exceeds those of all human-designed memory base-
+lines, suggesting that our learned memory designs provide
+stronger support to more capable agentic systems.
+To provide a closer look at the learning process, we show the
+learning process on Baba Is AI and the tree visualization of
+the resulting memory design archive (Figure 2). The Meta
+Agent explores diverse new designs on the path toward the
+best-learned memory design, building upon designs with
+moderate success rates that nevertheless have the potential
+to evolve into the optimal memory design. As shown inFigure 2, during open-ended exploration, the Meta Agent in-
+crementally introduces mechanisms like property validation
+and spatial object normalization. While these mechanisms
+may not yield immediate performance gains, they serve as
+stepping stones that contribute to the best-learned mem-
+ory design when key mechanisms (e.g., strategy switching)
+are introduced. Analyses and visualizations of the learn-
+ing processes for the other benchmarks are available in the
+Appendix C.1.
+To evaluate the effectiveness of the open-ended exploration
+in ALMA, we conduct an ablation study comparing against
+greedy search, which always samples the design with the
+highest success rate to propose new designs. More de
+
+=== PAGE 7 ===
+Learning to Continually Learn via Meta-learning Agentic Memory Designs
+Stall-triggered strategy switch
+Feasibility-driven prioritization
+Normalized spatial objects
+Next-move actionable hintsNoun extraction fix
+Hazard/blocker exposure
+Open-Ended 
+Exploration for 
+Novel DesignsProperty priority clamping
+Risk detection
+Separate database namespaces
+Strict property validation
+Figure 2. The learning process of ALMA on Baba Is AI, using GPT-5-nano as the FM in an agentic system. The learning processes
+of other benchmarks are shown in Appendix C.1.Left:The memory design archive tree, where each node represents a memory design
+produced during the open-ended exploration for ever-better memory designs. Node colors indicate the success rate, and edges indicate
+that each child node is derived from its parent. The memory design with the highest success rate is used as the final learned memory
+design.Right:The step-wise learning progress. ALMA progressively discovers memory designs by building on an ever-growing archive
+of previous discoveries. The path from the root memory design to the best memory design highlights the importance of open-ended
+exploration, where designs with moderate success rates serve as stepping stones toward optimal solutions.
+ALFWorld
+TextWorld
+Baba Is AI
+MiniHack
+Graph DatabaseAffordance Graph:
+Objects-Actions-spaces Relations
+e.g. microwave - turn on - kitchenTask Signature:
+Targets & Task Tags
+e.g., constraints, summary...
+Strategy Recall:
+Strategies-Task Tags Relations
+e.g., find food first - cook a meal 
+Affordance Collection:
+Items-Actions-Task Tags Relations
+e.g., food-pick up- meal cooking
+Spatial Graph:
+Room Functions & Connections 
+e.g., Living room-Driveway..Strategy Library:
+Strategies-Rules Relations
+e.g., create rule if current is 
+blocked
+Strategy Library:
+Strategies and Plans for Tasks
+e.g., explore passable directions..
+Plan Synthesis:
+Generate Sub-goals & Plans
+e.g., sub-goal: create new rule..
+Level Memory:
+Summaries of Environment with Tags
+e.g., harmful present/nearest win 
+distance: the environment present..Token Graph:
+Distances & Rules Prediction
+e.g., ball is far - ball can't be win   Perception Parsing:
+Active Rules - Surroundings
+e.g., ball is win-key, win, ballTrajectory Schema:
+Extract Targets, Summaries
+e.g., inventory items, hazard..
+Risk and Interaction:
+Experience to Interact with 
+Dangerous Objects
+e.g., Use healing items when HP.. Spatial Experience:
+Targets & Places Transition
+e.g., apple: fridge-cupboard
+Trajectory Recall:
+Past Trajectories skeleton
+e.g., Key steps are ...
+Failure Pattern:
+Loops & Pitfalls
+e.g., repeating movement...
+Reflex Rules:
+Generate Instant Sub-goal & Short-
+term Plans
+e.g., first find stairs, then go..Embedding Database
+Dictionary Database
+Update TrajectoryRetrieve Task Description
+Retrieve Knowledge
+Inner Retrieve Workflow
+Spatial Analysis:
+Analyze Maps, Object Directions
+e.g., stairs, monsters..
+Inner Update Workflow
+Figure 3. The visualization of the best-learned memory designs across different benchmarks.Each sub-module in memory designs
+may have a dedicated database or none, depending on its function, and arrows show the retrieval and update workflows in memory designs.
+The name and explanation of each sub-module are generated by Meta Agent and manually summarized, respectively. Example code and
+output for a learned memory design are provided.
+grained knowledge, such as spatial relationships between
+objects and room layouts. In contrast, for tasks that require
+more complex reasoning (e.g., Baba Is AI and MiniHack),
+the memory designs favor domain-specific abstract strategy,
+including strategy libraries and plan synthesis. This pattern
+indicates that ALMA automatically specializes memory
+designs to the demands of each domain.
+To study how performance scales with experience, we evalu-
+ate memory designs using different sizes of tasks during the
+Memory Collection Phase and using static mode during the
+Deployment Phase. As shown in Figure 4, compared to ma
+
+=== PAGE 8 ===
+Learning to Continually Learn via Meta-learning Agentic Memory Designs
+0 10 20 30 40 50 60 70
+Memory Collection T ask Size0.600.650.700.750.800.850.900.951.00Success Rate
+Trajectory Retrieval
+Reasoning Bank
+Dynamic Cheetsheet
+G-Memory
+ALMA (Ours)
+Figure 4. Success rates of different memory designs in ALF-
+World as the task size during the memory collection phase
+increases.Evaluations are performed using static mode during the
+Deployment Phase to study how performance scales with collected
+static memory. GPT-5-mini is used as the FM in the agentic
+system during testing. Shaded areas indicate standard error, cal-
+culated over three runs of the Deployment Phase. The learned
+memory design achieves higher performance faster with limited
+data and scales better than human-designed baselines.
+We measure the cost efficiency of learned memory designs
+by studying their end-to-end memory cost, defined as the
+total cost of FMs required to transform raw interaction logs
+into retrieved content inserted into the agentic system’s con-
+text across the Memory Collection and Deployment Phases.
+We also include the token size of the retrieved content. The
+details are available in Appendix A.3. As shown in Fig-
+ure 6, compared to all manual designs, our learned mem-
+ory designs achieve an average success rate of 53.9%, with
+lower overall end-to-end memory cost across all benchmarks
+($0.09) and appropriate token sizes of retrieved content. The
+results show ALMA effectively balances memory efficiency
+and task performance. Since the current algorithm does not
+explicitly optimize for cost efficiency, we anticipate that in-
+corporating techniques such as multi-objective optimization
+in future work could enable even more effective exploration
+of the efficiency-performance Pareto front.
+5. Conclusion, Safety, and Future Work
+We propose ALMA, a paradigm that learns to discover new
+memory designs, enabling agentic systems to continually
+learn from their past experiences. We evaluate ALMA on
+a range of sequential decision-making benchmarks and the
+best-learned designs consistently outperform manually de-
+signed baselines, demonstrating the effectiveness of our
+approach. Furthermore, subsequent experiments show that
+the learned memory designs exhibit strong scalability, trans-
+ferability, and cost efficiency. Overall, ALMA provides a
+principled approach to learn memory design, taking a step
+toward enabling continual learning in agentic systems.
+ALMA represents a step toward continual learning in AI,
+contributing to the broader goal of developing AI-generating
+algorithms beyond current manual approaches (Clune,
+Trajectory Retrieval Reasoning BankDynamic CheetsheetG-Memory ALMA (Ours)0.600.650.700.750.800.85Success RateFigure 5. Success rates of different memory designs in ALF-
+World under task distribution shift in the Deployment Phase.
+Memory is collected from tasks invalid seenduring the Memory
+Collection Phase and evaluated on thevalid unseendataset with dy-
+namic mode during the Deployment Phase, using GPT-5-mini
+as the FM in the agentic system. The error bars indicate the stan-
+dard errors calculated over three runs of the Deployment Phase.
+The learned memory design adapts more effectively than human-
+designed baselines under task distribution shift.
+2020). However, such AI-generating algorithms introduce
+unique safety concerns, as components of AI systems are
+learned rather than designed by humans. The learned com-
+ponents may inadvertently introduce behaviors that deviate
+from human intentions, ignoring optimization guided by a
+predefined target metric (Bostrom, 2017; Rokon et al., 2020;
+Ecoffet et al., 2020). Recognizing these challenges, we im-
+pose explicit constraints and restrictions in our experimental
+setup during the learning process. Specifically, each mem-
+ory design is generated as code by the Meta Agent, they
+are validated and executed within isolated sandbox environ-
+ments, with access confined to the sandbox to prevent any
+interference with
+
+=== PAGE 9 ===
+Learning to Continually Learn via Meta-learning Agentic Memory Designs
+0.0 0.2 0.4 0.6 0.8 1.0 1.2 1.4 1.6
+End-to-end Memory Cost ($)0.400.420.440.460.480.500.520.54Average Success Rate
+No MemoryTrajectory Retrieval
+9,149 tokens
+Reasoning Bank
+240 tokensDynamic Cheetsheet
+2,258 tokens G-Memory
+6,095 tokensALMA (Ours)
+1,319 tokens
+Figure 6. Cost efficiency versus task performance across all
+benchmarks for different memory designs.The x-axis shows
+the overall end-to-end memory cost across benchmarks. Bubble
+size represents the average token size of retrieved content inserted
+into the agentic system’s context per task. The learned memory
+design outperforms all baselines while being cost-efficient.
+stems from the fact that we demonstrate learning memory
+designs in code space. While effective, their capabilities
+may be limited by the underlying FMs. Future work could
+explore automated designing and training novel FM archi-
+tectures with native memory support.
+Overall, ALMA represents a step forward toward automated,
+continual-learning AI. While current limitations prevent us
+from demonstrating a system that learns both memory and
+the agentic system, our results highlight its potential to
+surpass manually designed memory, showing a way towards
+“learning to continually learn”. When developed with the
+appropriate safety measures, ALMA holds promise for a
+general-purpose AI capable of learning to continually learn
+across domains and autonomously adapting to new ones.
+Impact Statement
+This paper introduces ALMA, a paradigm that automatically
+learns novel memory designs, thereby enabling agentic sys-
+tems to continually learn. By leveraging a Meta Agent
+with open-ended exploration, ALMA mitigates the inten-
+sive manual effort conventionally required to handcrafted
+memory designs for diverse domains. Furthermore, our
+findings highlight a path toward agentic systems capable
+of tailoring their memory designs to any context, fostering
+the development of continual learning of AI. These insights
+empower practitioners to: (1) automate the development
+of domain-specific memory designs for specialized fields
+such as medicine, finance, and software engineering; and
+(2) uncover memory paradigms that have yet to be identified
+through human intuition. Ultimately, this work advances
+the automation of memory design for agentic systems and
+serves as a foundation for future research on learning mem-ory designs.
+Acknowledgments
+This research was supported by the Vector Institute, the
+Canada CIFAR AI Chairs program, a grant from Schmidt
+Futures, an NSERC Discovery Grant, and a generous do-
+nation from Rafael Cosman. Resources used in prepar-
+ing this research were provided, in part, by the Province
+of Ontario, the Government of Canada through CIFAR,
+and companies sponsoring the Vector Institute ( https:
+//vectorinstitute.ai/partnerships/curr
+ent-partners/ ). Any opinions, findings, and conclu-
+sions or recommendations expressed in this material are
+those of the authors and do not necessarily reflect the views
+of the sponsors.
+References
+Aki, F., Ikeda, R., Saito, T., Regan, C., and Oka, M. Llm-
+poet: Evolving complex environments using large lan-
+guage models. InProceedings of the Genetic and Evolu-
+tionary Computation Conference Companion, GECCO
+’24 Companion, pp. 243246, New York, NY , USA,
+2024. Association for Computing Machinery. ISBN
+9798400704956. doi: 10.1145/3638530.3654115. URL
+https://doi.org/10.1145/3638530.3654
+115.
+Andrychowicz, M., Denil, M., G ´omez, S., Hoffman, M. W.,
+Pfau, D., Schaul, T., Shillingford, B., and de Freitas,
+N. Learning to learn by gradient descent by gradient
+descent. In Lee, D., Sugiyama, M., Luxburg, U., Guyon,
+I., and Garnett, R. (eds.),Advances in Neural Information
+Processing Systems, volume 29. Curran Associates, Inc.,
+2016. URL https://proceedings.neurips.
+cc/paper_files/paper/2016/file/fb875
+82825f9d28a8d42c5e5e5e8b23d-Paper.p
+df.
+Beaulieu, S., Frati, L., Miconi, T., Lehman, J., Stanley,
+K. O., Clune, J., and Chene
+
+=== PAGE 10 ===
+Learning to Continually Learn via Meta-learning Agentic Memory Designs
+//doi.org/10.4324/9781003074991-7 . Edi-
+tion: 1.
+Bulatov, A., Kuratov, Y ., and Burtsev, M. Recurrent memory
+transformer. In Koyejo, S., Mohamed, S., Agarwal, A.,
+Belgrave, D., Cho, K., and Oh, A. (eds.),Advances in
+Neural Information Processing Systems, volume 35, pp.
+11079–11091. Curran Associates, Inc., 2022. URL http
+s://proceedings.neurips.cc/paper_fil
+es/paper/2022/file/47e288629a6996a17
+ce50b90a056a0e1-Paper-Conference.pdf.
+Chhikara, P., Khant, D., Aryan, S., Singh, T., and Yadav, D.
+Mem0: Building production-ready ai agents with scalable
+long-term memory, 2025. URL https://arxiv.or
+g/abs/2504.19413.
+Child, R., Gray, S., Radford, A., and Sutskever, I. Generat-
+ing long sequences with sparse transformers, 2019. URL
+https://arxiv.org/abs/1904.10509.
+Cloos, N., Jens, M., Naim, M., Kuo, Y .-L., Cases, I., Barbu,
+A., and Cueva, C. J. Baba is ai: Break the rules to beat
+the benchmark, 2025. URL https://arxiv.org/
+abs/2407.13729.
+Clune, J. Ai-gas: Ai-generating algorithms, an alternate
+paradigm for producing general artificial intelligence,
+2020. URL https://arxiv.org/abs/1905
+.10985.
+Conti, E., Madhavan, V ., Petroski Such, F., Lehman, J.,
+Stanley, K., and Clune, J. Improving exploration in evo-
+lution strategies for deep reinforcement learning via a
+population of novelty-seeking agents. In Bengio, S., Wal-
+lach, H., Larochelle, H., Grauman, K., Cesa-Bianchi, N.,
+and Garnett, R. (eds.),Advances in Neural Information
+Processing Systems, volume 31. Curran Associates, Inc.,
+2018. URL https://proceedings.neurips.
+cc/paper_files/paper/2018/file/b1301
+141feffabac455e1f90a7de2054-Paper.pdf.
+Cˆot´e, M.-A., K ´ad´ar,´A., Yuan, X., Kybartas, B., Barnes, T.,
+Fine, E., Moore, J., Hausknecht, M., El Asri, L., Adada,
+M., Tay, W., and Trischler, A. Textworld: A learning
+environment for text-based games. In Cazenave, T., Saffi-
+dine, A., and Sturtevant, N. (eds.),Computer Games, pp.
+41–75, Cham, 2019. Springer International Publishing.
+ISBN 978-3-030-24337-1.
+Duan, Y ., Schulman, J., Chen, X., Bartlett, P. L., Sutskever,
+I., and Abbeel, P. Rl2: Fast reinforcement learning via
+slow reinforcement learning, 2016. URL https://ar
+xiv.org/abs/1611.02779.
+Ecoffet, A., Clune, J., and Lehman, J. Open questions in
+creating safe open-ended ai: Tensions between controland creativity. volume ALIFE 2020: The 2020 Con-
+ference on Artificial Life ofALIFE 2022: The 2022
+Conference on Artificial Life, pp. 27–35, 07 2020. doi:
+10.1162/isal a00323. URL https://doi.org/10
+.1162/isal_a_00323.
+Ecoffet, A., Huizinga, J., Lehman, J., Stanley, K. O.,
+and Clune, J. First return, then explore.Nature, 590
+(7847):580–586, February 2021. ISSN 1476-4687. doi:
+10.1038/s41586-020-03157-9. URL https://doi.
+org/10.1038/s41586-020-03157-9 . TLDR:
+Go-Explore, a family of algorithms that explicitly remem-
+bers promising states and returns to them as a basis for
+further exploration solves all as-yet-unsolved Atari games
+and out-performs previous algorithms on Montezumas
+Revenge and Pitfall.
+Elsken, T., Metzen, J. H., and Hutter, F. Neural architecture
+search: A survey.Journal of Machine Learning Research,
+20(55):1–21, 2019. URL http://jmlr.org/pap
+ers/v20/18-598.html.
+Faldor, M., Zhang, J., Cully, A., and Clune, J. Omni-epic:
+Open-endedness via models of human notions of inter-
+estingness with environments programmed in code. In
+Yue, Y ., Garg, A., Peng, N., Sha, F., and Yu, R. (eds.),
+International Conference on Representation Learning,
+volume 2025, pp. 85260–85385, 2025. URL https:
+//proceedings.iclr.cc/paper_files/pa
+per/2025/file/d40d7cbe7210f8a13ea014
+9eeae9c6de-Paper-Conference.pdf.
+Fang, R., Liang, Y ., Wang, X., Wu, J., Qiao, S., Xie, P.,
+Huang, F., Chen, H., and Zhang, N. Memp: Exploring
+agent procedural memory, 2026. URL https://arxi
+v.org/abs/2508.06433.
+Finn, C., Abbeel, P., and Levine, S. Model-agnostic meta-
+learning for fast adaptation of deep networks. In Precup,
+D. and Teh, Y . W. (eds.),Proce
+
+=== PAGE 11 ===
+Learning to Continually Learn via Meta-learning Agentic Memory Designs
+TLDR: A new performance estimation metric, named
+random-weight evaluation (RWE) is introduced to quan-
+tify the quality of CNNs in a cost-efficient manner and
+reveals the effectiveness of the proposed RWE in estimat-
+ing the performance compared to existing methods.
+Hu, S., Lu, C., and Clune, J. Automated design of agentic
+systems. In Yue, Y ., Garg, A., Peng, N., Sha, F., and
+Yu, R. (eds.),International Conference on Representation
+Learning, volume 2025, pp. 21344–21377, 2025. URL
+https://proceedings.iclr.cc/paper_fi
+les/paper/2025/file/36b7acf6f6010652
+b3f2a433774a66fe-Paper-Conference.pd
+f.
+Hu, Y ., Liu, S., Yue, Y ., Zhang, G., Liu, B., Zhu, F., Lin, J.,
+Guo, H., Dou, S., Xi, Z., Jin, S., Tan, J., Yin, Y ., Liu, J.,
+Zhang, Z., Sun, Z., Zhu, Y ., Sun, H., Peng, B., Cheng,
+Z., Fan, X., Guo, J., Yu, X., Zhou, Z., Hu, Z., Huo, J.,
+Wang, J., Niu, Y ., Wang, Y ., Yin, Z., Hu, X., Liao, Y ., Li,
+Q., Wang, K., Zhou, W., Liu, Y ., Cheng, D., Zhang, Q.,
+Gui, T., Pan, S., Zhang, Y ., Torr, P., Dou, Z., Wen, J.-R.,
+Huang, X., Jiang, Y .-G., and Yan, S. Memory in the age
+of ai agents, 2026. URL https://arxiv.org/ab
+s/2512.13564.
+Hutter, F., Kotthoff, L., and Vanschoren, J. (eds.).Auto-
+mated Machine Learning - Methods, Systems, Challenges.
+Springer, 2019.
+Krizhevsky, A., Sutskever, I., and Hinton, G. E. Imagenet
+classification with deep convolutional neural networks.
+In Pereira, F., Burges, C., Bottou, L., and Weinberger,
+K. (eds.),Advances in Neural Information Processing
+Systems, volume 25. Curran Associates, Inc., 2012. URL
+https://proceedings.neurips.cc/paper
+_files/paper/2012/file/c399862d3b9d6
+b76c8436e924a68c45b-Paper.pdf.
+K¨uttler, H., Nardelli, N., Miller, A., Raileanu, R., Selvatici,
+M., Grefenstette, E., and Rockt ¨aschel, T. The nethack
+learning environment. In Larochelle, H., Ranzato, M.,
+Hadsell, R., Balcan, M., and Lin, H. (eds.),Advances
+in Neural Information Processing Systems, volume 33,
+pp. 7671–7684. Curran Associates, Inc., 2020. URL
+https://proceedings.neurips.cc/paper
+_files/paper/2020/file/569ff987c643b
+4bedf504efda8f786c2-Paper.pdf.
+Lehman, J. and Stanley, K. O. Exploiting open-endedness to
+solve problems through the search for novelty. In Bullock,
+S., Noble, J., Watson, R. A., and Bedau, M. A. (eds.),
+Proceedings of the Eleventh International Conference on
+the Synthesis and Simulation of Living Systems, ALIFE
+2008, Winchester, United Kingdom, August 5-8, 2008, pp.
+329–336. MIT Press, 2008. URL http://mitpress2.mit.edu/books/chapters/0262287196c
+hap43.pdf.
+Lehman, J. and Stanley, K. O. Abandoning objectives:
+Evolution through the search for novelty alone.Evo-
+lutionary Computation, 19(2):189–223, 2011a. doi:
+10.1162/EVCO a00025.
+Lehman, J. and Stanley, K. O. Evolving a diversity of virtual
+creatures through novelty search and local competition.
+InProceedings of the 13th Annual Conference on Genetic
+and Evolutionary Computation, GECCO ’11, pp. 211218,
+New York, NY , USA, 2011b. Association for Computing
+Machinery. ISBN 9781450305570. doi: 10.1145/2001
+576.2001606. URL https://doi.org/10.1145/
+2001576.2001606.
+Lehman, J., Gordon, J., Jain, S., Ndousse, K., Yeh, C., and
+Stanley, K. O.Evolution Through Large Models, pp. 331–
+366. Springer Nature Singapore, Singapore, 2024. ISBN
+978-981-99-3814-8. doi: 10.1007/978-981-99-3814-8 1
+1. URL https://doi.org/10.1007/978-981
+-99-3814-8_11.
+Liang, S., Cao, P., Zhao, J., Teng, W., Liao, X., Zhao, J., and
+Liu, K. Learning how to remember: A meta-cognitive
+management method for structured and transferable agent
+memory, 2026. URL https://arxiv.org/abs/
+2601.07470.
+Liu, F., Xialiang, T., Yuan, M., Lin, X., Luo, F., Wang,
+Z., Lu, Z., and Zhang, Q. Evolution of heuristics: To-
+wards efficient automatic algorithm design using large
+language model. In Salakhutdinov, R., Kolter, Z., Heller,
+K., Weller, A., Oliver, N., Scarlett, J., and Berkenkamp, F.
+(eds.),Proceedings of the 41st International Conference
+on Machi
+
+=== PAGE 12 ===
+Learning to Continually Learn via Meta-learning Agentic Memory Designs
+/paper/2024/file/9d88b87b31986f8293b
+b0067a841579e-Paper-Conference.pdf.
+Lu, C., Lu, C., Lange, R. T., Foerster, J., Clune, J., and Ha,
+D. The ai scientist: Towards fully automated open-ended
+scientific discovery, 2024b. URL https://arxiv.
+org/abs/2408.06292.
+Lu, C., Hu, S., and Clune, J. Intelligent go-explore: Stand-
+ing on the shoulders of giant foundation models. In
+Yue, Y ., Garg, A., Peng, N., Sha, F., and Yu, R. (eds.),
+International Conference on Representation Learning,
+volume 2025, pp. 21276–21301, 2025a. URL https:
+//proceedings.iclr.cc/paper_files/pa
+per/2025/file/369a30aac2765950865efd
+318cef7f76-Paper-Conference.pdf.
+Lu, C., Hu, S., and Clune, J. Automated capability discovery
+via foundation model self-exploration, 2025b. URL ht
+tps://arxiv.org/abs/2502.07577.
+Lu, Z., Whalen, I., Boddeti, V ., Dhebar, Y ., Deb, K., Good-
+man, E., and Banzhaf, W. Nsga-net: neural architecture
+search using multi-objective genetic algorithm. InPro-
+ceedings of the Genetic and Evolutionary Computation
+Conference, GECCO ’19, pp. 419427, New York, NY ,
+USA, 2019. Association for Computing Machinery. ISBN
+9781450361118. doi: 10.1145/3321707.3321729. URL
+https://doi.org/10.1145/3321707.3321
+729.
+Nan, J., Ma, W., Wu, W., and Chen, Y . Nemori: Self-
+organizing agent memory inspired by cognitive science,
+2025. URL https://arxiv.org/abs/2508.0
+3341.
+Norman, B. and Clune, J. First-explore, then exploit: Meta-
+learning to solve hard exploration-exploitation trade-offs.
+In Globerson, A., Mackey, L., Belgrave, D., Fan, A.,
+Paquet, U., Tomczak, J., and Zhang, C. (eds.),Advances
+in Neural Information Processing Systems, volume 37,
+pp. 27490–27528. Curran Associates, Inc., 2024. doi:
+10.52202/079017-0864. URL https://proceedi
+ngs.neurips.cc/paper_files/paper/202
+4/file/30754e5f4cd69d64b5527cdd87d3c
+f62-Paper-Conference.pdf.
+Ouyang, S., Yan, J., Hsu, I.-H., Chen, Y ., Jiang, K., Wang,
+Z., Han, R., Le, L. T., Daruki, S., Tang, X., Tiru-
+malashetty, V ., Lee, G., Rofouei, M., Lin, H., Han, J.,
+Lee, C.-Y ., and Pfister, T. Reasoningbank: Scaling
+agent self-evolving with reasoning memory, 2025. URL
+https://arxiv.org/abs/2509.25140.
+Packer, C., Wooders, S., Lin, K., Fang, V ., Patil, S. G.,
+Stoica, I., and Gonzalez, J. E. Memgpt: Towards llms as
+operating systems, 2024. URL https://arxiv.or
+g/abs/2310.08560.Paglieri, D., Cupiał, B. o., Coward, S., Piterbarg, U.,
+Woł czyk, M., Khan, A., Pignatelli, E., Kuci ´nski, L. u.,
+Pinto, L., Fergus, R., Foerster, J., Parker-Holder, J., and
+Rocktaeschel, T. Balrog: Benchmarking agentic llm and
+vlm reasoning on games. In Yue, Y ., Garg, A., Peng,
+N., Sha, F., and Yu, R. (eds.),International Conference
+on Representation Learning, volume 2025, pp. 96666–
+96702, 2025. URL https://proceedings.iclr
+.cc/paper_files/paper/2025/file/f0b1
+515be276f6ba82b4f2b25e50bef0-Paper-C
+onference.pdf.
+Park, J. S., O’Brien, J., Cai, C. J., Morris, M. R., Liang,
+P., and Bernstein, M. S. Generative agents: Interactive
+simulacra of human behavior. InProceedings of the 36th
+Annual ACM Symposium on User Interface Software and
+Technology, UIST ’23, New York, NY , USA, 2023. Asso-
+ciation for Computing Machinery. ISBN 9798400701320.
+doi: 10.1145/3586183.3606763. URL https:
+//doi.org/10.1145/3586183.3606763.
+Qin, Z., Sun, W., Li, D., Shen, X., Sun, W., and Zhong,
+Y . Various lengths, constant speed: Efficient language
+modeling with lightning attention. In Salakhutdinov, R.,
+Kolter, Z., Heller, K., Weller, A., Oliver, N., Scarlett,
+J., and Berkenkamp, F. (eds.),Proceedings of the 41st
+International Conference on Machine Learning, volume
+235 ofProceedings of Machine Learning Research, pp.
+41517–41535. PMLR, 21–27 Jul 2024. URL https:
+//proceedings.mlr.press/v235/qin24c.
+html.
+Rasmussen, P., Paliychuk, P., Beauvais, T., Ryan, J., and
+Chalef, D. Zep: A temporal knowledge graph architecture
+for agent memory, 2025. URL https://arxiv.or
+g/abs/2501.13956.
+Rokon, M. O. F., Islam, R., D
+
+=== PAGE 13 ===
+Learning to Continually Learn via Meta-learning Agentic Memory Designs
+A sandbox for open-ended reinforcement learning re-
+search. In Vanschoren, J. and Yeung, S. (eds.),Proceed-
+ings of the Neural Information Processing Systems Track
+on Datasets and Benchmarks, volume 1, 2021. URL
+https://datasets-benchmarks-proceedin
+gs.neurips.cc/paper_files/paper/2021
+/file/fa7cdfad1a5aaf8370ebeda47a1ff1
+c3-Paper-round1.pdf.
+Shang, Y ., Li, Y ., Zhao, K., Ma, L., Liu, J., Xu, F., and Li,
+Y . Agentsquare: Automatic llm agent search in modular
+design space. In Yue, Y ., Garg, A., Peng, N., Sha, F., and
+Yu, R. (eds.),International Conference on Representation
+Learning, volume 2025, pp. 3841–3865, 2025. URL ht
+tps://proceedings.iclr.cc/paper_file
+s/paper/2025/file/0ae94013da7cd45940
+2fd77874e09ee3-Paper-Conference.pdf.
+Shridhar, M., Thomason, J., Gordon, D., Bisk, Y ., Han,
+W., Mottaghi, R., Zettlemoyer, L., and Fox, D. Alfred:
+A benchmark for interpreting grounded instructions for
+everyday tasks. InProceedings of the IEEE/CVF Con-
+ference on Computer Vision and Pattern Recognition
+(CVPR), June 2020.
+Shridhar, M., Yuan, X., Cote, M.-A., Bisk, Y ., Trischler,
+A., and Hausknecht, M. {ALFW }orld: Aligning text
+and embodied environments for interactive learning. In
+International Conference on Learning Representations,
+2021. URL https://openreview.net/forum
+?id=0IOX0YcCdTn.
+Stanley, K. O. Why open-endedness matters.Artificial
+Life, 25(3):232–235, 08 2019. ISSN 1064-5462. doi:
+10.1162/artl a00294. URL https://doi.org/10
+.1162/artl_a_00294.
+Sutton, R. The bitter lesson, Mar 2019. URL http://ww
+w.incompleteideas.net/IncIdeas/Bitte
+rLesson.html. Accessed: 2026-01-22.
+Suzgun, M., Yuksekgonul, M., Bianchi, F., Jurafsky, D.,
+and Zou, J. Dynamic cheatsheet: Test-time learning with
+adaptive memory, 2025. URL https://arxiv.or
+g/abs/2504.07952.
+Tang, X., Qin, T., Peng, T., Zhou, Z., Shao, D., Du, T., Wei,
+X., Zhu, H., Zhang, G., Liu, J., Wang, X., Hong, S., Wu,
+C., and Zhou, W. AGENT KB: A hierarchical memory
+framework for cross-domain agentic problem solving. In
+ICML 2025 Workshop on Collaborative and Federated
+Agentic Workflows, 2025. URL https://openrevi
+ew.net/forum?id=ohXoWHlrn8.
+Thompson, S.Sampling. CourseSmart Series. Wiley, 2012.
+ISBN 9780470402313. URL https://books.goog
+le.ca/books?id=9MYjqz4ppXkC.Wang, G., Xie, Y ., Jiang, Y ., Mandlekar, A., Xiao, C., Zhu,
+Y ., Fan, L., and Anandkumar, A. V oyager: An open-
+ended embodied agent with large language models, 2023.
+URLhttps://arxiv.org/abs/2305.16291.
+Wang, J. X., Kurth-Nelson, Z., Tirumala, D., Soyer, H.,
+Leibo, J. Z., Munos, R., Blundell, C., Kumaran, D., and
+Botvinick, M. Learning to reinforcement learn, 2017.
+URLhttps://arxiv.org/abs/1611.05763.
+Wang, R., Lehman, J., Clune, J., and Stanley, K. O. Poet:
+open-ended coevolution of environments and their op-
+timized solutions. InProceedings of the Genetic and
+Evolutionary Computation Conference, GECCO ’19, pp.
+142151, New York, NY , USA, 2019. Association for
+Computing Machinery. ISBN 9781450361118. doi:
+10.1145/3321707.3321799. URL https://doi.
+org/10.1145/3321707.3321799.
+Wang, R., Lehman, J., Rawal, A., Zhi, J., Li, Y ., Clune, J.,
+and Stanley, K. Enhanced POET: Open-ended reinforce-
+ment learning through unbounded invention of learning
+challenges and their solutions. In III, H. D. and Singh, A.
+(eds.),Proceedings of the 37th International Conference
+on Machine Learning, volume 119 ofProceedings of Ma-
+chine Learning Research, pp. 9940–9951. PMLR, 13–18
+Jul 2020. URL https://proceedings.mlr.pr
+ess/v119/wang20l.html.
+Wang, Y ., Gao, Y ., Chen, X., Jiang, H., Li, S., Yang, J.,
+Yin, Q., Li, Z., Li, X., Yin, B., Shang, J., and Mcauley, J.
+MEMORYLLM: Towards self-updatable large language
+models. In Salakhutdinov, R., Kolter, Z., Heller, K.,
+Weller, A., Oliver, N., Scarlett, J., and Berkenkamp, F.
+(eds.),Proceedings of the 41st International Conference
+on Machine Learning, volume 235 ofProceedings of
+Machine Learning Research, pp. 50453–50466. PMLR,
+21–
+
+=== PAGE 14 ===
+Learning to Continually Learn via Meta-learning Agentic Memory Designs
+6df67df084e6586f1cb8458c-Paper-Confe
+rence.pdf.
+Yamada, Y ., Lange, R. T., Lu, C., Hu, S., Lu, C., Foerster, J.,
+Clune, J., and Ha, D. The ai scientist-v2: Workshop-level
+automated scientific discovery via agentic tree search,
+2025. URL https://arxiv.org/abs/2504.0
+8066.
+Yan, S., Yang, X., Huang, Z., Nie, E., Ding, Z., Li, Z., Ma,
+X., Bi, J., Kersting, K., Pan, J. Z., Schtze, H., Tresp, V .,
+and Ma, Y . Memory-r1: Enhancing large language model
+agents to manage and utilize memories via reinforcement
+learning, 2026. URL https://arxiv.org/abs/
+2508.19828.
+Yang, J., Jimenez, C. E., Wettig, A., Lieret, K., Yao,
+S., Narasimhan, K., and Press, O. Swe-agent: Agent-
+computer interfaces enable automated software engi-
+neering. In Globerson, A., Mackey, L., Belgrave, D.,
+Fan, A., Paquet, U., Tomczak, J., and Zhang, C. (eds.),
+Advances in Neural Information Processing Systems,
+volume 37, pp. 50528–50652. Curran Associates, Inc.,
+2024. doi: 10.52202/079017-1601. URL https:
+//proceedings.neurips.cc/paper_files
+/paper/2024/file/5a7c947568c1b1328cc
+c5230172e1e7c-Paper-Conference.pdf.
+Yao, S., Zhao, J., Yu, D., Du, N., Shafran, I., Narasimhan,
+K. R., and Cao, Y . React: Synergizing reasoning and
+acting in language models. InThe Eleventh International
+Conference on Learning Representations, 2023. URL
+https://openreview.net/forum?id=WE_v
+luYUL-X.
+Ye, R., Tang, S., Ge, R., Du, Y ., Yin, Z., Chen, S., and Shao,
+J. MAS-GPT: Training LLMs to build LLM-based multi-
+agent systems. InForty-second International Conference
+on Machine Learning, 2025. URL https://openre
+view.net/forum?id=3CiSpY3QdZ.
+Yin, X., Wang, X., Pan, L., Lin, L., Wan, X., and Wang,
+W. Y . G ¨odel agent: A self-referential agent framework
+for recursively self-improvement. In Che, W., Nabende,
+J., Shutova, E., and Pilehvar, M. T. (eds.),Proceedings of
+the 63rd Annual Meeting of the Association for Computa-
+tional Linguistics (Volume 1: Long Papers), pp. 27890–
+27913, Vienna, Austria, July 2025. Association for Com-
+putational Linguistics. ISBN 979-8-89176-251-0. doi:
+10.18653/v1/2025.acl-long.1354. URL https://ac
+lanthology.org/2025.acl-long.1354/.
+Zhang, G., Fu, M., Wan, G., Yu, M., Wang, K., and Yan, S.
+G-memory: Tracing hierarchical memory for multi-agent
+systems, 2025a. URL https://arxiv.org/abs/
+2506.07398.Zhang, G., Fu, M., and Yan, S. Memgen: Weaving genera-
+tive latent memory for self-evolving agents, 2025b. URL
+https://arxiv.org/abs/2509.24704.
+Zhang, G., Niu, L., Fang, J., Wang, K., Bai, L., and Wang,
+X. Multi-agent architecture search via agentic supernet,
+2025c. URL https://arxiv.org/abs/2502.0
+4180.
+Zhang, G., Ren, H., Zhan, C., Zhou, Z., Wang, J., Zhu, H.,
+Zhou, W., and Yan, S. Memevolve: Meta-evolution of
+agent memory systems, 2025d. URL https://arxi
+v.org/abs/2512.18746.
+Zhang, J., Lehman, J., Stanley, K., and Clune, J. Omni:
+Open-endedness via models of human notions of inter-
+estingness. In Kim, B., Yue, Y ., Chaudhuri, S., Fragki-
+adaki, K., Khan, M., and Sun, Y . (eds.),International
+Conference on Representation Learning, volume 2024,
+pp. 6074–6120, 2024a. URL https://proceeding
+s.iclr.cc/paper_files/paper/2024/fil
+e/18b40f124256aa0dcbb3e2832cce252e-P
+aper-Conference.pdf.
+Zhang, J., Hu, S., Lu, C., Lange, R., and Clune, J. Darwin
+godel machine: Open-ended evolution of self-improving
+agents, 2025e. URL https://arxiv.org/abs/
+2505.22954.
+Zhang, J., Xiang, J., Yu, Z., Teng, F., Chen, X., Chen,
+J., Zhuge, M., Cheng, X., Hong, S., Wang, J., Zheng,
+B., Liu, B., Luo, Y ., and Wu, C. Aflow: Automating
+agentic workflow generation. In Yue, Y ., Garg, A., Peng,
+N., Sha, F., and Yu, R. (eds.),International Conference
+on Representation Learning, volume 2025, pp. 34040–
+34077, 2025f. URL https://proceedings.iclr
+.cc/paper_files/paper/2025/file/5492
+ecbce4439401798dcd2c90be94cd-Paper-C
+onference.pdf.
+Zhang, K., Chen, X., Liu, B., Xue, T., Liao, Z., Liu, Z.,
+Wang, X., Ning, Y ., Chen, Z., Fu, X., Xie, J., Sun, 
+
+=== PAGE 15 ===
+Learning to Continually Learn via Meta-learning Agentic Memory Designs
+Zhang, Z., Dai, Q., Bo, X., Ma, C., Li, R., Chen, X., Zhu,
+J., Dong, Z., and Wen, J.-R. A survey on the memory
+mechanism of large language model-based agents.ACM
+Trans. Inf. Syst., 43(6), September 2025i. ISSN 1046-
+8188. doi: 10.1145/3748302. URL https://doi.or
+g/10.1145/3748302.
+Zhao, A., Huang, D., Xu, Q., Lin, M., Liu, Y .-J., and Huang,
+G. Expel: Llm agents are experiential learners.Proceed-
+ings of the AAAI Conference on Artificial Intelligence, 38
+(17):19632–19642, Mar. 2024. doi: 10.1609/aaai.v38i17.
+29936. URL https://ojs.aaai.org/index.p
+hp/AAAI/article/view/29936.
+Zhong, W., Guo, L., Gao, Q., Ye, H., and Wang, Y . Mem-
+orybank: Enhancing large language models with long-
+term memory.Proceedings of the AAAI Conference on
+Artificial Intelligence, 38(17):19724–19731, Mar. 2024.
+doi: 10.1609/aaai.v38i17.29946. URL https:
+//ojs.aaai.org/index.php/AAAI/articl
+e/view/29946.
+Zhou, H., Chen, Y ., Guo, S., Yan, X., Lee, K. H., Wang,
+Z., Lee, K. Y ., Zhang, G., Shao, K., Yang, L., and Wang,
+J. Memento: Fine-tuning llm agents without fine-tuning
+llms, 2025. URL https://arxiv.org/abs/2508
+.16153.
+Zhou, W., Ou, Y ., Ding, S., Li, L., Wu, J., Wang, T., Chen,
+J., Wang, S., Xu, X., Zhang, N., Chen, H., and Jiang, Y . E.
+Symbolic learning enables self-evolving agents, 2024.
+URLhttps://arxiv.org/abs/2406.18532.
+Zhuge, M., Wang, W., Kirsch, L., Faccio, F., Khizbullin, D.,
+and Schmidhuber, J. GPTSwarm: Language agents as op-
+timizable graphs. In Salakhutdinov, R., Kolter, Z., Heller,
+K., Weller, A., Oliver, N., Scarlett, J., and Berkenkamp, F.
+(eds.),Proceedings of the 41st International Conference
+on Machine Learning, volume 235 ofProceedings of
+Machine Learning Research, pp. 62743–62767. PMLR,
+21–27 Jul 2024. URL https://proceedings.ml
+r.press/v235/zhuge24a.html.
+Zoph, B. and Le, Q. Neural architecture search with
+reinforcement learning. InInternational Conference
+on Learning Representations, 2017. URL https:
+//openreview.net/forum?id=r1Ue8Hcxg.
+Zou, J., Yang, X., Qiu, R., Li, G., Tieu, K., Lu, P., Shen, K.,
+Tong, H., Choi, Y ., He, J., Zou, J., Wang, M., and Yang, L.
+Latent collaboration in multi-agent systems, 2025. URL
+https://arxiv.org/abs/2511.20639.
+15
+

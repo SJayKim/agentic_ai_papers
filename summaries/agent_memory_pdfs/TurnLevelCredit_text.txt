@@ -1,0 +1,790 @@
+=== PAGE 1 ===
+Preprint
+REINFORCINGMULTI-TURNREASONING INLLM
+AGENTS VIATURN-LEVELREWARDDESIGN
+Quan Wei1∗Siliang Zeng1∗Chenliang Li2William Brown3Oana Frunza4
+Wei Deng4Anderson Schneider4Yuriy Nevmyvaka4Yang Katie Zhao1
+Alfredo Garcia2Mingyi Hong1
+1University of Minnesota2Texas A&M University3Prime Intellect4Morgan Stanley
+ABSTRACT
+This paper investigates Reinforcement Learning (RL) approaches to enhance the
+reasoning capabilities of Large Language Model (LLM) agents in long-horizon,
+multi-turn scenarios. Although RL algorithms such as Group Relative Policy
+Optimization (GRPO) and Proximal Policy Optimization (PPO) have been widely
+applied to train multi-turn LLM agents, they typically rely only on sparse outcome
+rewards and lack dense intermediate signals across multiple decision steps, limiting
+their performance on complex reasoning tasks. To bridge this gap, we present the
+first systematic study ofturn-level reward designfor multi-turn RL algorithms
+and agent applications. By integrating turn-level rewards, we extend GRPO and
+PPO to their respective multi-turn variants, enabling fine-grained credit assignment.
+We conduct case studies on multi-turn reasoning-augmented search agents, where
+we carefully design two types of turn-level rewards: verifiable and LLM-as-judge.
+Our experiments on multi-turn search tasks demonstrate that incorporating well-
+designed turn-level rewards enables RL algorithms to significantly outperform
+baseline methods with trajectory-level rewards. Both training and validation reward
+curves illustrate that our method achievesgreater stability,faster convergence, and
+higher accuracy. Numerical results across diverse question-answering datasets
+further show that our approach consistently delivers highest answer correctness
+and 100% format correctness.
+1 INTRODUCTION
+Reinforcement Learning (RL) has recently emerged as a powerful approach for improving the
+reasoning capabilities of Large Language Models (LLMs), allowing them to explore and refine long
+Chains of Thought (CoT) (Wei et al., 2022) in complex decision-making tasks. Building on this
+paradigm, reasoning-based LLMs, such as OpenAI’s o1 (Jaech et al., 2024) and DeepSeek’s R1 (Guo
+et al., 2025a), demonstrate remarkable performance in textual reasoning tasks by learning analytical
+thinking and self-reflection. Despite these advancements, LLMs that rely solely on textual reasoning
+remain limited in tasks that require precise and complex numerical computation, information retrieval
+from web pages or local databases, or code execution. Equipping LLMs as autonomous agents
+with access to external tools, such as search engines, scientific calculators, or code interpreters, can
+significantly extend their capabilities beyond pure text-based reasoning (Gou et al., 2023).
+Training LLMs to operate as autonomous agents in interactive environments faces unique challenges.
+Agent settings often require models to make sequential, multi-turn decisions in complex reasoning
+tasks. Many existing approaches (Chen et al., 2025b; Jin et al., 2025b; Feng et al., 2025a) formulate
+these multi-turn interactive tasks as single-turn problems, relying solely on final outcome-level
+rewards such as answer correctness. Popular RL algorithms, including Group Relative Policy
+Optimization (GRPO) (Shao et al., 2024) and Proximal Policy Optimization (PPO) (Schulman et al.,
+2017), are applied in this setting. However, such single-turn formulation is inadequate for long-
+horizon multi-turn reasoning as it treats the entire trajectory as a single decision step, ignoring the
+multi-turn structure of the interactive tasks. In particular, it ignores intermediate signals that evaluate
+∗Equal contribution.
+1arXiv:2505.11821v2  [cs.LG]  23 Oct 2025
+
+=== PAGE 2 ===
+Preprint
+each complete agent-environment interaction, such as a tool call and its result, providing feedback at
+the granularity of a single turn in multi-turn tasks (Lightman et al., 2023; Zhang et al., 2025b; Ma
+et al., 2023; Choudhury, 2025). Without access to dense turn-level feedback, agents struggle to refine
+their behavior, making it difficult to interact effectively with dynamic environments over multiple
+steps. For example, in a search agent (Chen et al., 2025b; Jin et al., 2025a), selecting a good query
+early on is crucial for retrieving relevant information; without turn-level retrieval feedback, the agent
+may not learn which queries contribute to correct answers.
+Recent studies (Li et al., 2025a; Qian et al., 2025; Wang et al., 2025a; Labs, 2025; Wang et al., 2025b;
+Singh et al., 2025; Zhang et al., 2025a; Jin et al., 2025a) model multi-turn agentic tasks as Markov
+Decision Processes (MDPs) and incorporate intermediate rewards like tool execution. However, these
+approaches suffer from a credit assignment problem: they merge outcome and intermediate rewards
+into a sparse trajectory-level signal for RL training. This aggregation makes advantage estimation
+inaccurate and prevents RL algorithms from providing fine-grained supervision across intermediate
+rounds of interaction (Guo et al., 2025b; Feng et al., 2025b; Zhang et al., 2025c).
+Motivated by this, we investigate turn-level reward design for both multi-turn RL algorithms and
+agent applications. To the best of our knowledge, this is the first systematic study of turn-level
+rewards in the context of multi-turn RL for LLM agents. Our key contributions are as follows:
+•To train multi-turn LLM agents effectively under the MDP framework, we propose to
+extend GRPO and PPO to their multi-turn variants by incorporating both outcome and
+intermediate rewards, enabling fine-grained credit assignment. While multi-turn GRPO
+requires exponential rollout samples to compute intermediate advantages, multi-turn PPO
+leverages a critic model, offering a more efficient and scalable solution.
+•To highlight the importance of turn-level rewards, we conduct a case study using a reasoning-
+augmented search agent that performs multiple rounds of reasoning and search before
+producing the final answer. We carefully design turn-level verifiable rewards and turn-level
+LLM-as-judge rewards for training the search agent. While verifiable rewards are rigid, the
+LLM-as-judge enables a more flexible and nuanced evaluation.
+•Building on this case study, our experiments on multi-turn reasoning-augmented search tasks
+show that integrating turn-level rewards enables RL algorithms to significantly outperform
+baseline methods with trajectory-level rewards. Both training and validation reward curves
+obtained with the Qwen2.5-7B model demonstrate that our algorithm with turn-level rewards
+achieves more stable training, faster convergence, and higher accuracy for both verifiable
+and LLM-as-judge rewards. Furthermore, benchmarks on both in-domain and out-of-
+domain tasks show that our approach consistently achieves the highest accuracy and reliably
+produces outputs with 100% correct format.
+2 PROBLEMFORMULATION FORMULTI-TURNAGENTINTERACTION
+Letxdenote the input prompt sampled from the dataset D, and y= [l 1, f1, . . . , l K, fK]denote the
+complete output response, where lkis the response generated from an LLM policy πθ, and fkis the
+corresponding environment feedback at thek-th turn.
+LLM agents operate in interactive environments where each turn yields stochastic feedback. To
+capture these dynamics, we formulate the multi-turn agentic task as aturn-level MDP, which is
+formally defined as M={S,A, P, R, γ} . Here, Sdenotes the state space, and Adenotes the
+action space; A state s∈ S typically corresponds to an interaction history, while an action a∈ A
+often corresponds to a sequence of generated tokens; Prepresents the transition dynamics; R
+is the turn-level reward function; γis the discount factor. At the k-th
+
+=== PAGE 3 ===
+Preprint
+objective can be expressed as maximizing the expected final outcome reward:
+max
+πθEx∼D, y∼π θ(·|x)[R(x, y)](1)
+which can be interpreted as a contextual bandit problem (Bouneffouf & Feraud, 2025; Baheri & Alm,
+2023). Such single-turn formulation is inadequate as it treats the entire trajectory as a single decision
+step, ignoring the multi-turn structure of the task. More specifically, it ignores intermediate rewards
+that evaluate each complete agent-environment interaction.
+Multi-Turn Formulation.Under the turn-level MDP framework, the objective can be written as
+maximizing the cumulative reward at the turn level:
+max
+πθEsk, ak∼πθ(·|sk)"KX
+k=1γkR(sk, ak)#
+(2)
+If only an outcome reward is provided and intermediate rewards are zero, andγ= 1, then the MDP
+formulation in Eq. (2) reduces to the single-turn formulation in Eq. (1).
+Remark.The turn-level MDP with a final outcome in Eq. (1)can be viewed as an MDP with only a
+terminal reward (Arjona-Medina et al., 2019). This simplicity comes at a price: without intermediate
+rewards, the system must exhaustively simulate entire trajectories, lacking any mechanism to prune or
+attenuate trajectories that are clearly suboptimal at early stages (Wu et al., 2023; Singhal et al., 2025).
+3 GRPOWITHTURN-LEVELREWARDS FORMULTI-TURNAGENTICTASKS
+3.1 VANILLAGRPOWITHTRAJECTORY-LEVELREWARDS
+GRPO.Recently, the Group Relative Policy Optimization (GRPO) algorithm (Shao et al., 2024)
+has been widely used to enhance the reasoning capabilities of LLMs, which estimates the advantage
+in a group-relative manner. Specifically, for each input question x, it samples a group of responses
+{y1, y2, . . . , y G}from the reference policy πref. GRPO optimizes the policy by maximizing the
+following objective function:
+JGRPO(θ) =Ex∼D,{y i}G
+i=1∼π old(·|x)
+1
+GGX
+i=11
+|yi||yi|X
+t=1min (w i,t(θ)A i,t,clip(w i,t(θ),1−ϵ,1 +ϵ)A i,t)−βD KL[πθ∥πref]
+,(3)
+where wi,t(θ) =πθ(yi,t|x,yi,<t)
+πold(yi,t|x,yi,<t)is the token-level importance sampling ratio between the current
+policy πθand the previous policy πold,ϵis the clipping parameter, and βis the KL divergence
+coefficient. Given a group of trajectory-level rewards {Rtraj
+i}G
+i=1, the advantage of the i-th response
+Ai,tis calculated by
+Ai,t=AGRPO
+i =Rtraj
+i−mean({Rtraj
+i}G
+i=1)
+std({Rtraj
+i}G
+i=1)(4)
+GPRO for Single-Turn Formulation.It is straightforward to observe that GRPO is well-suited
+for the single-turn formulation in Eq. (1). The advantage is computed by normalizing the outcome
+rewards within the sampled group, that is,Rtraj
+i=R(x, y i).
+GPRO for Multi-Turn Formulation.In multi-turn tasks, intermediate signals are often available to
+guide the LLM agent. However, GRPO does not naturally incorporate such intermediate rewards
+into advantage estimation, making it difficult to leverage them effectively. A naive solution to
+Problem (2)is to merge intermediate and outcome rewards as a single sparse trajectory-level reward,
+i.e.,Rtraj
+i=PK
+k=1γkRi,kfor Eq. (4), where Ri,k=R(s i,k, ai,k)denotes the intermediate reward
+given the states i,kand actiona i,kat thek-th turn.
+Limitations of GRPO in Multi-Turn Settings.For GPRO, the advantage function Ai,tin Eq. (4)
+is computed at thetrajectory level, which means the same advantage is assigned uniformly across
+the entire trajectory, without distinguishing the contributions of individual turns or tokens. For
+long-horizon multi-turn tasks, such coarse-grained credit assignment often leads to unstable training
+and suboptimal performance (Guo et al., 2025b; Feng et al., 2025b; Zhang et al., 2025c).
+3
+
+=== PAGE 4 ===
+Preprint
+3.2 MT-GPRO: TURN-LEVELCREDITASSIGNMENT FORGRPO
+MT-GPRO.To highlight the importance of fine-grained credit assignment for GRPO, we consider a
+simple two-turn agent setting ( K= 2 ), where the agent receives a group of intermediate rewards
+{RI
+i}G
+i=1in the first turn and outcome rewards {RO
+i}G
+i=1in the second turn. Based on these signals,
+we present our turn-level credit assignment strategy for GRPO. The resulting turn-level advantages in
+the first and second turns are given by:
+AMT-GPRO
+i,1 =AI
+i+αAO
+i, AMT-GPRO
+i,2 =AO
+i,(5)
+whereAI
+iandAO
+idenote the intermediate and outcome advantages:
+AI
+i=RI
+i−mean({RI
+i}G
+i=1)
+std({RI
+i}G
+i=1), AO
+i=RO
+i−mean({RO
+i}G
+i=1)
+std({RO
+i}G
+i=1)(6)
+By leveraging intermediate rewards, all tokens within a single turn share a unified advantage signal.
+Moreover, the advantage of a turn depends not only on the rewards from that turn but also on the
+contributions of subsequent turns. We refer to this algorithm asmulti-turn GRPO (MT-GRPO). A
+detailed derivation of MT-GRPO for theK-turn setting is provided in Appendix D.
+Case Study for MT-GRPO on a Two-Turn Agentic Task.We conduct experiments to evaluate
+the proposed MT-GRPO method in a two-turn agent setting, where the agent first calls the search
+tool with reasoning in the initial turn and then produces the final answer in the subsequent turn (see
+Appendix E for details). Beyond the outcome-level exact-match reward, we design intermediate
+rewards based on tool-execution feedback for MT-GRPO. Figure 1 presents training reward curves
+for GRPO and MT-GRPO, which show that MT-GRPO achieves more stable tool usage (left figure)
+and higher exact-match accuracy (right figure), highlighting the importance of fine-grained credit
+assignment in multi-turn agentic tasks.
+0 50 100 150 200 250 300
+Step0.000.030.050.080.100.130.150.180.20Reward ScoreTool Execution Reward (Intermediate Reward)
+MT-GRPO
+GRPO-MR
+GRPO-OR
+0 50 100 150 200 250 300
+Step0.000.100.200.300.400.500.600.700.80Reward ScoreExact Match Reward (Outcome Reward)
+MT-GRPO
+GRPO-MR
+GRPO-OR
+Figure 1: Curves for different training reward components during training with various algorithms.
+GRPO-OR means GRPO with outcome rewards while GPRO-MR means GRPO with merged outcome
+and intermediate rewards. Each plot shows the training reward score over training steps. Dotted
+lines represent the average reward across 10 runs, while solid lines show trends smoothed using the
+Exponential Moving Average (EMA).
+Remark.MT-GPRO has two limitations: (1) In MT-GRPO, computing the intermediate advantages
+requires Grollout samples at each turn. Therefore, over a horizon of Kturns, this results in GK−1
+rollout trajectories in total (see Appendix D for details). Suchexponentialgrowth in complexity
+makes the approach computationally prohibitive for long-horizon multi-turn tasks. (2) This strategy
+also assumes that all rollout samples in a group must containthe same number of turns, which requires
+enforcing this constraint in the system prompt and leads to a fixed-turn setting. Such a restriction
+limits the flexibility and applicability of GRPO in more diverse scenarios. For example, in a search
+task, one question may be resolved in a single tool call or require multiple calls to retrieve, filter, and
+refine results in a sampled group.
+4 PPOWITHTURN-LEVELREWARDS FORMULTI-TURNAGENTICTASKS
+In the previous section, we illustrated the importance of fine-grained credit assignment for GPRO,
+which improves the performance of LLM agents in multi-turn interactions. However, the exponential
+4
+
+=== PAGE 5 ===
+Preprint
+computational cost, together with the fixed-turn constraint, limits the applicability of MT-GRPO to
+general agentic tasks. In this section, we present the PPO alogrithm with turn-level rewards, aiming
+to provide a more flexible, scalable, and efficient solution.
+PPO.Proximal Policy Optimization (PPO) (Schulman et al., 2017) is a popular actor-critic RL
+algorithm commonly used for LLM training (Ouyang et al., 2022). PPO updates the policy by
+maximizing the following surrogate objective:
+JPPO(θ) =E x∼D, y∼π old(·|x)
+1
+|y||y|X
+t=1min (w t(θ)A t,clip(w t(θ),1−ϵ,1 +ϵ)A t)
+,(7)
+The advantage estimate Atis computed using Generalized Advantage Estimation (GAE) (Schulman
+et al., 2015), based on rewards and a learned value function (critic model). Formally, for a trajectory
+of lengthT, the GAEA tat time steptis computed as:
+At=T−t−1X
+l=0(γλ)lδt+l, δ t=rt+γV t+1−Vt (8)
+where γis the discount factor, λ∈[0,1] is the GAE parameter, δtis the temporal-difference error, rt
+is the token-level reward and Vtis the token-level value at step t. Through the mechanism of GAE,
+the token-level value function enables token-level advantage estimation.
+Turn-Level Reward Assignment for PPO.With explicit intermediate rewards, GAE provides
+fine-grained training signals at each turn. Given both intermediate rewards RIand the outcome
+rewardRO, the token-level rewardr tis assigned as
+rt=
+
+ROiftis the last token of the entire trajectory
+RIiftis the last token of the intermediate turn
+0otherwise(9)
+For clarity, we refer to PPO trained with both intermediate and outcome rewards asmulti-turn PPO
+(MT-PPO), while PPO trained with only a sparse trajectory-level reward is referred to asPPO. To
+achieve fine-grained credit assignment with the usage of turn-level rewards, compared to MT-GRPO,
+which requires exponential rollout samples to compute intermediate advantages, MT-PPO leverages a
+critic model with GAE, offering a more efficient and scalable solution.
+Table 1: Comparison of granularity of reward assign-
+ment and advantage estimation across different RL
+algorithms for multi-turn LLM agents.
+RL Algo.Granularity
+Reward Advantage
+GRPO Trajectory-Level Trajectory-Level
+MT-GRPO Turn-Level Turn-Level
+PPO Trajectory-Level Token-Level
+MT-PPO Turn-Level Token-LevelSummary.Table 1 summarizes the granu-
+larity of reward assignment and advantage
+estimation across different RL algorithms.
+As shown, MT-PPO provides fine-grained
+turn-level rewards and token-level advan-
+tage estimation. This higher granularity en-
+ables more precise credit assignment, which
+is particularly beneficial for multi-turn LLM
+agents where successful outcomes often de-
+pend on a sequence of intermediate deci-
+sions. In contrast, trajectory-level meth-
+ods provide coarser feedback, which often
+leads to weaker learning signals and unsta-
+ble training. These insights will be empirically validated in the following experiments.
+5 CASESTUDY: MULTI-TURNREASONING-AUGMENTEDSEARCHAGENT
+5.1 TASKFORMULATION
+We study an LLM agent that performs multi-turn reasoning with search engine interactions. The
+task can be naturally formulated under the turn-level MDP framework, as discussed in Section 2,
+where each action acorresponds either to a reasoning-augmented search step or to producing the
+final answer. The goal is to improve the agent’s performance through effective integration of external
+search. Specifically, the agent learns to leverage a Wikipedia search engine to retrieve relevant
+5
+
+=== PAGE 6 ===
+Preprint
+Figure 2: Overview of the multi-turn reasoning-augmented search agent pipeline. Given a system
+prompt and a question, each iteration of the LLM-based search agent proceeds as follows: (1) The
+agent begins withreasoning, analyzing the current context to identify missing information. (2) It
+then formulates a search query toretrieverelevant information from an external database, which is
+integrated into the evolvingcontext. (3) This cycle continues until the agent judges that the context is
+sufficient, at which point it performs a final round ofreasoningto generate the answer.
+information and generate an accurate answer. Without search calling, the agent must rely solely on its
+internal knowledge to answer questions, which can limit accuracy, especially for fact-based queries
+requiring up-to-date or domain-specific information. The overall interaction follows a multi-turn
+reasoning–search loop, as shown in Figure 2.
+5.2 TURN-LEVELVERIFIABLEREWARDDESIGN
+Unlike existing approaches (Chen et al., 2025b; Jin et al., 2025b), which assign binary rewards based
+solely on final-answer correctness for the entire trajectory, we design turn-level verifiable rewards for
+both intermediate and final turns to better align with the environment of the LLM-based search agent.
+Outcome Verifiable Rewardsevaluate the model-generated responses in the last turn, focusing on
+both the correctness of the answer and the adherence to the required output format.
+•Outcome Exact Match Rewardevaluates whether the extracted answer (from the <answer>
+tag) exactly matches any accepted ground-truth answer after normalization (e.g., lowercasing
+and whitespace removal):
+•Outcome Format Rewardensures format correctness by verifying that: (1) only <think>
+and<answer> tags appear (no extra tags), (2) each tag appears exactly once, and (3)
+<think>precedes<answer>.
+The outcome reward is defined as
+RO=
+
+1f em=True, f format =True,
+0.2f em=False, f format =True,
+−1f format =False,
+where femandfformat denote the indicators of answer (exact-match) correctness and format correctness,
+respectively. A smaller positive reward is given when the answer is incorrect but the output follows
+the required format, encouraging structural correctness during training. A negative reward (penalty)
+is applied when the format is incorrect, ensuring that the agent adheres to the required structure.
+Intermediate Verifiable Rewardsguide the agent’s behavior in intermediate turns by evaluating
+the presence of ground-truth answers in retrieved content, enforcing proper format usage, and
+discouraging excessive search calls.
+6
+
+=== PAGE 7 ===
+Preprint
+•Intermediate Retrieval Existence Rewardevaluates whether any accepted answer appears in
+the one-round search result (from <information> tag), using case-insensitive matching.
+RI
+retrieval = 0.3if retrieved information contains any ground-truth, otherwise 0.
+•Intermediate Format Rewardensures format correctness by verifying that: (1) only
+<think> ,<search> , and <information> tags appear (no extra tags), (2) each tag
+appears exactly once, and (3) <think> precedes <search> and<information> .
+RI
+format = 0.1if the format is correct, otherwise−0.2.
+•Intermediate Search Count Rewardpenalizes excessive search usage.
+RI
+search =−λ s·n search,
+where λsis a predefined positive constant controlling the weight of the search count reward,
+nsearch denotes the cumulative number of search invocations from the first turn up to the
+current turn.
+The intermediate reward is defined as RI=RI
+retrieval +RI
+format +RI
+search. Retrieval correctness is
+similarly assigned a smaller weight than answer correctness, again to reduce the risk of reward hacking.
+In addition, we introduce an intermediate search penalty to discourage excessive or unnecessary
+search calls, preventing the agent from either avoiding the avoiding the question answering or failing
+due to crashes.
+5.3 LLMASJUDGE FORTURN-LEVELEVALUATION
+Verifiable rewards, such as exact match, provide a strict and objective form of evaluation. However,
+they can be overly rigid: an agent may produce a correct answer that differs slightly in form from
+the ground truth but still receives negative feedback. To complement such verifiable signals, we
+adopt theLLM-as-judgeparadigm, where a strong LLM evaluates agent outputs. The LLM-as-judge
+framework consists of two key components: step-by-step reasoning and rubric-based scoring.
+Reasoning.We employ a generative reasoning model (GRM) (Li et al., 2025b) as the judge,
+prompting it to generate detailed justifications before assigning a score. The step-by-step reasoning
+process encourages the judge to evaluate output quality using rubric-based criteria rather than relying
+on shallow correlations.
+Rubrics.Rubric-based scoring provides structured evaluation criteria that improve both consistency
+and reliability across assessments. Unlike outcome-level evaluation that only considers the final
+answer, our framework assesses each turn’s output. This fine-grained assessment offers richer
+feedback and aligns naturally with multi-turn agentic tasks, where intermediate steps critically
+influence overall success. The judge model evaluates format correctness, reasoning quality, and
+search effectiveness, while also applying a search penalty to discourage excessive or unnecessary
+tool calls. Additional implementation details are provided in Appendix C.2.
+6 EXPERIMENTS
+In our experiments, we build our codebase upon the open-source project Search-R1 (Jin et al.,
+2025b), which trains LLM agents for multi-turn reasoning-augmented search tasks. More details on
+experimental settings can be found in Appendix C.1.
+6.1 EVALUATEDMETHODS
+We compare both training reward dynamics and benchmark performance across different methods.
+Training Dynamics.We evaluate our MT-PPO against several PPO-based baselines:
+•PPO-OR (Jin et al., 2025b): vanilla PPO trained with only outcome rewards, where the
+trajectory-level reward is a binary signal indicating final-answer correctness.
+•PPO-MR (Jin et al., 2025a): vanilla PPO trained with merged intermediate and outcome
+rewards, where the trajectory-level reward combines intermediate rewards (retrieval cor-
+rectness) and outcome rewards (answer correctness and format correctness). The detailed
+reward design is provided in Section 4.1 of (Jin et al., 2025a).
+7
+
+=== PAGE 8 ===
+Preprint
+0 100 200 300 400 500
+Step0.00.10.20.30.40.5Answer CorrectnessTraining Reward (NQ)
+PPO-OR
+PPO-MR
+MT-PPO
+0 100 200 300 400 500
+Step0.00.20.40.60.81.0Format CorrectnessTraining Reward (NQ)
+PPO-OR
+PPO-MR
+MT-PPO
+0 100 200 300 400 500
+Step0.00.20.40.60.8Retrieval CorrectnessTraining Reward (NQ)
+PPO-OR
+PPO-MR
+MT-PPO
+0 100 200 300 400 500
+Step0.00.10.20.30.40.50.6Answer CorrectnessTraining Reward (HotpotQA)
+PPO-OR
+PPO-MR
+MT-PPO
+0 100 200 300 400 500
+Step0.00.20.40.60.81.0Format CorrectnessTraining Reward (HotpotQA)
+PPO-OR
+PPO-MR
+MT-PPO
+0 100 200 300 400 500
+Step0.00.20.40.60.8Retrieval CorrectnessTraining Reward (HotpotQA)
+PPO-OR
+PPO-MR
+MT-PPO
+Figure 3: Training reward curves recorded during training for PPO baselines and MT-PPO on the NQ
+and HotpotQA datasets. The rewards include answer correctness, format correctness, and retrieval
+correctness. Solid lines show mean reward values, while shaded regions indicate variability across
+five independent runs.
+•MT-PPO (ours): PPO variant trained with both intermediate and outcome rewards, where
+the turn-level reward design is described in Section 5.2, withλ s= 0.1by default.
+We omit GRPO training curves since, as reported in (Jin et al., 2025b), GRPO consistently crashes
+during training.
+Benchmark Evaluation.In addition to the base model and the instruct model, we further compare
+our method against Search-R1 trained with GRPO and PPO (Jin et al., 2025b;a),1OTC trained with
+GRPO and PPO (Wang et al., 2025a), and StepSearch trained with PPO (Wang et al., 2025c).
+Since PPO baselines often crash, we evaluate them using either the final checkpoint or the last
+checkpoint prior to collapse.
+Evaluation Metrics.We evaluate model performance using three types of rewards: (1) answer
+correctness (exact match) reward, (2) format correctness reward, and (3) retrieval correctness reward.
+Each reward is assigned a value of 1.0 if the criterion is satisfied and 0 otherwise.
+6.2 EXPERIMENTSETUP
+Datasets.These datasets are categorized as follows: (1) General Question Answering: NQ
+(Karpukhin et al., 2020), TriviaQA (Joshi et al., 2017), and PopQA (Mallen et al., 2022). (2)
+Multi-Hop Question Answering: HotpotQA (Yang et al., 2018), 2WikiMultiHopQA (Ho et al., 2020),
+and Musique (Trivedi et al., 2022). These datasets cover a diverse range of search and reasoning
+challenges, providing a comprehensive basis for evaluation.
+Training Details.We use Qwen2.5-7B (Yang et al., 2024) as the base model, E5 (Wang et al., 2022)
+as the retriever, and 2018 Wikipedia dump (Karpukhin et al., 2020) as the corpus. We set the number
+of retrieved passages to 3, and the maximum number of turns Nmaxto 4. The system prompt follows
+that of Search-R1 (Jin et al., 2025b). We also enable policy loss masking on retrieved tokens.
+6.3 MAINRESULTS
+Training Dynamics.Figures 3 and 5 show training and validation reward curves for PPO and
+MT-PPO. MT-PPO achieves substantially more stable training, converging faster in the early phase
+(first 100 steps) thanks to intermediate rewards that provide stronger guidance. As training progresses,
+PPO exhibits high variance and even performance degradation, especially on HotpotQA, while
+MT-PPO maintains consistent improvement. MT-PPO attains higher average accuracy than PPO,
+1The GRPO baselines (GRPO-OR and GRPO-MR) correspond to the PPO baselines (PPO-OR and PPO-MR)
+with the same reward design (Jin et al., 2025b;a).
+8
+
+=== PAGE 9 ===
+Preprint
+Table 2: The performance results of different methods on six datasets. Bold numbers indicate the best
+performance for each dataset and metric.†/*denote in-domain/out-of-domain datasets.‡indicates
+results copied from the original paper.
+MethodsGeneral QA Multi-Hop QAAvg.
+NQ†TriviaQA*PopQA*HotpotQA†2wiki*Musique*
+Answer Correctness (Exact Match)
+Qwen2.5-7B-Base 0.177 0.319 0.181 0.160 0.167 0.040 0.174
+Qwen2.5-7B-Instruct 0.320 0.563 0.349 0.292 0.277 0.118 0.320
+GRPO-OR (Search-R1) 0.391 0.560 0.388 0.331 0.306 0.129 0.351
+GRPO-MR (Search-R1)‡0.453 0.628 0.450 0.416 0.375 0.164 0.414
+PPO-OR (Search-R1) 0.483 0.639 0.456 0.435 0.382 0.199 0.432
+PPO-MR (Search-R1)‡0.472 0.629 0.452 0.436 0.402 0.180 0.429
+GRPO (OTC)‡0.444 0.597 0.431 0.366 0.311 0.130 0.380
+PPO (OTC)‡0.446 0.623 0.425 0.383 0.363 0.152 0.399
+PPO (StepSearch) 0.355 0.570 0.385 0.351 0.396 0.179 0.373
+MT-PPO (ours) 0.490 0.647 0.459 0.453 0.424 0.209 0.447
+Format Correctness
+Qwen2.5-7B-Base 0.118 0.118 0.105 0.098 0.084 0.082 0.101
+Qwen2.5-7B-Instruct 0.183 0.267 0.067 0.109 0.037 0.071 0.122
+GRPO-OR (Search-R1) 0.706 0.685 0.597 0.513 0.376 0.328 0.534
+PPO-OR (Search-R1) 0.909 0.954 0.952 0.916 0.806 0.834 0.895
+PPO (StepSearch) 0.521 0.614 0.668 0.560 0.396 0.571 0.555
+MT-PPO (ours) 0.999 0.997 0.999 0.998 0.999 0.999 0.999
+demonstrating greater robustness. Format reward curves show that MT-PPO consistently follows
+the correct output format, while PPO struggles, especially on HotpotQA, where formatting mistakes
+prevent correct evaluation. This indicates that turn-level rewards in MT-PPO stabilize training and
+enforce structural correctness. Retrieval curves further show that MT-PPO achieves more consistent
+accuracy by leveraging intermediate signals to guide reasoning. Figure 6 presents training curves for
+MT-PPO and PPO with judge rewards, where MT-PPO again demonstrates stable optimization.
+Benchmark Performance.Table 2 reports results on six QA datasets, spanning both general and
+multi-hop reasoning tasks. MT-PPO consistently outperforms PPO and GRPO in answer correctness,
+with the largest gains on multi-hop tasks such as HotpotQA and 2Wiki. Moreover, MT-PPO nearly
+perfects format correctness, reaching close to 100% across datasets, underscoring the effectiveness of
+multi-turn credit assignment in producing both accurate and well-structured outputs.
+6.4 ABLATIONSTUDY
+We conduct two ablation studies to analyze the effects of (1) reward design and (2) the maximum
+number of turns on training dynamics and performance. As shown in Figure 4, incorporating the
+search count reward ( λs= 0.1 ) into MT-PPO significantly improves training stability and final
+accuracy. During the early training phase, excessive search calls often lead to instability; the search
+count reward mitigates this by penalizing overuse of the tool, resulting in more efficient turn usage.
+Consequently, the number of turns first decreases and later stabilizes, reflecting an adaptive adjustment
+in the agent’s search strategy. In contrast, removing this reward term ( λs= 0.0 ) leads to unstable
+training and degenerate behaviors, such as uncontrolled search usage or non-convergent rollouts.
+As shown in Table 4, the model trained without this term often fails to terminate properly before
+reaching the maximum number of allowed searches, ultimately causing training to collapse. We
+further study the effect of the maximum number of turns Nmaxon performance in Figure 4. We find
+that varying Nmaxfrom 4 to 6 produces similar accuracy trends, suggesting that MT-PPO remains
+robust to reasonable changes in the turn limit.
+9
+
+=== PAGE 10 ===
+Preprint
+0 100 200 300 400 500
+Step0.00.10.20.30.40.5Answer CorrectnessTraining Reward (NQ)
+MT-PPO ( =0.0)
+MT-PPO ( =0.1)
+0 100 200 300 400 500
+Step01234Number of TurnsTraining Reward (NQ)
+MT-PPO ( =0.0)
+MT-PPO ( =0.1)
+0 100 200 300 400 500
+Step0.20.30.40.5Answer CorrectnessTraining Reward (NQ)
+MT-PPO (Nmax = 4)
+MT-PPO (Nmax = 5)
+MT-PPO (Nmax = 6)
+Figure 4: Ablation studies on (1) the search count reward λsand (2) the maximum number of turns
+Nmaxon the NQ dataset. The left panel reports answer correctness, the middle panel shows the
+average number of turns, and the right panel illustrates accuracy under differentN maxsettings.
+7 CONCLUSION ANDFUTUREWORK
+In this paper, we highlighted the importance of turn-level rewards for multi-turn agentic tasks. By
+introducing carefully designed intermediate signals, we extended GRPO and PPO into multi-turn
+variants, allowing LLM agents to receive more informative feedback at each stage of interaction.
+Experiments on reasoning-augmented search agents show that incorporating turn-level rewards
+substantially improves both the stability and accuracy of training across different RL algorithms. To
+the best of our knowledge, this is the first systematic study of turn-level rewards in the context of
+multi-turn RL for LLM agents. We believe that turn-level rewards have broad applicability beyond
+search, offering a general mechanism for improving the effectiveness of multi-turn agents in diverse
+interactive environments.
+10
+
+=== PAGE 11 ===
+Preprint
+REFERENCES
+Jose A Arjona-Medina, Michael Gillhofer, Michael Widrich, Thomas Unterthiner, Johannes Brand-
+stetter, and Sepp Hochreiter. Rudder: Return decomposition for delayed rewards.Advances in
+Neural Information Processing Systems, 32, 2019.
+Ali Baheri and Cecilia Alm. Llms-augmented contextual bandit. InNeurIPS 2023 Foundation Models
+for Decision Making Workshop. NeurIPS 2023, 2023.
+Hao Bai, Yifei Zhou, Jiayi Pan, Mert Cemri, Alane Suhr, Sergey Levine, and Aviral Kumar. Digirl:
+Training in-the-wild device-control agents with autonomous reinforcement learning.Advances in
+Neural Information Processing Systems, 37:12461–12495, 2024.
+Djallel Bouneffouf and Raphael Feraud. Multi-armed bandits meet large language models.arXiv
+preprint arXiv:2505.13355, 2025.
+William Brown. Verifiers: Reinforcement learning with llms in verifiable environments. https:
+//github.com/willccbb/verifiers, 2025.
+Thomas Carta, Clément Romac, Thomas Wolf, Sylvain Lamprier, Olivier Sigaud, and Pierre-Yves
+Oudeyer. Grounding large language models in interactive environments with online reinforcement
+learning. InInternational Conference on Machine Learning, pp. 3676–3713. PMLR, 2023.
+Kevin Chen, Marco Cusumano-Towner, Brody Huval, Aleksei Petrenko, Jackson Hamburger, Vladlen
+Koltun, and Philipp Krähenbühl. Reinforcement learning for long-horizon interactive llm agents.
+arXiv preprint arXiv:2502.01600, 2025a.
+Mingyang Chen, Tianpeng Li, Haoze Sun, Yijie Zhou, Chenzheng Zhu, Fan Yang, Zenan Zhou,
+Weipeng Chen, Haofen Wang, Jeff Z Pan, et al. Learning to reason with search for llms via
+reinforcement learning.arXiv preprint arXiv:2503.19470, 2025b.
+Jie Cheng, Ruixi Qiao, Lijun Li, Chao Guo, Junle Wang, Gang Xiong, Yisheng Lv, and Fei-Yue Wang.
+Stop summation: Min-form credit assignment is all process reward model needs for reasoning.
+arXiv preprint arXiv:2504.15275, 2025.
+Sanjiban Choudhury. Process reward models for llm agents: Practical framework and directions.
+arXiv preprint arXiv:2502.10325, 2025.
+Ganqu Cui, Lifan Yuan, Zefan Wang, Hanbin Wang, Wendi Li, Bingxiang He, Yuchen Fan, Tianyu
+Yu, Qixin Xu, Weize Chen, et al. Process reinforcement through implicit rewards.arXiv preprint
+arXiv:2502.01456, 2025.
+Jiazhan Feng, Shijue Huang, Xingwei Qu, Ge Zhang, Yujia Qin, Baoquan Zhong, Chengquan Jiang,
+Jinxin Chi, and Wanjun Zhong. Retool: Reinforcement learning for strategic tool use in llms.
+arXiv preprint arXiv:2504.11536, 2025a.
+Lang Feng, Zhenghai Xue, Tingcong Liu, and Bo An. Group-in-group policy optimization for llm
+agent training.arXiv preprint arXiv:2505.10978, 2025b.
+Zhibin Gou, Zhihong Shao, Yeyun Gong, Yelong Shen, Yujiu Yang, Minlie Huang, Nan Duan, and
+Weizhu Chen. Tora: A tool-integrated reasoning agent for mathematical problem solving.arXiv
+preprint arXiv:2309.17452, 2023.
+Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song, Ruoyu Zhang, Runxin Xu, Qihao Zhu,
+Shirong Ma, Peiyi Wang, Xiao Bi, et al. Deepseek-r1: Incentivizing reasoning capability in llms
+via reinforcement learning.arXiv preprint arXiv:2501.12948, 2025a.
+Yiran Guo, Lijie Xu, Jie Liu, Dan Ye, and Shuang Qiu. Segment policy optimization: Effective
+segment-level credit assignment in rl for large language models.arXiv preprint arXiv:2505.23564,
+2025b.
+Xanh Ho, Anh-Khoa Duong Nguyen, Saku Sugawara, and Akiko Aizawa. Constructing a multi-hop
+qa dataset for comprehensive evaluation of reasoning steps.arXiv preprint arXiv:2011.01060,
+2020.
+11
+
+=== PAGE 12 ===
+Preprint
+Aaron Jaech, Adam Kalai, Adam Lerer, Adam Richardson, Ahmed El-Kishky, Aiden Low, Alec
+Helyar, Aleksander Madry, Alex Beutel, Alex Carney, et al. Openai o1 system card.arXiv preprint
+arXiv:2412.16720, 2024.
+Bowen Jin, Jinsung Yoon, Priyanka Kargupta, Sercan O Arik, and Jiawei Han. An empirical
+study on reinforcement learning for reasoning-search interleaved llm agents.arXiv preprint
+arXiv:2505.15117, 2025a.
+Bowen Jin, Hansi Zeng, Zhenrui Yue, Dong Wang, Hamed Zamani, and Jiawei Han. Search-r1:
+Training llms to reason and leverage search engines with reinforcement learning.arXiv preprint
+arXiv:2503.09516, 2025b.
+Mandar Joshi, Eunsol Choi, Daniel Weld, and Luke Zettlemoyer. TriviaQA: A large scale
+distantly supervised challenge dataset for reading comprehension. In Regina Barzilay and
+Min-Yen Kan (eds.),Proceedings of the 55th Annual Meeting of the Association for Com-
+putational Linguistics (Volume 1: Long Papers), pp. 1601–1611, Vancouver, Canada, July
+2017. Association for Computational Linguistics. doi: 10.18653/v1/P17-1147. URL https:
+//aclanthology.org/P17-1147/.
+Vladimir Karpukhin, Barlas Oguz, Sewon Min, Patrick SH Lewis, Ledell Wu, Sergey Edunov, Danqi
+Chen, and Wen-tau Yih. Dense passage retrieval for open-domain question answering. InEMNLP
+(1), pp. 6769–6781, 2020.
+Woosuk Kwon, Zhuohan Li, Siyuan Zhuang, Ying Sheng, Lianmin Zheng, Cody Hao Yu, Joseph
+Gonzalez, Hao Zhang, and Ion Stoica. Efficient memory management for large language model
+serving with pagedattention. InProceedings of the 29th Symposium on Operating Systems
+Principles, pp. 611–626, 2023.
+Bespoke Labs. Improving multi-turn tool use with reinforce-
+ment learning. https://www.bespokelabs.ai/blog/
+improving-multi-turn-tool-use-with-reinforcement-learning , 2025.
+Accessed: 2025-04-17.
+Xuefeng Li, Haoyang Zou, and Pengfei Liu. Torl: Scaling tool-integrated rl.arXiv preprint
+arXiv:2503.23383, 2025a.
+Yi-Chen Li, Tian Xu, Yang Yu, Xuqin Zhang, Xiong-Hui Chen, Zhongxiang Ling, Ningjing Chao,
+Lei Yuan, and Zhi-Hua Zhou. Generalist reward models: Found inside large language models.
+arXiv preprint arXiv:2506.23235, 2025b.
+Hunter Lightman, Vineet Kosaraju, Yuri Burda, Harrison Edwards, Bowen Baker, Teddy Lee, Jan
+Leike, John Schulman, Ilya Sutskever, and Karl Cobbe. Let’s verify step by step. InThe Twelfth
+International Conference on Learning Representations, 2023.
+Runze Liu, Fengshuo Bai, Yali Du, and Yaodong Yang. Meta-reward-net: Implicitly differentiable
+reward learning for preference-based reinforcement learning.Advances in Neural Information
+Processing Systems, 35:22270–22284, 2022.
+Qianli Ma, Haotian Zhou, Tingkai Liu, Jianbo Yuan, Pengfei Liu, Yang You, and Hongxia Yang.
+Let’s reward step by step: Step-level reward model as the navigators for reasoning.arXiv preprint
+arXiv:2310.10080, 2023.
+Alex Mallen, Akari Asai, Victor Zhong, Rajarshi Das, Daniel Khashabi, and Hannaneh Hajishirzi.
+When not to trust language models: Investigating effectiveness of parametric and non-parametric
+memories.arXiv preprint arXiv:2212.10511, 2022.
+Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll Wainwright, Pamela Mishkin, Chong
+Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, et al. Training language models to follow
+instructions with human feedback.Advances in neural information processing systems, 35:27730–
+27744, 2022.
+Eduardo Pignatelli, Johan Ferret, Matthieu Geist, Thomas Mesnard, Hado van Hasselt, Olivier
+Pietquin, and Laura Toni. A survey of temporal credit assignment in deep reinforcement learning.
+arXiv preprint arXiv:2312.01072, 2023.
+12
+
+=== PAGE 13 ===
+Preprint
+Cheng Qian, Emre Can Acikgoz, Qi He, Hongru Wang, Xiusi Chen, Dilek Hakkani-Tür, Gokhan Tur,
+and Heng Ji. Toolrl: Reward is all tool learning needs.arXiv preprint arXiv:2504.13958, 2025.
+Julian Schrittwieser, Ioannis Antonoglou, Thomas Hubert, Karen Simonyan, Laurent Sifre, Simon
+Schmitt, Arthur Guez, Edward Lockhart, Demis Hassabis, Thore Graepel, et al. Mastering atari,
+go, chess and shogi by planning with a learned model.Nature, 588(7839):604–609, 2020.
+John Schulman, Philipp Moritz, Sergey Levine, Michael Jordan, and Pieter Abbeel. High-dimensional
+continuous control using generalized advantage estimation.arXiv preprint arXiv:1506.02438,
+2015.
+John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. Proximal policy
+optimization algorithms.arXiv preprint arXiv:1707.06347, 2017.
+Bytedance Seed. Seed-thinking-v1. 5: Advancing superb reasoning models with re-
+inforcement learning. Technical report, Technical report, ByteDance, 2025. URL
+https://github.com/ByteDance-Seed/Seed-Thinking-v1.5/blob/main/
+seed-thinking-v1.5.pdf.
+Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang,
+Mingchuan Zhang, YK Li, Y Wu, et al. Deepseekmath: Pushing the limits of mathematical
+reasoning in open language models.arXiv preprint arXiv:2402.03300, 2024.
+Joykirat Singh, Raghav Magazine, Yash Pandya, and Akshay Nambi. Agentic reasoning and tool
+integration for llms via reinforcement learning.arXiv preprint arXiv:2505.01441, 2025.
+Raghav Singhal, Zachary Horvitz, Ryan Teehan, Mengye Ren, Zhou Yu, Kathleen McKeown, and
+Rajesh Ranganath. A general framework for inference-time scaling and steering of diffusion
+models. InInternational Conference on Machine Learning (ICML), 2025.
+Shengjie Sun, Runze Liu, Jiafei Lyu, Jing-Wen Yang, Liangpeng Zhang, and Xiu Li. A large
+language model-driven reward design framework via dynamic feedback for reinforcement learning.
+Knowledge-Based Systems, 326:114065, 2025.
+Harsh Trivedi, Niranjan Balasubramanian, Tushar Khot, and Ashish Sabharwal. Musique: Multihop
+questions via single-hop question composition.Transactions of the Association for Computational
+Linguistics, 10:539–554, 2022.
+Jonathan Uesato, Nate Kushman, Ramana Kumar, Francis Song, Noah Siegel, Lisa Wang, Antonia
+Creswell, Geoffrey Irving, and Irina Higgins. Solving math word problems with process-and
+outcome-based feedback.arXiv preprint arXiv:2211.14275, 2022.
+Leandro von Werra, Younes Belkada, Lewis Tunstall, Edward Beeching, Tristan Thrush, Nathan
+Lambert, Shengyi Huang, Kashif Rasul, and Quentin Gallouédec. Trl: Transformer reinforcement
+learning.https://github.com/huggingface/trl, 2020.
+Hongru Wang, Cheng Qian, Wanjun Zhong, Xiusi Chen, Jiahao Qiu, Shijue Huang, Bowen Jin,
+Mengdi Wang, Kam-Fai Wong, and Heng Ji. Otc: Optimal tool calls via reinforcement learning.
+arXiv preprint arXiv:2504.14870, 2025a.
+Liang Wang, Nan Yang, Xiaolong Huang, Binxing Jiao, Linjun Yang, Daxin Jiang, Rangan Majumder,
+and Furu Wei. Text embeddings by weakly-supervised contrastive pre-training.arXiv preprint
+arXiv:2212.03533, 2022.
+Zihan Wang, Kangrui Wang, Qineng Wang, Pingyue Zhang, Linjie Li, Zhengyuan Yang, Kefan Yu,
+Minh Nhat Nguyen, Licheng Liu, Eli Gottlieb, et al. Ragen: Understanding self-evolution in llm
+agents via multi-turn reinforcement learning.arXiv preprint arXiv:2504.20073, 2025b.
+Ziliang Wang, Xuhui Zheng, Kang An, Cijun Ouyang, Jialu Cai, Yuhang Wang, and Yichao Wu.
+Stepsearch: Igniting llms search ability via step-wise proximal policy optimization.arXiv preprint
+arXiv:2505.15107, 2025c.
+13
+
+=== PAGE 14 ===
+Preprint
+Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Fei Xia, Ed Chi, Quoc V Le, Denny
+Zhou, et al. Chain-of-thought prompting elicits reasoning in large language models.Advances in
+neural information processing systems, 35:24824–24837, 2022.
+Luhuan Wu, Brian L. Trippe, Christian A. Naesseth, David M. Blei, and John P. Cunningham.
+Practical and asymptotically exact conditional sampling in diffusion models. InAdvances in
+Neural Information Processing Systems 36 (NeurIPS 2023), 2023.
+An Yang, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chengyuan Li,
+Dayiheng Liu, Fei Huang, Haoran Wei, et al. Qwen2. 5 technical report.arXiv preprint
+arXiv:2412.15115, 2024.
+Zhilin Yang, Peng Qi, Saizheng Zhang, Yoshua Bengio, William W Cohen, Ruslan Salakhutdinov,
+and Christopher D Manning. Hotpotqa: A dataset for diverse, explainable multi-hop question
+answering.arXiv preprint arXiv:1809.09600, 2018.
+Shunyu Yao, Rohan Rao, Matthew Hausknecht, and Karthik Narasimhan. Keep CALM and
+explore: Language models for action generation in text-based games. In Bonnie Webber,
+Trevor Cohn, Yulan He, and Yang Liu (eds.),Proceedings of the 2020 Conference on Empir-
+ical Methods in Natural Language Processing (EMNLP), pp. 8736–8754, Online, November
+2020. Association for Computational Linguistics. doi: 10.18653/v1/2020.emnlp-main.704. URL
+https://aclanthology.org/2020.emnlp-main.704/.
+Shunyu Yao, Howard Chen, John Yang, and Karthik Narasimhan. Webshop: Towards scalable
+real-world web interaction with grounded language agents.Advances in Neural Information
+Processing Systems, 35:20744–20757, 2022.
+Simon Zhai, Hao Bai, Zipeng Lin, Jiayi Pan, Peter Tong, Yifei Zhou, Alane Suhr, Saining Xie, Yann
+LeCun, Yi Ma, et al. Fine-tuning large vision-language models as decision-making agents via
+reinforcement learning.Advances in neural information processing systems, 37:110935–110971,
+2024.
+Shaokun Zhang, Yi Dong, Jieyu Zhang, Jan Kautz, Bryan Catanzaro, Andrew Tao, Qingyun Wu,
+Zhiding Yu, and Guilin Liu. Nemotron-research-tool-n1: Tool-using language models with
+reinforced reasoning.arXiv preprint arXiv:2505.00024, 2025a.
+Zhenru Zhang, Chujie Zheng, Yangzhen Wu, Beichen Zhang, Runji Lin, Bowen Yu, Dayiheng Liu,
+Jingren Zhou, and Junyang Lin. The lessons of developing process reward models in mathematical
+reasoning.arXiv preprint arXiv:2501.07301, 2025b.
+Zijing Zhang, Ziyang Chen, Mingxiao Li, Zhaopeng Tu, and Xiaolong Li. Rlvmr: Reinforcement
+learning with verifiable meta-reasoning rewards for robust long-horizon agents.arXiv preprint
+arXiv:2507.22844, 2025c.
+14
+
+=== PAGE 15 ===
+Preprint
+A LLM USAGE
+In this work, LLMs were used exclusively for polishing the writing. No part of the technical content,
+experimental design, or analysis relied on LLMs. The authors retain full responsibility for the
+correctness and originality of the ideas, methods, and results.
+B RELATEDWORK
+B.1 PROCESSREWARD ANDCREDITASSIGNMENT INRL
+Process reward models provide fine-grained credit assignment and enhance both training efficiency
+and optimization stability in RL. Such dense rewards have proven effective not only in classical RL
+domains such as games and robotic control (Schrittwieser et al., 2020; Liu et al., 2022; Sun et al.,
+2025), but also in the context of LLM-based reasoning (Lightman et al., 2023; Uesato et al., 2022).
+Recent studies have further highlighted the importance of effective credit assignment (Pignatelli et al.,
+2023; Shao et al., 2024; Cui et al., 2025; Cheng et al., 2025; Feng et al., 2025b; Guo et al., 2025b),
+particularly for textual reasoning tasks such as mathematical problem solving. In multi-turn agent
+interaction settings, turn-level rewards evaluate each complete agent–environment interaction, such
+as a tool invocation and its resulting output, providing feedback at the granularity of a single turn.
+This setting naturally emphasizes the advantages of process-level rewards and fine-grained credit
+assignment. However, the design of effective reward functions for multi-turn agents, as well as RL
+algorithms capable of leveraging such fine-grained credit signals, remains underexplored.
+B.2 RLFORLLM AGENTS
+RL has been applied to train long-horizon multi-turn LLM agents in diverse domains, including
+search (Chen et al., 2025b; Jin et al., 2025b;a), tool use (Feng et al., 2025a; Li et al., 2025a; Qian
+et al., 2025; Wang et al., 2025a; Labs, 2025; Zhang et al., 2025a; Singh et al., 2025), text-based
+games (Yao et al., 2020; Carta et al., 2023; Zhai et al., 2024; Wang et al., 2025b), web shopping (Yao
+et al., 2022), digital app interaction (Chen et al., 2025a), and mobile device control (Bai et al., 2024).
+A number of these studies (Jin et al., 2025a; Feng et al., 2025a; Li et al., 2025a; Qian et al., 2025;
+Wang et al., 2025a; Labs, 2025; Zhang et al., 2025a; Singh et al., 2025) apply RL algorithms such as
+GRPO and PPO to train tool-using LLM agents, including calculators, code interpreters, and search
+engines, thus enabling reasoning with external tools. However, these methods generally collapse
+outcome- and turn-level signals into a single trajectory-level reward, limiting fine-grained credit
+assignment. The most closely related work is StepSearch (Wang et al., 2025c), which incorporates
+PPO with turn-level rewards for multi-turn search. However, its approach primarily relies on data
+augmentation and requires prompt modifications during preprocessing. In contrast, our method avoids
+such preprocessing and prompt engineering, providing a cleaner and more general framework for
+turn-level reward design. Furthermore, our framework is orthogonal to existing search-agent methods
+(Chen et al., 2025b; Jin et al., 2025b;a; Wang et al., 2025c) and is broadly applicable to multi-turn
+LLM agents beyond search tasks.
+15
+

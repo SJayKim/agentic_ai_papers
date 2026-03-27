@@ -1,0 +1,739 @@
+=== PAGE 1 ===
+Published as a conference paper at ICLR 2025
+FACILITATING MULTI -TURN FUNCTION CALLING FOR
+LLM S VIA COMPOSITIONAL INSTRUCTION TUNING
+Mingyang Chen1∗, Haoze Sun1∗, Tianpeng Li1∗, Fan Yang1, Hao Liang2, Keer Lu2,
+Bin Cui2, Wentao Zhang2†, Zenan Zhou1†, Weipeng Chen1
+1Baichuan Inc.,2Peking University
+{chenmingyang, sunhaoze, litianpeng, zhouzenan }@baichuan-inc.com
+wentao.zhang@pku.edu.cn
+ABSTRACT
+Large Language Models (LLMs) have exhibited significant potential in perform-
+ing diverse tasks, including the ability to call functions or use external tools to
+enhance their performance. While current research on function calling by LLMs
+primarily focuses on single-turn interactions, this paper addresses the overlooked
+necessity for LLMs to engage in multi-turn function calling—critical for handling
+compositional, real-world queries that require planning with functions but not only
+use functions. To facilitate this, we introduce an approach, BUTTON , which gen-
+erates synthetic compositional instruction tuning data via bottom-up instruction
+construction and top-down trajectory generation. In the bottom-up phase, we gen-
+erate simple atomic tasks based on real-world scenarios and build compositional
+tasks using heuristic strategies based on atomic tasks. Corresponding function def-
+initions are then synthesized for these compositional tasks. The top-down phase
+features a multi-agent environment where interactions among simulated humans,
+assistants, and tools are utilized to gather multi-turn function calling trajectories.
+This approach ensures task compositionality and allows for effective function and
+trajectory generation by examining atomic tasks within compositional tasks. We
+produce a dataset BUTTONInstruct comprising 8k data points and demonstrate
+its effectiveness through extensive experiments across various LLMs1.
+1 I NTRODUCTION
+Large Language Models (LLMs) have demonstrated remarkable capabilities across various
+tasks (OpenAI, 2023; Dubey et al., 2024). Beyond generating human-like text, recent studies have
+shown that LLMs can also call functions (i.e., use external tools) to perform specific actions or op-
+erations (Qin et al., 2023; Patil et al., 2023; Mu et al., 2024; Liu et al., 2024b). This ability enhances
+LLM performance, such as retrieving information from external knowledge bases to reduce hallu-
+cinations (Schick et al., 2023; Gao et al., 2023; Zhao et al., 2024; Wang et al., 2024c). Moreover,
+LLM-based agents can interact with numerous external APIs through function calls, providing stan-
+dardized interfaces that increase their utility and versatility in real-world applications (Chen & Li,
+2024; Wang et al., 2024a; Zeng et al., 2024).
+Existing research on aligning LLMs for function calling predominantly focuses on a single-turn
+approach, primarily constructing instruction data to teach and evaluate them on selecting appropriate
+functions and providing the correct arguments (Patil et al., 2023; Liu et al., 2024b). While it is
+important for LLMs to learn how to understand and use functions , these studies often overlook the
+crucial ability to plan with functions . Many real-world user queries are complex and cannot be
+resolved in a single step. For example, “List the flight schedule from London to Edinburgh” may be
+a single-step task since simply retrieving exact information can complete it, while “Book me the first
+flight from London to Edinburgh” requires calling multiple functions sequentially: first retrieving
+the flight schedule and finding the first one, then booking a ticket for that flight. Real-world complex
+∗Equal Contribution
+†Corresponding Author
+1The data is available at https://github.com/PKU-Baichuan-MLSystemLab/BUTTON
+1arXiv:2410.12952v2  [cs.CL]  3 Mar 2025
+
+=== PAGE 2 ===
+Published as a conference paper at ICLR 2025
+tasks are inherently compositional (Press et al., 2023; Hayati et al., 2024; Hu et al., 2024), requiring
+LLMs not only to invoke functions but also to decompose these tasks into manageable steps and plan
+the sequence of function calls. Therefore, in this study, we focus on constructing an instruction-
+tuning (Ouyang et al., 2022; Longpre et al., 2023; Lin et al., 2024) dataset where the inputs are
+complex compositional queries and the outputs are their decompositions into multi-turn function
+calls, addressing real-world scenarios of function calling for LLMs via Compositional Instruction
+Tuning .
+However, acquiring such data from existing sources is unrealistic. First, selecting and identifying
+instructions in a compositional manner is challenging (Hayati et al., 2024; Hu et al., 2024), and
+finding instructions paired with their corresponding functions is even more difficult (Shen et al.,
+2023; Schick et al., 2023; Patil et al., 2023). Additionally, we need a “solution” in the form of labeled
+multi-turn function calls that align with the compositional instructions based on the given functions.
+All these factors make it difficult to obtain such data without extensive manual annotation. Recently,
+synthetic data has emerged as a promising solution to the lack of manually curated data, with data
+being created through advanced generative LLMs using tailored processes and simulations (Liu
+et al., 2024a). Compared to synthetic data in general domains (Xu et al., 2023; Lou et al., 2023;
+Xu et al., 2024a), data in our scenarios must consider the following challenges: 1) How to ensure
+the compositionality of generated instructions so that they are complex, reasonable and solvable; 2)
+How to ensure the compatibility of an instruction with its functions; 3) How to simulate high-quality
+multi-turn function calling trajectories without human supervision.
+To address these challenges, we propose BUTTON , a “Bottom- UpThenTop-dOwN” pipeline for
+generating synthetic compositional instruction tuning data to enhance the multi-turn function call-
+ing abilities of LLMs. In the “ Bottom-Up ” phase, we begin by generating atomic tasks from general
+real-world scenarios. These tasks are designed to be simple, clear, and executable in a single step
+without the need for planning. Compositional tasks are constructed based on atomic tasks using two
+heuristic strategies: Sequential Composition and Parallel-then-Sequential Composition. Although
+straightforward, these two composition strategies, combined with the entire pipeline, can generate
+diverse compositional instructions. Then, corresponding functions are generated based on com-
+positional tasks with the conscious of their atomic tasks. During “ Top-Down ” phase, we set up a
+multi-agent environment where the human, assistant and tools are simulated by generative LLMs
+steered by specifically curated system prompts, where tool agents are simulated according to pre-
+vious generated function definitions. The trajectory of multi-turn function calling, initiated by a
+user and involving interactions between an assistant and tools, is collected based on this simulated
+environment. Finally, the collected trajectories, along with their corresponding function definitions,
+are filled into a predefined prompt template to serve as instruction tuning data for LLMs. The
+bottom-up procedure, rather than generating complex tasks directly, ensures compositionality of
+instructions (challenge 1). Generating functions with an awareness of the atomic tasks within com-
+positional tasks makes these functions more general and suitable for fine-grained sub-tasks, rather
+than being monolithic (challenge 2). Using multi-agents to simulate the trajectories enhances their
+quality, and examining the sub-tasks for compositional tasks also guides the agents toward effective
+decomposition and planning with functions (challenge 3). Based on BUTTON , we collected a com-
+positional instruction tu
+
+=== PAGE 3 ===
+Published as a conference paper at ICLR 2025
+Who is the author of the book “The Great Gatsby”?When was the author of this book born?When was the author of “The Great Gatsby” born?{    "name": “get_author”,    "description": ... ...,    "parameters": ... ...,    "required": ... ...,    "responses": ... ...,}{    "name": “search_birthday”,    "description": ... ...,    "parameters": ... ...,    "required": ... ...,    "responses": ... ...,}
+Atomic TaskCompositionalTaskFunctionsMulti-AgentSetup
+TrajectoryGenerationAssistant AgentTool AgentUserAgentCall FunctionFunction ResultsAnswerQueryUserAssistantToolHi, I want to know when was the author of “The Great Gatsby” was born.First, I need to know who is the author of this book. <call>get_author(The Great Gatsby) </call>AssistantThis book is written by Scott Fitzgerald. Then I need to find out when he was born. <call>search_birthday(Scott Fitzgerald)</call>Scott Fitzgerald
+24 Sept. 1896ToolAssistantThe author of “The Great Gatsby” was born on September 24, 1896. <final>September 24, 1896</final>Generate a subsequent task Bottom-Up Instruction ConstructionTop-Down Trajectory Generation
+Figure 1: Overview of our bottom-up then top-down pipeline.
+comprehensive compositional tasks with their corresponding functions, starting from the foundation
+of simple atomic tasks, which can be shown in the left part of Figure 1.
+During the top-down trajectory generation phase, we collect multi-turn function calling interaction
+trajectories for compositional tasks and functions that were constructed earlier. This step simulates
+the usage process of functions in each task, providing supervision data that guides the LLMs in
+learning how to call functions in multi-turn manners. The term “top-down” indicates that from a
+compositional task with corresponding functions, we simulate and gather the interaction trajectories
+that demonstrate the breakdown of complex tasks and the invocation of corresponding functions in
+a multi-turn manner, as depicted in the right part of Figure 1. In essence, the bottom-up instruction
+construction is a process of composition, while the top-down trajectory generation is a process of
+decomposition.
+Definitions We begin by collecting real-world scenarios C={ci}and transforming them into
+atomic tasks A={ai}. For compositional tasks requiring multiple function calls, we generate
+related atomic tasks from a defined atomic task ai, forming a sub-task set Si. This set is used to
+compose a compositional task ci, represented as C={(ci,Si)}. Functions are then constructed
+based on these tasks, forming instruction tuples I={(ci,Fi,Si)}, where Fiare a set of functions
+for task ci. These functions are defined by their descriptions, allowing us to simulate interactions
+without actual implementations. The task breakdown Siis retained to enhance multi-agent inter-
+action for trajectory generation, without being disclosed in the final data. After obtaining I, we
+generate user, assistant, and tool interactions, resulting in data D={(Fi, ti)}, where tiis the col-
+lected trajectory. These function definitions and trajectories are integrated into a prompt template
+for instruction-tuning data.
+2.1 B OTTOM -UPINSTRUCTION CONSTRUCTION
+In this section, we detail the procedures for constructing instructions using a bottom-up approach.
+The process begins with simple scenarios, from which we generate tasks at the atomic level. These
+atom tasks are then evolved to create more complex, composite tasks along with their corresponding
+functions.
+Scenario Collection To ensure our generated tasks are grounded in everyday experiences and
+not meaningless, we first extract a series of real-world scenarios from existing datasets that focus
+on function calling for LLMs (glaiveai, 2023; Qin et al., 2023). Such scenarios can be a concise
+overview, like “book a flight” or “ordering meals”. We then conduct a deduplication operation on
+the collected scenarios. This involves using sentence embeddings to calculate scenario
+
+=== PAGE 4 ===
+Published as a conference paper at ICLR 2025
+Table 1: Examples of compositional task construction.
+Sequential Composition
+Initial Atomic Task: Who is author of the book “The Great Gatsby”?
+Subsequent Task: When was the author of this book born?
+Composition Task: When was the author of the book “The Great Gatsby” born?
+Parallel-then-Sequential Composition
+Initial Atomic Task: Give me the flight schedule from London to Edinburgh today.
+Parallel Task: Find the every hour weather forecast in Edinburgh today.
+Subsequent Task: What is the weather condition when the first flight arrives?
+Composition Task: I am in London, and I want to know the weather condition when the
+first flight arrives in Edinburgh today.
+their actions or subjects. Details of seed data for scenario extraction, prompts for extracting and
+expanding scenarios can be found in Appendix A.1.
+Atomic Task Construction Based on the collected scenarios, we construct atomic tasks, each
+of which can be considered as a straightforward problem, query or instruction. We anticipate that
+these atomic tasks should be simple, clear, and don’t need complex planning for human to solve.
+Such atomic tasks are able to serve as atomic units for constructing complex compositional tasks.
+In designing the prompts for transforming collected scenarios into atomic tasks, we focus on the
+following three aspects:
+•Reasonable : The atomic task should be realistic, reasonable, and representative of tasks fre-
+quently encountered in the real world.
+•Self-contained : The atomic task should be solvable based on the information it provides. It must
+contain sufficient details and information necessary for calling functions.
+•Function-agnostic : During the articulation of the atomic task, we do not consider the specific
+functions that can be employed to solve this task. The task should not mention any specific
+function or solution.
+Note that despite having numerous descriptions of our anticipated atomic tasks, we do not pro-
+vide a strict definition of atomic tasks, nor of the following compositional tasks. We use specific
+prompts and the powerful instruction-following capabilities of cutting-edge LLMs to ensure that the
+generated data aligns with our general expectations. The carefully crafted prompt can be found in
+Appendix A.2.
+Compositional Task Construction To enhance the capability of multi-turn function calling for
+LLMs, it is essential to construct compositional tasks that require multiple interactions to be re-
+solved. Starting with the atomic tasks created in the previous step, we develop compositional tasks
+using two heuristic strategies: “Sequential Composition” and “Parallel-then-Sequential Composi-
+tion”. The principle behind sequential composition is to start with an atomic task and generate a
+subsequent task that needs to be solved based on the result of the first, combining them into a new
+compositional task. For parallel-then-sequential composition, we begin by generating a task that
+can be solved in parallel with the atomic task. Then, a subsequent task is generated based on the
+results of the first two tasks, and they are all composed together. Examples can be found in Table
+1. Prompts for implementing these two strategies can be found in Appendix A.3. Although these
+two heuristic strategies seem simple, they do not compromise the diversity of the dataset collected
+using our method. For instance, parallel function calls are not limited to the first turn; multiple
+functions may be generated for a single atomic task in subsequent function generations. Details on
+the data diversity can be found in Sec. 2.3. To ensure the quality of the generated compositional
+tasks, we filter out any that are inconsistent with their original atomic tasks. The filtering criterion
+is as follows: since the quality of atomic tasks is more controllable, we filter compositional tasks
+by checking whether each one can be completed by its atomic sub-tasks. This allows us to filter out
+low-quality compositional 
+
+=== PAGE 5 ===
+Published as a conference paper at ICLR 2025
+Function Generation After constructing the compositional tasks, we generate functions that are
+likely to be called in these tasks. This differs from most previous works, which first collect func-
+tions and then generate tasks based on these collected functions (Patil et al., 2023; Liu et al., 2024b).
+Our task-generation procedure is function-agnostic, which we believe allows for the construction of
+more realistic tasks, rather than those based solely on specific functions. Using the aforementioned
+methods, we have constructed a series of compositional tasks for which we know the corresponding
+sub-tasks (i.e., the breakdown of the complex compositional task). These task breakdowns can be
+used as hints for function generation. This represents the advantage of our bottom-up instruction
+construction method, where we can examine the decomposition of the compositional task and gen-
+erate corresponding functions. During the generation of function definitions, we mainly focus on
+the following points:
+•Descriptive : The name and description of the function should be illustrative to aid in distinguish-
+ing different functions. The input arguments and output returns should also be clear since we not
+only use these definitions to but also use them to simulate corresponding functions.
+•General : The function should possess a level of generality that enables its use for future tasks as
+well. In the real world, a function is more likely to be constructed for a frequently encountered
+atomic task rather than a highly specific one. For instance, a function getweather(city) is
+more likely to be utilized than getweather inlondon() .
+•Consistency : As we need to generate multi-turn function calling interaction trajectories in later
+steps, the input arguments and output results of these functions should maintain consistency. For
+example, if two functions will be called sequentially, the output of the first should either align
+with or constitute a part of the input for the second function, regardless of the varying parameter
+terminologies.
+The generated function definitions include five main fields: name, description, parameters, re-
+sponses, and required. The name indicates the function name, while description details its usage
+and capabilities. Parameters and responses cover the input and output, including the type and de-
+scription of each argument. The required field lists necessary input parameters. We allow flexibility
+in mapping sub-tasks to functions; a sub-task may require zero, one, or multiple functions. If a sub-
+task involves logic, comparison, set operations, or calculations manageable by language models, no
+function is needed. For more details on the format and prompts, see Appendix A.4.
+2.2 T OP-DOWN TRAJECTORY GENERATION
+After obtaining the compositional tasks and their corresponding functions through the bottom-up
+instruction construction method, we create multi-turn function calling interaction trajectories. These
+trajectories simulate how LLMs use these functions and serve as supervision data, teaching LLMs
+to perform multi-turn function calls.
+Multi-agent Setup How to effectively simulate the multi-turn function calling interaction pro-
+cess is the key to collecting high-quality interaction trajectories. In our framework, we set up a
+multi-agent environment in which each agent simulates a specific role during the multi-turn func-
+tion calling interactions, as shown in the right part of Figure 1. We design three types of agents
+to simulate the interaction process: the user, the assistant, and the tool. The user agent initiates
+the interaction and provides the query to the assistant agent based on a specific compositional task.
+The assistant agent decomposes the task into sub-tasks and calls the corresponding functions to
+address these sub-tasks. The tool agent simulates the specific implementations of a function. It’s
+important to note that a tool agent simulates a specific function ba
+
+=== PAGE 6 ===
+Published as a conference paper at ICLR 2025
+3 2 5 4 6 7
+#Turn in One Trajectory050010001500200025003000Frequency(a) Frequency of #Turn
+4 2 3 1 5 6
+#FC in One Trajectory05001000150020002500Frequency(b) Frequency of #FC
+1 2 3 4 5 6
+Turn of Assistant1.001.051.101.151.201.251.30Average #FC
+(c) Average #FC per Turn
+Figure 2: Statistic investigation on our collected data BUTTONInstruct .
+functions to call, and determines the function parameters. The assistant’s response includes: first,
+observations and thoughts in free text, similar to the ReAct (Yao et al., 2023) format; second, a
+specified function call. This function call is parsed as an action to invoke the corresponding tool
+agent and obtain simulated function call results. Finally, when the assistant has the final answer to
+the user’s question, it invokes the function that provides the final response to the user.
+2.3 D ATASET COLLECTION VIA BUTTON
+BUTTONInstruct Based on the aforementioned pipeline, we leverage the cutting-edge LLM,
+GPT-4o2, to generate data at each step of bottom-up instruction construction, progressing from sim-
+ple scenarios to compositional tasks and functions, and conducting trajectory generation as agents.
+We ultimately collect 8,000 multi-turn function calling data points, BUTTONInstruct , each con-
+taining several entries, including content with roles such as ‘system’, ‘user’, ‘assistant’, and ‘tool’.
+The available functions for each user question are listed in corresponding system prompt. More
+examples of finally generated data can be found in Appendix B.1.
+Parallel Function Calling Furthermore, in our collected data, we consider scenarios involving
+parallel function calling. If multiple functions can be called independently, they can be executed in
+parallel. The effectiveness of this parallel calling is discussed in Section 3.3. To control the behavior
+of conducting parallel calling, we use different system prompts to guide whether parallel calling
+should be executed. Details on how to construct data for aligning LLMs with the corresponding
+calling behaviors can be found in Appendix B.2.
+Data Diversity To demonstrate the diversity of the collected BUTTONInstruct , we analyzed
+the distribution of the total number of assistant turns (#Turn), as well as the number of function
+calls (#FC) throughout the entire trajectory and at each step. Figure 2 presents key statistics of our
+dataset. In Figure 2(a), the frequency distribution of the total number of turns shows that most data
+points involve three or more turns of assistant responses. We plotted the distribution of the total
+number of function calls for each trajectory in Figure 2(b) and found that most data points contain
+more than two function calls. By plotting the average number of function calls per turn in Figure
+2(c), we observed that every turn averages more than one function call. These findings indicate the
+diversity in our collected data and demonstrate that, even with simple heuristic strategies to generate
+compositional tasks from atomic tasks, the final collected data are diverse across different aspects.
+Furthermore, more details about the distribution of the functions in the BUTTONInstruct are
+provided in Appendix B.3.
+3 E XPERIMENTS
+To evaluate the effectiveness of our multi-turn function calling data BUTTONInstruct collected
+via our proposed BUTTON pipeline, we train two series of open-source LLMs of different sizes:
+Llama3-8B, Llama3-70B (Dubey et al., 2024), Qwen2-7B, and Qwen2-72B (Yang et al., 2024a).
+We denote models that have been instruction-tuned using BUTTONInstruct with the suffix ‘-
+BUTTON’. In our experiments, we primarily focus on the following questions: 1) Q1: Can our
+2gpt-4o-2024-05-13 from https://platform.openai.com/docs/models/gpt-4o
+6
+
+=== PAGE 7 ===
+Published as a conference paper at ICLR 2025
+proposed BUTTON approach enhance multi-turn function calling abilities compared to existing
+instruction-tuned models designed for general purposes? 2) Q2: Are the bottom-up and top-down
+procedures effective and necessary? 3) Q3: What is the influence of data size and parallel calling on
+model performance?
+3.1 E XPERIMENTS SETUP
+Benchmarks. We evaluate performance using two benchmarks, GTA and Tool-Query.
+GTA (Wang et al., 2024b), a benchmark for G eneral T ool A gents, consists of 229 human-crafted
+queries designed to reflect real-world tasks. The queries span a total of 14 real-world deployed tools
+(i.e., functions) across the perception, operation, logic, and creation categories. Each query is ac-
+companied by one or two authentic image files and the LLM is tasked with solving the queries based
+on the multimodal context and user queries. The tasks in this benchmark require multiple steps to
+solve and necessitate LLMs to reason about suitable tools and plan the solution steps. More details
+and examples about this benchmark can be found in Appendix B of Wang et al. (2024b). Tool-Query
+(Ma et al., 2024) is a tool-using environment in the domains of weather, movies, and academia. It
+consists of 60 tasks requiring complex multi-round interactions with corresponding tools. There are
+18, 14, and 7 tools (i.e., functions) in the weather, movie, and academia environments respectively,
+which are developed by corresponding real-world APIs and databases. This benchmark not only
+contains annotated final answers but also intermediate subgoals, which makes it easier to evaluate
+the process of function calling during multi-turn interactions. Tasks are also labeled as hard or easy
+based on the number of subgoals, with a count of 4 in this benchmark. More details and examples
+of Tool-Query can be found in Appendix F.4.1 of Ma et al. (2024).
+Evaluation Metrics. For each benchmark, we follow their original evaluation strategies and met-
+rics. For GTA , there are two modes and nine metrics. In the Step-by-Step Mode, the model is
+provided with steps 1 to nfrom a set of human-labeled function calling chains, and it is tasked with
+predicting the function call in the n+ 1step. This demonstrates performance in a fine-grained way.
+In the End-to-End Mode, the model initiates its function calling process based solely on the user’s
+question and proceeds until it arrives at the answer. This reflects the performance of the model in
+real-world applications. Four metrics are used during the step-by-step mode evaluation: Instruction
+Accuracy ( Inst.) is the accuracy of executing without errors, which indicates that the model knows
+how to follow the instruction to conduct a function call; Tool-selection Accuracy ( Tool. ) and Argu-
+ment Accuracy ( Arg.) denote the accuracy of selecting tools and predicting arguments respectively;
+Summary Accuracy (Summ.) denotes the model’s ability to summarize and derive the answer based
+on all previous steps. During end-to-end mode, we show the F1 scores of tool selection on percep-
+tion ( P .), operation ( O.), logic ( L.), and creativity ( C.) tasks, and the final answer accuracy ( Ans.).
+The final answer accuracy is only calculated solely on queries with pure text answers, excluding
+image generation queries. For Tool-Query , Grounding Accuracy ( G.A.) is used to denote the accu-
+racy of generating valid, executable function calls. Process Rate is used to evaluate the completion
+proportion of subgoals during the handling of complex user queries and the subgoals are labeled in
+this dataset. Furthermore, Success Rate is the accuracy of the final answer. More details of metric
+calculation can be found in Appendix C.1.
+Baselines. We showcase the performance on cutting-edge API-based LLMs, including GPT-4o,
+GPT-4-Turbo, and GPT-3.5-Turbo. Furthermore, since our collected data BUTTONInstruct is
+adapted for tuning the Llama3 and Qwen2 base models, we also use their original instruction
+
+=== PAGE 8 ===
+Published as a conference paper at ICLR 2025
+swer accuracy of Llama3-8B from 1.4% to 30.5%. The low performance of Llama3-8B-Instruct on
+this metric is consistent with the findings in the original benchmark paper. Notably, the results of
+Llama3-80B-BUTTON and Qwen2-72B-BUTTON are comparable to GPT-4o, demonstrating the
+effectiveness of the data collected through our proposed data collection pipeline.
+Table 2: Main results(%) on GTA. Accuracy of Inst.,Tool. ,Arg., and Summ. . F1 score of P .,O.,
+L., and C..Ans. is the final answer accuracy. Bold numbers highlight better performance between
+the original instruction model and our tuned versions, while underlined numbers denote the best
+performance across all models.
+ModelStep-by-Step Mode End-to-End Mode
+Inst. Tool. Arg. Summ. P . O. L. C. Ans.
+GPT-4o 90.0 70.3 38.6 72.9 76.4 88.2 84.8 90.0 46.0
+GPT-4-Turbo 84.6 60.6 34.3 73.5 51.8 87.7 61.8 86.1 30.6
+GPT-3.5-Turbo 64.8 33.1 22.4 66.2 60.2 48.4 69.0 95.8 18.3
+Llama3-8B-Instruct 70.9 23.6 2.2 42.9 23.5 18.5 23.6 24.6 1.4
+Llama3-8B-BUTTON 90.7 63.4 32.3 65.6 84.2 76.5 73.5 88.9 30.5
+Qwen2-7B-Instruct 59.1 28.5 3.9 54.8 39.1 65.4 56.1 72.7 13.1
+Qwen2-7B-BUTTON 89.4 62.5 30.7 63.0 80.3 83.5 82.6 89.2 27.3
+Llama3-70B-Instruct 75.2 46.7 22.2 68.4 67.9 83.8 71.0 95.9 40.1
+Llama3-70B-BUTTON 96.4 73.6 38.1 70.5 84.9 96.2 89.5 96.1 43.5
+Qwen2-72B-Instruct 73.4 49.2 17.9 73.9 46.5 67.5 46.7 64.3 27.3
+Qwen2-72B-BUTTON 91.9 69.3 38.1 71.5 85.0 87.4 86.7 91.4 45.7
+For Tool-Query, LLMs tuned with our data BUTTONInstruct demonstrate improved perfor-
+mance across various metrics. We observe that even though the grounding accuracy for both the
+original instruction models and those tuned with our dataset is quite high (near or above 95%), our
+models achieve better process and success rates. This suggests that the challenge lies not only in
+using functions correctly but also in effectively planning with them. Overall, from the main results
+from GTA and Tool-Query, we can conclude that BUTTONInstruct can align LLMs with better
+ability on multi-turn function calling, and BUTTON is effective on such tasks.
+Table 3: Main results(%) on Tool-Query. G.A. indicate grounding accuracy. Process Rate and Suc-
+cess Rate are presented for Easy ,Hard andALL test samples. Bold numbers highlight better per-
+formance between the original instruction model and our tuned versions, while underlined numbers
+denote the best performance across all models.
+Model G.A.Process Rate Success Rate
+Easy Hard All Easy Hard All
+GPT-4o 92.3 83.2 70.6 76.5 50.0 31.3 40.0
+GPT-4-Turbo 95.4 80.7 78.9 79.8 50.0 34.4 41.7
+GPT-3.5-Turbo 93.6 54.9 43.2 48.7 3.6 9.4 6.7
+Llama3-8B-Instruct 96.7 55.1 42.0 48.1 10.7 0.0 5.0
+Llama3-8B-BUTTON 97.4 72.9 54.8 63.2 50.0 21.9 35.0
+Qwen2-7B-Instruct 97.0 66.7 46.8 56.0 32.1 15.6 23.3
+Qwen2-7B-BUTTON 95.5 69.5 59.0 63.9 42.9 15.6 28.3
+Llama3-70B-Instruct 95.6 80.8 61.5 70.5 42.9 21.9 31.7
+Llama3-70B-BUTTON 94.0 85.2 77.2 80.9 71.4 46.9 58.3
+Qwen2-72B-Instruct 95.8 83.7 72.2 77.6 50.0 34.4 41.7
+Qwen2-72B-BUTTON 98.4 85.5 77.0 81.0 71.4 46.9 58.3
+8
+
+=== PAGE 9 ===
+Published as a conference paper at ICLR 2025
+3.3 F URTHER ANALYSIS
+Success Rate (Llama3-8B) Process Rate (Llama3-8B) Success Rate (Llama3-70B) Process Rate (Llama3-70B)
+Metrics on T ool-Query20304050607080Performance (%)Ablation Settings
+w/o Buttom-Up
+w/o T op-Down
+w/ BUTTON
+Figure 3: Performance comparison in ablation set-
+tings for metrics Tool-Query.Ablation Study To evaluate the effectiveness
+of the “bottom-up instruction construction” and
+“top-down trajectory generation” procedures in
+BUTTON respectively, we conduct an ablation
+study by simplifying these two procedures into
+single direct generation steps using one prompt
+with generative LLMs, instead of our curated
+prompts and procedures. Specifically, to sim-
+plify the bottom-up procedure, we instruct gen-
+erative LLMs to directly generate a composi-
+tional complex task based on a given scenario.
+As a result, no sub-tasks are revealed for the
+subsequent function generation and trajectory
+generation steps. To reduce the top-down pro-
+cedure, we do not set up the multi-agent envi-
+ronment. Instead, we use a monolithic prompt
+that instructs the LLMs to act as the user, as-
+sistant, and tools, generating trajectories based
+on previously constructed tasks with functions.
+Refer to Appendix C.3 for details of prompts.
+The results of the ablation study on Tool-Query
+are shown in Figure 3. We perform a compari-
+son using the aforementioned two ablation set-
+tings (i.e., w/o Buttom-Up and w/o Top-Down),
+and the default setting (i.e., w/ BUTTON) on
+Llama3-8B and Llama3-70B. By calculating the relative performance degradation, we found that the
+smaller model was influenced more, with average relative degradations on process rate and success
+rate of 16.1%, and that decline for Llama3-70B is 6.4%. The average relative success rate decline
+across both model sizes and ablation settings is 15.0%, while the process rate decline is 7.5%. This
+suggests that models tuned without BUTTON can partially execute correct functions contributing to
+the process rate, but their limited planning ability prevents them from effectively achieving the final
+answer, leading to a greater decline in the success rate.
+Table 4: Results(%) on Tool-Query with Llama3-
+8B tuned with varying data sizes.
+#DataProcess Rate Success Rate
+Easy Hard All Easy Hard All
+2,000 67.5 46.9 56.5 35.7 9.4 21.7
+4,000 73.1 45.8 58.5 50.0 12.5 30.0
+6,000 74.6 51.5 62.3 46.4 15.6 30.0
+8,000 72.9 54.8 63.2 50.0 21.9 35.0
+AGR 13.5 32.8 18.4 2.7 5.5 3.8Data Scaling In this section, we investigate
+the influence of data size on compositional in-
+struction tuning data constructed by BUTTON .
+We vary the data size from 2,000 to 8,000 and
+tune Llama3-8B with the corresponding data.
+As shown in Table 4, we present the results on
+Tool-Query with varying data sizes. By cal-
+culating the average growth rate (AGR), we
+found that as the data size increases, the process
+rate and success rate increase accordingly, with
+AGRs of 13.5% and 2.7%, respectively. Fur-
+thermore, we found that the improvement on
+hard samples is greater than on easy samples,
+indicating that our constructed data can effectively enhance performance on multi-turn function
+calling as the data size increases, particularly for tasks that require more turns of function calling.
+Efficiency on Parallel Calling As described in Section 2.3, we have mentioned that our tuned
+model can conduct parallel function calling when multiple functions can be called independently
+within a single turn. This capability can significantly enhance performance when operating un-
+der restricted step conditions. By turning off the parallel calling ability by changing the system
+prompt, we found that performance on different metrics is affected. For example, the success rate
+of Llama3-8B-BUTTON on Tool-Query decreases from 35.0% to 28.3%, and the process rate de-
+creases from 63.2% to 58.7%. This indicates the effectiveness of parallel calling and our proposed
+BUTTON method. More cases about comparisons of pa
+
+=== PAGE 10 ===
+Published as a conference paper at ICLR 2025
+4 R ELATED WORK
+Synthetic Data Data has been a critical driving force behind the success of large language models
+(LLMs). Recent advancements in these models owe much to the availability of large-scale, diverse,
+and high-quality datasets (Dubey et al., 2024). However, obtaining such datasets is both resource-
+intensive and expensive, posing significant challenges to researchers and practitioners (Xu et al.,
+2023; 2024a; Luo et al., 2023; Yang et al., 2024b). To address these limitations, generating syn-
+thetic data has emerged as a promising alternative for creating scalable and high-quality datasets.
+Researchers have explored various techniques to improve the quality, diversity, and utility of syn-
+thetic data across different domains (Liu et al., 2024a; Wang et al., 2024d; Wei et al., 2023; Lou et al.,
+2023; Yang et al., 2023; 2024c). Recent studies have also focused on synthetic data for complex and
+compositional instructions. Chain-of-Instruct (Hayati et al., 2024) proposed a pipeline for building
+instructions composed of subtasks, allowing LLMs to solve compositional tasks step-by-step in an
+explainable manner. Sequential Instruction Tuning (Hu et al., 2024) introduced a data construction
+pipeline for automatic instruction augmentation, where intermediate tasks are seeded from a single-
+task instruction. However, existing works do not focus on constructing compositional instructions
+for multi-turn function calling tasks, where identifying, invoking, and planning with functions are
+all necessary.
+Function Calling The ability to call functions or use tools effectively has become a significant
+aspect of instruction-tuning large language models (LLMs) (Wang et al., 2024a; Zeng et al., 2024;
+Shen et al., 2023; Xu et al., 2024b). This functionality is crucial as it enhances the models’ ability to
+tackle complex tasks by enabling modular, structured, and interactive workflows (Qiao et al., 2024;
+Shen et al., 2024). Such capabilities expand the potential of LLMs beyond language generation, em-
+powering them to dynamically address practical challenges that require integrating computational
+or domain-specific tools. Recent efforts have focused on creating and curating datasets to enhance
+LLMs’ function-calling competencies. Patil et al. (2023) collected APIs from repositories such as
+TorchHub, TensorHub, and HuggingFace, subsequently generating synthetic user prompts for each
+API using the Self-Instruct framework (Wang et al., 2023). Similarly, Qin et al. (2023) expanded
+upon this work by incorporating additional API data from RapidAPI. They generated diverse in-
+struction datasets involving a variety of function-calling contexts, covering numerous interaction
+scenarios. However, these approaches face significant challenges: many API descriptions are un-
+clear, and a considerable number of API calls fail due to availability issues or runtime errors (Guo
+et al., 2024), complicating the generation of accurate solution path annotations using LLMs. To
+address some of these challenges, Liu et al. (2024b) proposed APIGen, a multi-stage pipeline for
+generating diverse datasets tailored to function-calling tasks. This method employs a rigorous verifi-
+cation process to improve data quality but is limited in scope, focusing predominantly on single-turn
+function-calling scenarios.
+5 C ONCLUSION
+In this work, we address the importance of multi-turn function calling in the field of LLMs by fo-
+cusing on their ability to plan with functions, rather than merely use them. We introduce BUTTON ,
+a novel “bottom-up then top-down” pipeline for generating synthetic compositional instruction tun-
+ing data. This approach effectively tackles the challenges of ensuring compositionality of tasks,
+generating compatible function, and high-quality multi-turn function calling trajectories without hu-
+man supervision via the curated prompts and procedures during the pipeline. Our methodology,
+which includes the gener
+
+=== PAGE 11 ===
+Published as a conference paper at ICLR 2025
+REFERENCES
+Wei Chen and Zhiyuan Li. Octopus v4: Graph of language models. CoRR , abs/2404.19296, 2024.
+Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Abhishek Kadian, Ahmad Al-Dahle, Aiesha
+Letman, Akhil Mathur, Alan Schelten, Amy Yang, Angela Fan, et al. The llama 3 herd of models.
+arXiv preprint arXiv:2407.21783 , 2024.
+Yunfan Gao, Yun Xiong, Xinyu Gao, Kangxiang Jia, Jinliu Pan, Yuxi Bi, Yi Dai, Jiawei Sun, Qianyu
+Guo, Meng Wang, and Haofen Wang. Retrieval-augmented generation for large language models:
+A survey. CoRR , abs/2312.10997, 2023.
+glaiveai. glaive-function-calling-v2. https://huggingface.co/datasets/glaiveai/
+glaive-function-calling-v2 , 2023.
+Zhicheng Guo, Sijie Cheng, Hao Wang, Shihao Liang, Yujia Qin, Peng Li, Zhiyuan Liu, Maosong
+Sun, and Yang Liu. Stabletoolbench: Towards stable large-scale benchmarking on tool learning
+of large language models. In ACL (Findings) , pp. 11143–11156. Association for Computational
+Linguistics, 2024.
+Shirley Anugrah Hayati, Taehee Jung, Tristan Bodding-Long, Sudipta Kar, Abhinav Sethy, Joo-
+Kyung Kim, and Dongyeop Kang. Chain-of-instructions: Compositional instruction tuning on
+large language models. CoRR , abs/2402.11532, 2024.
+Hanxu Hu, Pinzhen Chen, and Edoardo M. Ponti. Fine-tuning large language models with sequential
+instructions. CoRR , abs/2403.07794, 2024.
+Mingan Lin, Fan Yang, Yanjun Shen, Haoze Sun, Tianpeng Li, Tao Zhang, Chenzheng Zhu, Tao
+Zhang, Miao Zheng, Xu Li, Yijie Zhou, Mingyang Chen, Yanzhao Qin, Youquan Li, Hao Liang,
+Fei Li, Yadong Li, Mang Wang, Guosheng Dong, Kun Fang, Jianhua Xu, Bin Cui, Wentao Zhang,
+Zenan Zhou, and Weipeng Chen. Baichuan alignment technical report. CoRR , abs/2410.14940,
+2024.
+Ruibo Liu, Jerry Wei, Fangyu Liu, Chenglei Si, Yanzhe Zhang, Jinmeng Rao, Steven Zheng, Daiyi
+Peng, Diyi Yang, Denny Zhou, and Andrew M. Dai. Best practices and lessons learned on syn-
+thetic data for language models. CoRR , abs/2404.07503, 2024a.
+Zuxin Liu, Thai Hoang, Jianguo Zhang, Ming Zhu, Tian Lan, Shirley Kokane, Juntao Tan, Weiran
+Yao, Zhiwei Liu, Yihao Feng, et al. Apigen: Automated pipeline for generating verifiable and
+diverse function-calling datasets. arXiv preprint arXiv:2406.18518 , 2024b.
+Shayne Longpre, Le Hou, Tu Vu, Albert Webson, Hyung Won Chung, Yi Tay, Denny Zhou, Quoc V
+Le, Barret Zoph, Jason Wei, et al. The flan collection: Designing data and methods for effective
+instruction tuning. arXiv preprint arXiv:2301.13688 , 2023.
+Renze Lou, Kai Zhang, Jian Xie, Yuxuan Sun, Janice Ahn, Hanzi Xu, Yu Su, and Wenpeng
+Yin. MUFFIN: curating multi-faceted instructions for improving instruction-following. CoRR ,
+abs/2312.02436, 2023.
+Haipeng Luo, Qingfeng Sun, Can Xu, Pu Zhao, Jianguang Lou, Chongyang Tao, Xiubo Geng, Qing-
+wei Lin, Shifeng Chen, and Dongmei Zhang. Wizardmath: Empowering mathematical reasoning
+for large language models via reinforced evol-instruct. CoRR , abs/2308.09583, 2023.
+Chang Ma, Junlei Zhang, Zhihao Zhu, Cheng Yang, Yujiu Yang, Yaohui Jin, Zhenzhong Lan, Ling-
+peng Kong, and Junxian He. Agentboard: An analytical evaluation board of multi-turn LLM
+agents. CoRR , abs/2401.13178, 2024.
+Yao Mu, Qinglong Zhang, Mengkang Hu, Wenhai Wang, Mingyu Ding, Jun Jin, Bin Wang, Jifeng
+Dai, Yu Qiao, and Ping Luo. Embodiedgpt: Vision-language pre-training via embodied chain of
+thought. Advances in Neural Information Processing Systems , 36, 2024.
+OpenAI. GPT-4 technical report. CoRR , abs/2303.08774, 2023.
+11
+
+=== PAGE 12 ===
+Published as a conference paper at ICLR 2025
+Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll L. Wainwright, Pamela Mishkin,
+Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, John Schulman, Jacob Hilton, Fraser
+Kelton, Luke Miller, Maddie Simens, Amanda Askell, Peter Welinder, Paul F. Christiano, Jan
+Leike, and Ryan Lowe. Training language models to follow instructions with human feedback.
+InNeurIPS , 2022.
+Shishir G Patil, Tianjun Zhang, Xin Wang, and Joseph E Gonzalez. Gorilla: Large language model
+connected with massive apis. arXiv preprint arXiv:2305.15334 , 2023.
+Ofir Press, Muru Zhang, Sewon Min, Ludwig Schmidt, Noah A. Smith, and Mike Lewis. Measuring
+and narrowing the compositionality gap in language models. In EMNLP (Findings) , pp. 5687–
+5711. Association for Computational Linguistics, 2023.
+Shuofei Qiao, Runnan Fang, Zhisong Qiu, Xiaobin Wang, Ningyu Zhang, Yong Jiang, Pengjun
+Xie, Fei Huang, and Huajun Chen. Benchmarking agentic workflow generation. CoRR ,
+abs/2410.07869, 2024.
+Yujia Qin, Shihao Liang, Yining Ye, Kunlun Zhu, Lan Yan, Yaxi Lu, Yankai Lin, Xin Cong, Xiangru
+Tang, Bill Qian, et al. Toolllm: Facilitating large language models to master 16000+ real-world
+apis. arXiv preprint arXiv:2307.16789 , 2023.
+Timo Schick, Jane Dwivedi-Yu, Roberto Dess `ı, Roberta Raileanu, Maria Lomeli, Eric Hambro,
+Luke Zettlemoyer, Nicola Cancedda, and Thomas Scialom. Toolformer: Language models can
+teach themselves to use tools. In NeurIPS , 2023.
+Yongliang Shen, Kaitao Song, Xu Tan, Dongsheng Li, Weiming Lu, and Yueting Zhuang. Hugging-
+gpt: Solving AI tasks with chatgpt and its friends in hugging face. In NeurIPS , 2023.
+Yongliang Shen, Kaitao Song, Xu Tan, Wenqi Zhang, Kan Ren, Siyu Yuan, Weiming Lu, Dongsheng
+Li, and Yueting Zhuang. Taskbench: Benchmarking large language models for task automation.
+InNeurIPS , 2024.
+Teknium. Openhermes 2.5: An open dataset of synthetic data for generalist llm assistants, 2023.
+URL https://huggingface.co/datasets/teknium/OpenHermes-2.5 .
+Guanzhi Wang, Yuqi Xie, Yunfan Jiang, Ajay Mandlekar, Chaowei Xiao, Yuke Zhu, Linxi Fan,
+and Anima Anandkumar. V oyager: An open-ended embodied agent with large language models.
+Trans. Mach. Learn. Res. , 2024, 2024a.
+Jize Wang, Zerun Ma, Yining Li, Songyang Zhang, Cailian Chen, Kai Chen, and Xinyi Le. GTA: A
+benchmark for general tool agents. CoRR , abs/2407.08713, 2024b.
+Junjie Wang, Mingyang Chen, Binbin Hu, Dan Yang, Ziqi Liu, Yue Shen, Peng Wei, Zhiqiang
+Zhang, Jinjie Gu, Jun Zhou, Jeff Z. Pan, Wen Zhang, and Huajun Chen. Learning to plan for
+retrieval-augmented large language models from knowledge graphs. In EMNLP (Findings) , pp.
+7813–7835. Association for Computational Linguistics, 2024c.
+Yifei Wang, Jizhe Zhang, and Yisen Wang. Do generated data always help contrastive learning?
+CoRR , abs/2403.12448, 2024d.
+Yizhong Wang, Yeganeh Kordi, Swaroop Mishra, Alisa Liu, Noah A. Smith, Daniel Khashabi, and
+Hannaneh Hajishirzi. Self-instruct: Aligning language models with self-generated instructions.
+InACL (1) , pp. 13484–13508. Association for Computational Linguistics, 2023.
+Yuxiang Wei, Zhe Wang, Jiawei Liu, Yifeng Ding, and Lingming Zhang. Magicoder: Source code
+is all you need. CoRR , abs/2312.02120, 2023.
+Thomas Wolf, Lysandre Debut, Victor Sanh, Julien Chaumond, Clement Delangue, Anthony Moi,
+Pierric Cistac, Tim Rault, R ´emi Louf, Morgan Funtowicz, and Jamie Brew. Huggingface’s trans-
+formers: State-of-the-art natural language processing. CoRR , abs/1910.03771, 2019.
+Shitao Xiao, Zheng Liu, Peitian Zhang, and Niklas Muennighoff. C-pack: Packaged resources to
+advance general chinese embedding, 2023.
+12
+
+=== PAGE 13 ===
+Published as a conference paper at ICLR 2025
+Can Xu, Qingfeng Sun, Kai Zheng, Xiubo Geng, Pu Zhao, Jiazhan Feng, Chongyang Tao, Qing-
+wei Lin, and Daxin Jiang. Wizardlm: Empowering large pre-trained language models to follow
+complex instructions. In ICLR . OpenReview.net, 2024a.
+Canwen Xu, Daya Guo, Nan Duan, and Julian J. McAuley. Baize: An open-source chat model with
+parameter-efficient tuning on self-chat data. In Proceedings of the 2023 Conference on Empirical
+Methods in Natural Language Processing, EMNLP 2023, Singapore, December 6-10, 2023 , pp.
+6268–6278, 2023.
+Yiheng Xu, Hongjin Su, Chen Xing, Boyu Mi, Qian Liu, Weijia Shi, Binyuan Hui, Fan Zhou, Yitao
+Liu, Tianbao Xie, Zhoujun Cheng, Siheng Zhao, Lingpeng Kong, Bailin Wang, Caiming Xiong,
+and Tao Yu. Lemur: Harmonizing natural language and code for language agents. In ICLR .
+OpenReview.net, 2024b.
+An Yang, Baosong Yang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Zhou, Chengpeng Li,
+Chengyuan Li, Dayiheng Liu, Fei Huang, et al. Qwen2 technical report. arXiv preprint
+arXiv:2407.10671 , 2024a.
+An Yang, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chengyuan Li,
+Dayiheng Liu, Fei Huang, Haoran Wei, Huan Lin, Jian Yang, Jianhong Tu, Jianwei Zhang, Jianxin
+Yang, Jiaxi Yang, Jingren Zhou, Junyang Lin, Kai Dang, Keming Lu, Keqin Bao, Kexin Yang,
+Le Yu, Mei Li, Mingfeng Xue, Pei Zhang, Qin Zhu, Rui Men, Runji Lin, Tianhao Li, Tingyu
+Xia, Xingzhang Ren, Xuancheng Ren, Yang Fan, Yang Su, Yichang Zhang, Yu Wan, Yuqiong
+Liu, Zeyu Cui, Zhenru Zhang, and Zihan Qiu. Qwen2.5 technical report. CoRR , abs/2412.15115,
+2024b.
+An Yang, Beichen Zhang, Binyuan Hui, Bofei Gao, Bowen Yu, Chengpeng Li, Dayiheng Liu,
+Jianhong Tu, Jingren Zhou, Junyang Lin, Keming Lu, Mingfeng Xue, Runji Lin, Tianyu Liu,
+Xingzhang Ren, and Zhenru Zhang. Qwen2.5-math technical report: Toward mathematical ex-
+pert model via self-improvement. CoRR , abs/2409.12122, 2024c.
+Dongjie Yang, Ruifeng Yuan, Yuantao Fan, Yifei Yang, Zili Wang, Shusen Wang, and Hai Zhao.
+Refgpt: Dialogue generation of gpt, by gpt, and for GPT. In Findings of the Association for
+Computational Linguistics: EMNLP 2023, Singapore, December 6-10, 2023 , pp. 2511–2535.
+Association for Computational Linguistics, 2023.
+Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik R. Narasimhan, and Yuan Cao.
+React: Synergizing reasoning and acting in language models. In ICLR . OpenReview.net, 2023.
+Aohan Zeng, Mingdao Liu, Rui Lu, Bowen Wang, Xiao Liu, Yuxiao Dong, and Jie Tang. Agenttun-
+ing: Enabling generalized agent abilities for llms. In ACL (Findings) , pp. 3053–3077. Association
+for Computational Linguistics, 2024.
+Penghao Zhao, Hailin Zhang, Qinhan Yu, Zhengren Wang, Yunteng Geng, Fangcheng Fu, Ling
+Yang, Wentao Zhang, and Bin Cui. Retrieval-augmented generation for ai-generated content: A
+survey. arXiv preprint arXiv:2402.19473 , 2024.
+13
+
+=== PAGE 14 ===
+Published as a conference paper at ICLR 2025
+A P ROMPT DETAILS
+A.1 S CENARIO COLLECTION
+In our work, the seed data for scenario extraction is derived from glaive-function-calling-v2
+(glaiveai, 2023) and ToolLLama datasets (Qin et al., 2023).
+Here are prompts for extracting and expanding scenarios. The placeholders {conversation }
+and{scenario }are used to fill in a conversation for extracting a scenario and a scenario for being
+modified, respectively.
+Prompt for Extracting Scenarios
+Please analyze the conversation below between a user and an
+assistant bot and identify the general life scenario it
+represents. Provide a concise overview of the scenario type,
+such as ’booking flights’ or ’ordering meals’. Avoid
+mentioning specific details like numbers or items. Your
+response should be a description of the scenario without
+additional commentary, and should not exceed 10 words.
+Conversation:
+{conversation}
+Concise Overview of the Scenario:
+Prompt for Expanding Scenarios
+Based on the provided daily scenario, creatively generate a new
+and entirely different scenario. The new scenario must meet
+the following requirements:
+1. You may alter the action or subject of the original scenario.
+2. The new scenario should differ substantially from the
+original.
+3. Ensure the new scenario is realistic and feasible within a
+daily life context.
+4. Retain the same format as the original scenario.
+5. Limit your response to 10 words and present the new scenario
+in a single sentence.
+Original Scenario:
+{scen}
+Modified Scenario:
+A.2 A TOMIC TASK CONSTRUCTION
+Here is the prompt for generating an atomic task from a scenario. The placeholder {scenario }
+will be substituted with a collected scenario when generating a specific task.
+Prompt for Atomic Task Construction
+You are training a model that can take a user’s task description
+or query, and available functions as input, and generate a
+sequence of function calls to accomplish the task. Currently,
+you are generating basic atom tasks. Given a general life
+14
+
+=== PAGE 15 ===
+Published as a conference paper at ICLR 2025
+scenario as the context, please generate a basic atom task
+that can be accomplished in one step.
+Requirements of the task:
+1. The task should be a reasonable real life task based on the
+given scenario, and can be accomplished in one step.
+2. If you mention some information, criteria or constraints in
+the task, please give the details of these information,
+criteria or constraints. Do not assume the model has access
+to your personal information or prior knowledge, and it does
+not have chance to ask you for clarification.
+3. Please give enough details and make the task description as
+specific as possible, so the model can make deterministic
+function calls with deterministic arguments. Do not include
+any ambiguous or vague information.
+4. Do not mention specific tools or functions in the task
+description, and do not propose solutions, hints, or project
+outcomes.
+5. Limit the task description to 30 words, and avoid using
+adjectives and ambiguous words.
+Given Scenario:
+{scenario}
+Please give your response in one line directly, without any
+extra notation or format:
+A.3 C OMPOSITIONAL TASK CONSTRUCTION
+Following two prompts are used for constructing compositional tasks from atomic tasks, including
+sequential composition and parallel-then-sequential composition strategies.
+Prompt for Sequential Composition
+You are training a model that can take a user’s task description
+or query, and available functions as input, and generate a
+sequence of function calls to accomplish the task. Currently,
+you are generating complex tasks for model training. Given a
+task, you need to add a subsequent task for this given task
+to make a more complex task.
+The requirements for the subsequent task are as follows:
+1. The subsequent task should use the output of the given task
+as input.
+2. The subsequent can only be conducted after the given task has
+been completed.
+3. The subsequent task and the given task can form a new
+compositional task, and composing them can make a more
+complex multi-step task.
+## Examples:
+### Given Task: Give me a list of all the pets.
+### Subsequent Task: What is the most common kind of pet in the
+list?
+### Composition Task: Check the most common kind of pet in the
+list of all the pets.
+15
+
