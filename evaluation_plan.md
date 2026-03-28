@@ -1,86 +1,88 @@
-# 전 논문 품질 평가 루프 적용 계획
+# 논문 재요약 작업 현황 (2026-03-28)
 
-## Context
+## 작업 목적
+- 기존 71편 요약을 새 6-섹션 포맷(Problem/Motivation/Method/Key Contribution/Experiment/Limitation)으로 전면 재작성
+- 각 섹션 독립적으로 충실하게 작성 (전체 80줄+, 수치 5개+)
+- Notion 업로드 시 `**bold**` → rich_text bold 변환 필요 (미구현)
 
-71편의 논문 요약 중 **29편이 55줄 미만**(FAIL)으로 품질 기준 미달. 전부 3차 배치(45~71번)에서 발생. 새로 도입한 평가 루프(Step 2.5)를 전 논문에 소급 적용하여 품질을 균일화한다.
+## 진행 현황: 23/71편 완료 (32%)
 
-## 현황
+### 완료 (새 포맷으로 재작성됨)
+| 배치 | 논문 | 상태 |
+|------|------|------|
+| 1 | 01_A-MEM, 02_MAGMA, 03_AriGraph | ✅ |
+| 2 | 04_MemEvolve, 05_ALMA, 06_ADAS | ✅ |
+| 3 | 07_SeCom, 08_MIRIX, 09_Preference-Aware-Memory | ✅ |
+| 4 | 10_MemoryAgentBench, 11_Memory-Management-Impact, 12_Privacy-Risks-Memory | ✅ |
+| 5 | 13_Memory-Survey, 14_MASS, 15_AgentSquare | ✅ |
+| 6 | 16_TurnLevelCredit, 17_SelfReflectiveKG, 18_AgentRefine | ✅ |
+| 7 | 19_ACE, 20_ChainOfAgents, 21_EvalLongContext | ✅ |
+| 8 | 23_CreativityMAS, 24_TestTimeCompute | ✅ |
 
-- **PASS (55줄↑)**: 42편 (01~44번 대부분)
-- **FAIL (55줄↓)**: 29편 (41~71번, 전부 `_text.txt` 존재 확인 완료)
-- FAIL 평균: 41줄 (목표 대비 14줄 부족)
+### 미완료 (구 포맷 — 재작성 필요)
+| 번호 | 논문 | 비고 |
+|------|------|------|
+| 22 | MultiAgentCollab | API 에러 3회 (서베이 논문) |
+| 25 | BUTTON | |
+| 26 | ToolACE | |
+| 27 | G-Memory | |
+| 28 | Evo-Memory | |
+| 29 | MemGPT | |
+| 30 | DelTA | |
+| 31 | Gorilla | |
+| 32 | Toolformer | |
+| 33 | AOP | |
+| 34 | OWL | |
+| 35 | HuggingGPT | |
+| 36 | ScalingTestTimeCompute | |
+| 37 | ThinkingOptimal | |
+| 38 | CannotSelfCorrect | |
+| 39 | CorrectBench | |
+| 40 | RethinkingFineTuning | |
+| 41 | GraphRAG | |
+| 42 | AgenticRAG-KG | |
+| 43 | SUBQRAG | |
+| 44 | LightRAG | |
+| 45 | MemoryOS | |
+| 46 | HippoRAG | |
+| 47 | HippoRAG2 | |
+| 48 | A-MAC | |
+| 49 | ToolLLM | |
+| 50 | AvaTaR | |
+| 51 | TauBench | |
+| 52 | MCPSecurity | |
+| 53 | AgentProtocols | |
+| 54 | AFlow | |
+| 55 | WebRL | |
+| 56 | SWE-agent | |
+| 57 | EvoAgent | |
+| 58 | GPTSwarm | |
+| 59 | SCoRe | |
+| 60 | SuperCorrect | |
+| 61 | S2R | |
+| 62 | ThinkOnGraph | |
+| 63 | ThinkOnGraph2 | |
+| 64 | PlanOnGraph | |
+| 65 | AgentBench | |
+| 66 | GAIA | |
+| 67 | OSWorld | |
+| 68 | AgentHarm | |
+| 69 | AutoGen | |
+| 70 | MetaGPT | |
+| 71 | SWE-bench | |
 
-## 실행 계획
+**미완료: 48편** (22번 + 25~71번)
 
-### Phase 1: 전 논문 일괄 평가 (읽기 전용)
+## 작업 방식
+- 3편씩 배치 처리 (서브에이전트 3개 병렬 → 메인에서 Write)
+- 품질 평가 루프는 속도를 위해 생략 중 (추후 일괄 평가 가능)
+- PDF 텍스트는 모든 71편에 대해 추출 완료 (`_text.txt` 존재)
 
-독립 평가 에이전트를 배치별로 실행하여 71편 전체를 평가한다.
+## 참고: Notion 볼드 렌더링 이슈
+- 현재 Notion 업로드 시 `**text**`가 리터럴 `**`로 표시됨
+- Notion API rich_text에서 `bold: true` annotation으로 변환하는 파싱 로직 필요
+- 재요약 완료 후 Notion 업로드 시 함께 수정 예정
 
-| 배치 | 범위 | 편수 | 예상 결과 |
-|------|------|------|-----------|
-| A | 01~26 | 26편 | 대부분 PASS |
-| B | 27~44 | 18편 | 대부분 PASS, 일부 경계선 |
-| C | 45~58 | 14편 | 대부분 FAIL |
-| D | 59~71 | 13편 | 대부분 FAIL |
-
-**각 배치마다 1개 평가 에이전트** 실행 (독립 컨텍스트):
-- 요약 마크다운 + 원본 `_text.txt`를 비교
-- [A] 분량 + [B] 충실도 평가
-- 논문별 PASS/FAIL + 구체적 보강 지시 반환
-
-### Phase 2: FAIL 논문 보강 (배치별 5편 단위)
-
-FAIL 판정 논문에 대해 보강 에이전트를 실행한다.
-
-- **예상 FAIL**: ~29편
-- **배치 단위**: 5편씩 6배치 (마지막 배치 4편)
-- 각 논문마다 **독립 보강 에이전트** 실행:
-  - `_text.txt` + 현재 요약 + 평가 피드백을 읽음
-  - 보강된 전체 마크다운을 텍스트로 반환
-- 메인에서 Write로 파일 덮어쓰기
-
-### Phase 3: 재평가
-
-보강된 논문에 대해 재평가 에이전트를 1회 실행하여 전수 PASS 확인.
-여전히 FAIL인 논문은 2차 보강 → 재평가 (최대 2회 반복).
-
-### Phase 4: Notion 재업로드
-
-FAIL→PASS로 보강된 논문의 Notion 하위 페이지를 재생성한다.
-
-- 기존 하위 페이지 삭제 후 재생성 (마크다운 파일을 Read로 읽어서 반영)
-- Python `requests` 스크립트로 일괄 처리
-
-## 수정 대상 파일
-
-| 파일 | 작업 |
-|------|------|
-| `summaries/41_*.md` ~ `summaries/71_*.md` | 보강 대상 (~29편) |
-| Notion 하위 페이지 | 보강된 논문 재업로드 |
-
-기존 PASS 논문(01~40번 대부분)은 평가만 하고 수정하지 않음.
-
-## 실행 순서 요약
-
-```
-1. 평가 에이전트 4개 (배치 A~D) → 전 논문 PASS/FAIL 판정
-2. FAIL 논문 보강 에이전트 (5편×6배치) → 마크다운 보강
-3. 재평가 에이전트 → 전수 PASS 확인
-4. Notion 재업로드 (보강된 논문만)
-```
-
-## 검증 방법
-
-```bash
-# 전 논문 줄 수 체크 — 55줄 미만이 0이어야 함
-cd summaries && for f in *.md; do
-  lines=$(wc -l < "$f")
-  if [ "$lines" -lt 55 ]; then echo "FAIL: $f ($lines lines)"; fi
-done
-
-# 전 논문 수치 체크 — 3개 미만이 0이어야 함
-for f in *.md; do
-  nums=$(grep -cE '[0-9]+\.[0-9]+|[0-9]+%|\+[0-9]|vs ' "$f")
-  if [ "$nums" -lt 3 ]; then echo "LOW NUMS: $f ($nums)"; fi
-done
-```
+## 재개 방법
+다음 대화에서 "재요약 이어서 진행해줘" 또는 직접 배치 처리를 이어서 진행.
+다음 배치: **22_MultiAgentCollab, 25_BUTTON, 26_ToolACE** 부터 시작.
