@@ -1,64 +1,77 @@
 # Chain of Agents: Large Language Models Collaborating on Long-Context Tasks
 
-> **논문 정보**: Yusen Zhang, Ruoxi Sun, Yanfei Chen, Tomas Pfister, Rui Zhang, Sercan Ö. Arık (Penn State University, Google Cloud AI Research)
-> **arXiv**: 2406.02818 (2024.06)
-> **코드**: N/A
+> **논문 정보**: Yusen Zhang, Ruoxi Sun, Yanfei Chen, Tomas Pfister, Rui Zhang, Sercan Ö. Arik (Penn State University, Google Cloud AI Research)
+> **arXiv**: 2406.02818 (2024.06) | **학회**: -
+> **코드**: 미공개
 
 ---
 
-## Overview
+## Problem
 
-| 항목 | 내용 |
-|------|------|
-| **Problem** | 긴 컨텍스트 처리의 두 주요 전략인 입력 축소(RAG)와 윈도우 확장 모두 한계가 있다. RAG는 필요한 정보가 검색되지 않을 수 있고, 윈도우 확장은 긴 컨텍스트에서 관련 정보에 집중하지 못하는 "lost-in-the-middle" 문제를 겪는다. |
-| **Motivation** | 인간은 긴 문서를 한 번에 읽지 않고, 부분별로 읽으며 이전 부분의 정보를 다음 부분 처리에 활용한다. 이 인간적 접근을 다중 에이전트 협업으로 구현하면, 각 에이전트가 짧은 컨텍스트만 처리하면서도 전체 입력을 커버할 수 있다. 또한 시간 복잡도를 n²에서 nk로 줄일 수 있다(n: 입력 토큰, k: 윈도우 크기). |
-| **Limitation** | (1) Worker 에이전트의 순차 처리로 인해 latency가 청크 수에 비례하여 증가. (2) 초기 worker의 오류가 후속 worker에 전파될 수 있는 error cascading 위험. (3) Communication Unit의 품질이 전체 성능을 좌우하나 이에 대한 명시적 품질 제어가 없다. (4) 학습 없는(training-free) 방식이지만 청크 크기·worker 수 등 하이퍼파라미터 튜닝 필요. |
+LLM이 긴 컨텍스트를 처리해야 하는 태스크(QA, 요약, 코드 완성 등)에서 두 가지 주류 전략이 존재하지만 각각 근본적 한계를 가진다. Input Reduction(RAG, Truncation) 방식은 입력을 줄여 LLM에 전달하지만, 검색 정확도가 낮으면 정답을 포함하는 청크를 놓칠 수 있어 수용 범위가 불완전하다. Window Extension 방식은 컨텍스트 윈도우를 확장하여 전체 입력을 소비하지만, 윈도우가 길어질수록 "lost-in-the-middle" 현상이 발생하여 필요한 정보에 집중하지 못한다. Claude-3의 200k 토큰 윈도우조차 NarrativeQA에서 F1 7.17, BookSum에서 ROUGE 14.00에 그쳐 긴 입력에서의 성능 저하가 뚜렷하다. 결국 긴 컨텍스트를 완전히 읽으면서도 각 부분에 집중할 수 있는 새로운 패러다임이 필요하다.
+
+---
+
+## Motivation
+
+인간이 긴 문서를 처리할 때 전체를 한 번에 읽기보다 구간별로 읽고 핵심을 축적하며 최종 정리하는 방식에서 영감을 받았다. 이를 멀티 에이전트 협업으로 구현하면, 각 에이전트는 짧은 컨텍스트만 담당하므로 집중 문제를 해결하면서 전체 입력을 순차적으로 커버할 수 있다. 기존 멀티 에이전트 연구는 사회 시뮬레이션이나 짧은 텍스트 디베이트에 집중했으며, 긴 컨텍스트 태스크에 대한 멀티 에이전트 접근은 거의 탐구되지 않았다. 순차적 에이전트 체인을 통해 interleaved read-process 패턴을 구현하면, "read-then-process"인 RAG와 달리 정보를 점진적으로 축적·추론할 수 있다. 또한 인코딩 시간 복잡도가 Full-Context의 O(n²)에서 O(nk)로 감소하여 비용 효율성도 확보된다. 학습이 필요 없고, 태스크에 구애받지 않으며, 해석 가능성이 높은 프레임워크를 목표로 한다.
 
 ---
 
 ## Method
 
-CoA는 긴 입력을 청크로 분할한 뒤, **Worker 에이전트 체인**이 순차적으로 정보를 축적하고, **Manager 에이전트**가 최종 답변을 생성하는 2단계 프레임워크다.
+Chain-of-Agents(CoA)는 Stage 1: Worker Agents와 Stage 2: Manager Agent의 2단계로 구성된다.
 
-1. **Stage 1: Worker Agent Chain (세그먼트 이해 + 체인 커뮤니케이션)**
-   - 입력 x를 l개 청크 {c₁, c₂, ..., cₗ}로 분할 (각 청크 < 윈도우 크기 k)
-   - Worker Wᵢ가 입력받는 것: 이전 worker의 Communication Unit CUᵢ₋₁ + 현재 청크 cᵢ + 쿼리 q + 태스크 지시 Iw
-   - 출력: 다음 worker에 전달할 CUᵢ = LLM_Wᵢ(Iw, CUᵢ₋₁, cᵢ, q)
-   - CU 내용은 태스크에 따라 다름: QA는 증거, 요약은 부분 요약, 코드 완성은 함수/클래스 설명
+1. **입력 분할**: 전체 소스 텍스트를 에이전트 윈도우 크기 k보다 짧은 l개의 청크로 분할한다.
 
-2. **Stage 2: Manager Agent (정보 통합 + 응답 생성)**
-   - 마지막 worker의 CUₗ를 받아 최종 답변 생성
-   - Response = LLM_M(IM, CUₗ, q)
-   - Worker와 다른 LLM을 사용할 수 있어 유연성 확보
+2. **Worker Agent 순차 처리 (Stage 1)**: l명의 Worker Agent가 순차적으로 각 청크를 처리한다. 각 Worker는 태스크별 지시문, 이전 Worker가 전달한 Communication Unit(CU), 자신의 청크, 쿼리를 입력받아 새로운 CU를 출력한다.
 
-3. **핵심 특성**
-   - **Training-free**: 추가 학습 없이 기존 LLM 활용
-   - **Task-agnostic**: QA, 요약, 코드 완성 등 다양한 태스크에 적용
-   - **전체 수용 영역**: 마지막 worker가 간접적으로 전체 입력 정보에 접근
-   - **해석 가능성**: 각 worker의 CU를 통해 추론 과정 추적 가능
-   - 입력 축소(수용 영역 손실)도 윈도우 확장(집중력 저하)도 아닌 제3의 접근
+3. **Communication Unit(CU)의 태스크별 역할**: QA에서는 정답 근거 증거, 요약에서는 누적 요약, 코드 완성에서는 함수/클래스 이름과 설명을 담는다.
+
+4. **순차 체인의 핵심**: Worker 간 정보가 순차 전달되므로 마지막 Worker의 CU에는 전체 입력에 대한 정보가 축적된다. 이를 통해 입력 길이에 관계없이 full receptive field를 확보한다.
+
+5. **멀티 홉 추론 지원**: W₁이 부분 증거를 생성 → W₂가 이전 증거와 새 청크를 결합하여 추론 체인 확장 → W₃가 관련 정보 없으면 이전 CU를 그대로 전달하는 식으로 협업.
+
+6. **Manager Agent (Stage 2)**: 마지막 Worker의 CU와 쿼리, Manager 지시문을 받아 최종 응답을 생성한다. Worker와 Manager의 역할을 분리하여 각각 정보 추출과 종합 답변 생성에 집중.
+
+7. **시간 복잡도**: 인코딩 시간 Full-Context O(n²) 대비 CoA O(nk)로 감소 (k ≪ n).
+
+8. **Multi-path 확장**: 여러 읽기 경로(bi-direction, self-consistency, permutation)를 생성한 뒤 majority voting 또는 LLM judge로 최종 답을 선택하여 추가 향상 가능.
 
 ---
 
 ## Key Contribution
 
-1. **읽기-처리 인터리빙**: 입력을 한 번에 처리하는 대신, 읽기와 처리를 교대하여 전체 수용 영역을 유지하면서 집중력 문제를 해결하는 새로운 패러다임.
-2. **다중 에이전트 장문맥 프레임워크**: Training-free, task-agnostic하게 다양한 LLM에 적용 가능한 장문맥 처리 프레임워크.
-3. **9개 데이터셋에서 일관된 개선**: QA, 요약, 코드 완성 3가지 태스크 유형에서 RAG, Full-Context, 다른 다중 에이전트 방식을 일관되게 초과.
+1. **멀티 에이전트 협업을 통한 긴 컨텍스트 처리의 새로운 패러다임**: training-free, task-agnostic, length-agnostic 프레임워크.
+2. **8k 윈도우 CoA가 200k 윈도우 LLM을 능가**: Claude-3 Opus 기준 NarrativeQA에서 CoA(8k) 23.96 vs Vanilla(200k) 6.56으로 약 3.7배.
+3. **"Lost-in-the-middle" 문제 완화**: 정보 위치에 따른 성능 편차가 Full-Context(6.13±2.17) 대비 CoA(4.89±1.91)로 감소.
+4. **순차 통신의 우월성 입증**: 병렬 구조(Merge, Hierarchical) 대비 9개 데이터셋 전체에서 우수.
+5. **인코딩 시간 복잡도 O(n²) → O(nk) 감소**로 비용 효율성 확보.
 
 ---
 
 ## Experiment & Results
 
-**데이터셋 9개**: QA 5개(HotpotQA, MuSiQue, NarrativeQA, Qasper, QuALITY), 요약 3개(QMSum, GovReport, BookSum), 코드 1개(RepoBench-P)
+9개 데이터셋(QA 5, 요약 3, 코드 1), 6개 LLM(PaLM 2, Gemini Ultra, Claude-3 Haiku/Sonnet/Opus).
 
-**LLM**: PaLM 2 (text-bison, text-unicorn), Gemini 1.0 Ultra, Claude 3 (Haiku, Sonnet, Opus)
+**QA 성능 (text-bison 기준)**:
+- HotpotQA: CoA 53.62 vs RAG 51.91 vs Vanilla 45.57 (F1)
+- MuSiQue: CoA 37.09 vs RAG 33.83 vs Vanilla 26.87 (F1, +10.22)
+- NarrativeQA: CoA 25.26 vs RAG 14.20 vs Vanilla 11.96 (F1, +13.30)
+- QuALITY (gemini-ultra): CoA 80.60 vs Vanilla(32k) 58.60 vs RAG 62.40 (EM, +22.00)
 
-**비교 대상**: Truncation, RAG, Full-Context(Vanilla), 계층 구조 다중 에이전트, 결과 병합 다중 에이전트
+**Long Context LLM 비교 (Claude-3 Opus)**:
+- NarrativeQA: CoA(8k) **23.96** vs Vanilla(200k) 6.56 — **+17.40**
+- BookSum: CoA(8k) **17.47** vs Vanilla(200k) 14.00 — **+3.47**
 
-**주요 결과**: 9개 데이터셋 전체에서 CoA가 모든 베이스라인 대비 최대 **10%** 향상
-- MuSiQue (멀티홉 QA): CoA가 RAG/Full-Context 대비 가장 큰 격차 — 순차 커뮤니케이션이 멀티홉 추론에 특히 효과적
-- BookSum (108K 토큰 소설 요약): 가장 긴 입력에서도 CoA가 안정적 성능
-- 계층 구조/결과 병합 다중 에이전트보다 CoA의 순차 체인이 일관되게 우수 — worker 간 정보 흐름의 중요성
+**멀티 에이전트 구조 비교**: CoA가 8개 데이터셋 전체에서 Hierarchical과 Merge를 상회. MuSiQue에서 CoA 37.09 vs Hierarchical 29.40 vs Merge 26.66.
 
-**비용 효율**: Full-Context 대비 시간 복잡도 n² → nk로 개선
+**Ablation**: Manager 제거 시 MuSiQue에서 37.09 → 26.79로 10.30 하락.
+
+**Multi-path**: Permutation 5-way + judge가 HotpotQA 59.17, MuSiQue 42.37로 단일 경로 대비 추가 향상. Oracle 상한은 HotpotQA 75.73.
+
+---
+
+## Limitation
+
+현재 Worker 간 Communication Unit은 자연어 출력을 그대로 사용하므로, LLM 간 통신에 최적화된 표현이 아닐 수 있다. CoA는 순차 체인이라는 단일 통신 패턴만 탐구하였으며, 디베이트·토론 등 더 복잡한 에이전트 간 상호작용 형태는 미탐구 상태이다. 순차 처리 특성상 Worker 수에 비례하여 레이턴시가 선형 증가하며, 병렬화가 본질적으로 어렵다. Multi-path 앙상블은 성능을 높이지만 비용이 5배로 증가하며, oracle과 실제 선택 전략 간 격차가 커서 경로 선택 메커니즘의 추가 연구가 필요하다. 실험에서 사용한 데이터셋이 영어 중심이며, 다국어 환경이나 멀티모달 긴 컨텍스트에 대한 검증이 부재하다.

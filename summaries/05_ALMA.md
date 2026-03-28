@@ -1,73 +1,79 @@
-# ALMA: Learning to Continually Learn via Meta-learning Agentic Memory Designs
+# Learning to Continually Learn via Meta-learning Agentic Memory Designs (ALMA)
 
 > **논문 정보**: Yiming Xiong, Shengran Hu, Jeff Clune (University of British Columbia, Vector Institute, Canada CIFAR AI Chair)
-> **arXiv**: 2026.02
+> **arXiv**: Preprint (2026.02.10) | **학회**: Preprint
 > **코드**: https://github.com/zksha/alma
 
 ---
 
-## Overview
+## Problem
 
-| 항목 | 내용 |
-|------|------|
-| **Problem** | 파운데이션 모델의 추론 시 무상태성(statelessness)이 에이전트 시스템의 지속 학습을 병목한다. 기존 메모리 설계는 인간이 수동으로 구축하며 고정되어 있어, 다양하고 비정상적(non-stationary) 실세계 태스크에 적응하지 못한다. 도메인마다 최적의 메모리 구조가 달라, 인간이 일일이 설계하는 것은 비효율적이다. |
-| **Motivation** | 코딩 에이전트는 유사 함수의 코드 스니펫을, 탐색 에이전트는 공간 지도와 위험 정보를 저장해야 하듯, 도메인마다 필요한 메모리 구조가 근본적으로 다르다. 기존 ADAS 등이 에이전트 아키텍처 전체를 탐색하지만 메모리의 지속 학습 능력을 명시적으로 최적화하지 않으므로, 메모리 설계에 특화된 메타 학습이 필요하다. |
-| **Limitation** | (1) Meta Agent로 GPT-5를 사용하여 메모리 설계 탐색 비용이 상당하다 (11 learning steps, 43개 설계 탐색). (2) 4개 게임 환경에서만 검증되어 실세계 태스크(웹, 코딩 등)로의 전이는 미확인. (3) 발견된 메모리 설계가 특정 에이전트 프레임워크에 종속될 수 있어, 다른 프레임워크에서의 재사용성이 불확실하다. (4) 평가가 순차적 의사결정에 집중되어, 대화형·검색형 태스크에서의 효과는 미검증. |
+Foundation Model(FM) 기반 에이전트 시스템은 추론 시 상태를 유지하지 못하는 stateless 특성으로 인해, 과거 경험을 축적하고 지속적으로 학습하는 능력이 근본적으로 제한된다. 이를 해결하기 위해 메모리 모듈을 도입하지만, 기존 메모리 설계는 대부분 인간이 수작업으로 설계(hand-crafted)하며, 특정 도메인에 고정된 구조를 사용한다. 대화형 에이전트는 사용자 선호도를 저장해야 하고, 전략 게임에서는 추상적 전략을 추출해야 하는 등, 도메인마다 최적의 메모리 설계가 근본적으로 다르다. 따라서 각 도메인에 맞는 최적 메모리 설계를 수동으로 식별하는 것은 비효율적이고 노동 집약적이며, 실세계 태스크의 다양성과 비정상성(non-stationarity)에 적응하기 어렵다. 기존 자동 에이전트 설계(ADAS, AgentSquare 등)는 일회성(one-shot) 성능만 최적화하여 지속 학습을 위한 메모리 설계에 적합하지 않고, 동시기 연구는 기존 수작업 설계에 의존한 초기화와 탐욕적 선택으로 open-ended 탐색이 제한된다.
+
+---
+
+## Motivation
+
+머신러닝 역사에서 수작업 컴포넌트는 결국 학습된 컴포넌트로 대체되어 왔다는 반복적 패턴(예: 수작업 피처 → 학습된 표현)에서 핵심 직관을 얻는다. 메모리 설계 역시 이 패러다임을 따를 수 있다는 관찰이 ALMA의 출발점이다. 코드를 탐색 공간으로 사용하면 데이터베이스 스키마, 검색 메커니즘, 업데이트 규칙 등 이론적으로 임의의 메모리 설계를 발견할 수 있다. Open-ended exploration은 탐욕적 선택보다 고성능 구조를 발견하는 데 유리하다는 선행 연구(Lehman & Stanley 2008, 2011)에 기반하여, 중간 성능의 설계가 최적 설계로 진화하는 디딤돌(stepping stone) 역할을 할 수 있다. 이는 기존의 greedy selection 방식과 근본적으로 다른 접근으로, 즉각적인 성능 향상이 없더라도 잠재력 있는 설계를 보존하여 장기적으로 더 나은 메모리 구조를 발견할 수 있게 한다.
 
 ---
 
 ## Method
 
-ALMA는 **Meta Agent**가 메모리 설계를 실행 가능한 코드로 표현하고, 열린 탐색(open-ended exploration)을 통해 도메인에 최적화된 메모리 아키텍처를 자동 발견하는 프레임워크다.
+1. **메모리 설계 추상화**: 메모리 설계를 Python Abstract Class로 정의한다. 각 설계는 여러 sub-module로 구성되며, 각 sub-module은 자체 데이터베이스(dictionary, embedding 기반 등)를 가질 수 있다. `general_update`(경험 저장/요약)와 `general_retrieve`(지식 검색) 두 핵심 인터페이스를 통해 에이전트 시스템과 상호작용한다.
 
-1. **메모리 설계의 코드 표현**
-   - 메모리 시스템을 Python 추상 클래스로 정의: `general_update`(메모리 수집), `general_retrieve`(지식 검색) + 내부 서브모듈(DB 스키마, 검색 로직 등)
-   - 코드를 탐색 공간으로 사용하여 이론적으로 임의의 메모리 설계(DB 스키마, 검색/업데이트 메커니즘 포함) 발견 가능
+2. **평가 프로토콜 (Memory Collection → Deployment)**: 메모리 설계를 두 단계로 평가한다. Memory Collection Phase에서 에이전트가 태스크를 수행하며 메모리를 축적하고, Deployment Phase에서 축적된 메모리를 활용하여 새로운 태스크를 해결한다. Deployment Phase는 메모리를 고정하는 static 모드와 동적 업데이트하는 dynamic 모드로 나뉜다. 학습 시에는 분산 감소를 위해 static 모드만 사용한다.
 
-2. **평가 프로토콜**
-   - **Memory Collection Phase**: 빈 메모리에서 시작, 에이전트가 태스크를 수행하며 경험 축적 (검색 없이 수집만)
-   - **Deployment Phase**: 수집된 메모리를 활용하여 새 태스크 해결. Static(고정 메모리) + Dynamic(동적 업데이트) 두 모드
+3. **Open-Ended Exploration**: (i) 아카이브를 빈 메모리 설계 템플릿(Abstract Class)으로 초기화한다. (ii) Meta Agent가 아카이브에서 최대 5개의 이전 설계를 비복원 추출(sampling without replacement)한다. (iii) 샘플링된 설계의 코드와 평가 로그를 반영(reflect)하여 새로운 아이디어와 계획을 생성한다. (iv) 새 설계를 코드로 구현하고, 검증 및 평가를 수행한다. 오류 발생 시 최대 3회 self-reflection으로 수정한다. (v) 평가된 설계를 아카이브에 추가하고, 최대 반복 횟수까지 과정을 반복한다.
 
-3. **열린 탐색 루프 (Meta Agent)**
-   - **Sample**: 아카이브에서 기존 메모리 설계와 평가 로그를 최대 5개 샘플링
-   - **Ideate & Plan**: 샘플된 설계의 코드·평가 결과를 분석하여 개선 방향 도출
-   - **Implement**: 새 메모리 설계를 코드로 구현
-   - **Evaluate**: 에이전트 시스템에 통합하여 성능 측정 (성공률, 3회 평균)
-   - **Store**: 새 설계와 평가 로그를 아카이브에 저장 → 향후 샘플링에 활용
-   - GPT-5로 Meta Agent 구동, 11 learning steps에서 43개 메모리 설계 탐색
+4. **샘플링 전략**: 아카이브에서 설계를 샘플링할 때, 성능이 가장 높은 설계만 선택하는 greedy 방식이 아니라, 다양한 성능 수준의 설계를 샘플링하여 open-ended 탐색을 유지한다. 중간 성능 설계가 핵심 메커니즘 도입 시 최적 설계로 진화할 수 있는 stepping stone 역할을 한다.
 
-4. **발견된 설계의 특성**
-   - 도메인별로 전혀 다른 메모리 구조 발견: ALFWorld는 Affordance Graph + Spatial Graph, Baba Is AI는 Strategy Library + Token Graph, MiniHack는 Risk/Interaction Memory + Spatial Experience
-   - 각 설계가 해당 도메인의 고유한 지식 유형과 검색 패턴에 특화
+5. **Meta Agent 구성**: Meta Agent는 GPT-5로 구동되며, 에이전트 시스템 평가에는 GPT-5-nano를 사용한다. Meta Agent는 GPT-4o-mini, GPT-4.1, text-embedding-3-small을 도구로 사용하여 인사이트 추출, 시맨틱 유사도 계산 등의 워크플로우를 탐색할 수 있다.
+
+6. **학습 규모**: 11 learning step에 걸쳐 총 43개의 메모리 설계를 탐색하며, 최고 성능 설계를 최종 학습된 메모리 설계로 선택한다.
 
 ---
 
 ## Key Contribution
 
-1. **메모리 설계의 메타 학습**: 인간 수동 설계를 대체하여, Meta Agent가 코드 수준에서 메모리 아키텍처를 자동 탐색. 이론적으로 임의의 메모리 설계(DB 스키마 + 검색/업데이트 로직)를 발견 가능.
-2. **지속 학습 최적화**: 기존 ADAS류가 일회성(one-shot) 성능만 평가하는 것과 달리, 메모리의 경험 축적·재활용을 통한 지속 학습 능력을 명시적으로 최적화.
-3. **도메인별 특화 설계 발견**: 4개 벤치마크에서 각각 구조적으로 전혀 다른 최적 메모리 설계를 자동 발견하여, 범용 고정 설계의 한계를 실증.
-4. **교차 모델 전이**: GPT-5-nano에서 학습한 메모리 설계가 GPT-5-mini에서 더 큰 개선을 보여, 메모리 설계의 모델 독립적 전이 가능성 확인.
+1. **메모리 설계의 자동 학습 프레임워크**: 수작업 메모리 설계를 코드 공간에서의 open-ended exploration으로 대체하는 최초의 체계적 프레임워크를 제안하여, 도메인별 수동 튜닝의 한계를 해결한다.
+
+2. **도메인 적응형 메모리 자동 발견**: ALMA가 각 도메인의 요구에 맞춰 자동으로 특화된 메모리 설계를 발견함을 실증한다 (예: ALFWorld는 공간 관계 그래프, Baba Is AI는 전략 라이브러리).
+
+3. **모든 벤치마크에서 SOTA 초과 달성**: 4개 sequential decision-making 벤치마크 전체에서 학습된 메모리 설계가 모든 수작업 baseline을 일관되게 상회한다.
+
+4. **FM 간 전이성 실증**: GPT-5-nano에서 학습된 메모리 설계가 GPT-5-mini로 전이 시 더 큰 성능 향상을 보이며(12.8% vs 6.2%), 더 강력한 FM일수록 학습된 메모리 설계의 이점이 크다.
+
+5. **Open-ended exploration의 우위성 입증**: Greedy selection 대비 open-ended exploration이 더 나은 메모리 설계를 학습함을 ablation으로 검증한다.
 
 ---
 
 ## Experiment & Results
 
-**벤치마크**: ALFWorld(가정 태스크), TextWorld(텍스트 어드벤처), Baba Is AI(규칙 조작 퍼즐), MiniHack(로그라이크 게임)
+**벤치마크**: ALFWorld(가사 태스크), TextWorld(텍스트 어드벤처), Baba Is AI(전략 퍼즐), MiniHack(던전 탐험) 등 4개 sequential decision-making 도메인에서 평가.
 
-**비교 대상**: No Memory, Trajectory Retrieval, Reasoning Bank, Dynamic Cheatsheet, G-Memory
+**Baseline**: Trajectory Retrieval, Reasoning Bank, Dynamic Cheatsheet, G-Memory 등 4개 SOTA 수작업 메모리 설계.
 
-**주요 결과 (GPT-5-nano, 성공률%)**:
-- ALMA: ALFWorld **12.4**, TextWorld **6.2**, Baba Is AI **19.0**, MiniHack **11.7**, 전체 평균 **12.3**
-- 최고 수동 설계(G-Memory): 7.6, 2.1, 14.3, 6.8, 전체 평균 7.7
-- No Memory: 2.9, 5.4, 9.5, 6.7, 전체 평균 6.1
-- ALMA가 No Memory 대비 +6.2%p, 최고 수동 설계 대비 +4.6%p 향상
+**GPT-5-nano 결과**:
+- ALMA 전체 평균 성공률 **12.3%**, no-memory 대비 **+6.2%p** 향상. 모든 수작업 baseline(최고 8.6%) 대비 우위.
+- ALFWorld: 12.4% (no-memory 2.9% 대비 +9.5%p), 최고 baseline G-Memory 7.6% 대비 +4.8%p.
+- TextWorld: 6.2% (no-memory 5.4% 대비 +0.8%p), 유일하게 no-memory 초과 달성.
+- Baba Is AI: 19.0% (no-memory 9.5% 대비 +9.5%p), Trajectory Retrieval과 동률.
+- MiniHack: 11.7% (no-memory 6.7% 대비 +5.0%p), 최고 baseline Reasoning Bank 9.8% 대비 +1.9%p.
 
-**GPT-5-mini 전이 (성공률%)**:
-- ALMA: ALFWorld **87.1**, TextWorld **75.0**, Baba Is AI **33.3**, MiniHack **20.0**, 전체 평균 **53.9**
-- 최고 수동 설계: 80.0, 68.8, 38.0, 16.7, 전체 평균 ~48.6
-- No Memory 대비 +12.8%p. 더 강력한 모델에서 더 큰 delta(+6.6%p 추가) → 메모리 설계가 강한 모델을 더 잘 지원
+**GPT-5-mini 전이 결과**:
+- ALMA 전체 평균 성공률 **53.9%**, no-memory 대비 **+12.8%p** 향상. 최고 baseline Trajectory Retrieval 48.6% 대비 +5.3%p.
+- ALFWorld: **87.1%** (no-memory 67.6% 대비 +19.5%p).
+- TextWorld: **75.0%** (no-memory 60.5% 대비 +14.5%p).
 
-**스케일링**: 메모리 수집 태스크 수 증가에 따라 ALMA가 수동 설계보다 더 빠르고 안정적으로 성능 향상 (Figure 4)
+**스케일링**: ALFWorld에서 Memory Collection 태스크 수 증가에 따라, ALMA는 적은 데이터에서 더 빠르게 높은 성능에 도달하고, 수작업 baseline보다 더 효과적으로 스케일링.
 
-**비용 효율**: 대부분의 수동 설계 대비 낮은 토큰 비용으로 더 높은 성능 달성 (Figure 6)
+**비용 효율성**: ALMA의 end-to-end 메모리 비용은 전체 벤치마크 합산 **$0.09**, 검색 콘텐츠 토큰 크기 **1,319 tokens**로, Trajectory Retrieval($1.5+, 9,149 tokens)이나 G-Memory(6,095 tokens) 대비 훨씬 효율적이면서 최고 성능 달성.
+
+**Ablation**: Open-ended exploration이 greedy selection 기반 최적화보다 더 나은 메모리 설계를 학습함을 확인.
+
+---
+
+## Limitation
+
+저자가 명시한 한계로, 현재 ALMA는 메모리 설계만을 학습하며 에이전트 시스템 전체(프롬프트, 도구 사용 등)를 함께 최적화하지 않는다. 또한 코드 공간에서의 메모리 설계 학습은 기반 FM의 코드 생성 능력에 의존하므로, FM의 한계가 곧 탐색 공간의 한계가 된다. 비용 효율성을 명시적으로 최적화하지 않아, multi-objective optimization 도입 시 더 나은 효율-성능 트레이드오프가 가능할 것이다. 실험이 텍스트 기반 sequential decision-making 4개 도메인에 한정되어, 실세계 응용(의료, 금융 등)이나 멀티모달 환경에서의 일반화는 미검증이다. Meta Agent가 GPT-5를 사용하므로 메타 학습 자체의 비용이 상당하며, 학습된 메모리 설계의 해석 가능성이나 안전성 보장에 대한 체계적 방법론이 부재하다. 11 step × 43개 설계라는 비교적 작은 탐색 규모에서의 결과이므로, 대규모 탐색 시의 행동은 추가 검증이 필요하다.

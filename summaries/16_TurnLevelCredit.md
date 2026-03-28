@@ -1,69 +1,69 @@
 # Reinforcing Multi-Turn Reasoning in LLM Agents via Turn-Level Reward Design
 
 > **논문 정보**: Quan Wei, Siliang Zeng, Chenliang Li, William Brown, Oana Frunza, Wei Deng, Anderson Schneider, Yuriy Nevmyvaka, Yang Katie Zhao, Alfredo Garcia, Mingyi Hong (University of Minnesota, Texas A&M University, Prime Intellect, Morgan Stanley)
-> **arXiv**: 2025.05
-> **코드**: N/A
+> **arXiv**: 2505.11821v2 (2025.10) | **학회**: -
+> **코드**: Search-R1 기반 구현
 
 ---
 
-## Overview
+## Problem
 
-| 항목 | 내용 |
-|------|------|
-| **Problem** | GRPO, PPO 등 RL 알고리즘이 멀티턴 LLM 에이전트 학습에 적용되지만, 전체 trajectory에 대한 sparse outcome reward만 사용하여 각 턴의 기여도를 정밀하게 할당하지 못한다. 중간 단계의 credit assignment가 부재하여, 에이전트가 어떤 행동이 최종 결과에 기여했는지 학습하기 어렵다. |
-| **Motivation** | 검색 에이전트에서 좋은 쿼리를 초기에 선택하는 것이 관련 정보 검색에 결정적이지만, 턴 수준 피드백 없이는 어떤 쿼리가 도움이 됐는지 학습할 수 없다. 기존 연구들이 MDP로 모델링하면서도 intermediate reward를 sparse trajectory-level signal로 병합하여 advantage estimation이 부정확해진다. |
-| **Limitation** | (1) MT-GRPO는 K턴에서 G^(K-1) 롤아웃이 필요하여 장기 멀티턴에서 계산 비용이 지수적으로 증가. (2) 검색 에이전트 태스크에만 검증되어, 코딩/브라우징 등 다른 에이전트 유형에서의 효과는 미확인. (3) LLM-as-judge 보상의 신뢰성이 judge 모델 품질에 의존. (4) Qwen2.5-7B 크기의 모델에서만 실험하여 더 큰 모델에서의 scaling 효과는 미검증. |
+RL 알고리즘(GRPO, PPO)을 활용하여 LLM 에이전트를 훈련할 때, 대부분의 기존 방법은 최종 결과에 대한 sparse outcome reward만 사용한다. 이는 전체 trajectory를 단일 의사결정 단계로 취급하여, 다중 턴 상호작용의 구조를 무시하는 문제를 야기한다. 특히 long-horizon multi-turn 추론 태스크에서 중간 단계에 대한 피드백이 없으면, 에이전트는 어떤 행동이 최종 정답에 기여했는지 학습하기 어렵다. 기존의 naive한 해결책은 중간 보상과 결과 보상을 단일 trajectory-level 신호로 병합하는 것이지만, 이는 advantage estimation을 부정확하게 만들어 credit assignment 문제를 야기한다. 결과적으로 훈련이 불안정해지고, 특히 multi-hop QA와 같은 복잡한 추론 과제에서 성능이 저하된다.
+
+---
+
+## Motivation
+
+Multi-turn 에이전트 태스크에서는 각 턴(도구 호출과 그 결과)이 독립적인 의사결정 단위이므로, 턴 단위의 세밀한 보상 설계가 필요하다. 기존 GRPO는 trajectory-level advantage를 전체 턴에 균일하게 할당하여, 개별 턴의 기여도를 구분하지 못한다. 이를 turn-level MDP로 공식화하면 중간 보상을 자연스럽게 통합할 수 있으며, fine-grained credit assignment가 가능해진다. 또한 verifiable reward는 지나치게 엄격할 수 있으므로, LLM-as-judge를 통한 유연한 평가도 보완적으로 필요하다. PPO의 critic model과 GAE를 활용하면, GRPO의 지수적 rollout 비용 문제 없이 토큰 수준의 advantage estimation이 가능하여 확장성을 확보할 수 있다.
 
 ---
 
 ## Method
 
-이 논문은 멀티턴 에이전트 RL에서 **턴 수준 보상 설계**를 체계적으로 연구하고, GRPO와 PPO를 멀티턴 변형으로 확장한다.
+1. **Turn-Level MDP 공식화**: Multi-turn 에이전트 상호작용을 M = {S, A, P, R, γ}로 정의한다. 상태 s는 상호작용 이력, 행동 a는 생성된 토큰 시퀀스이며, 목표는 턴 단위 누적 보상을 최대화하는 것이다.
 
-1. **문제 정의: Single-Turn vs Multi-Turn MDP**
-   - Single-Turn: 전체 trajectory를 하나의 행동으로 취급, outcome reward만 사용 → `max E[R(x,y)]`
-   - Multi-Turn MDP: 턴 단위 의사결정, 중간+최종 보상 누적 → `max E[Σγ^k R(s_k, a_k)]`
-   - 중간 보상 없이 최종 보상만 있으면 MDP가 terminal reward MDP로 환원
+2. **MT-GRPO (Multi-Turn GRPO)**: 중간 보상 {R^I}와 결과 보상 {R^O}를 분리하여 턴별 advantage를 계산한다. 1턴 advantage는 A^I + αA^O, 2턴 advantage는 A^O로, 이전 턴이 이후 턴의 기여도를 반영하는 구조이다.
 
-2. **MT-GRPO (Multi-Turn GRPO)**
-   - 2턴 설정에서: 1턴 advantage = `A^I_i + α·A^O_i`, 2턴 advantage = `A^O_i`
-   - 중간 보상과 최종 보상을 각각 그룹 내 정규화하여 턴별 advantage 계산
-   - 한계: K턴에서 G^(K-1) 롤아웃 필요 (지수적 복잡도), 모든 롤아웃이 동일 턴 수여야 함
+3. **MT-GRPO의 한계**: K턴에 걸쳐 G^(K-1)개의 rollout이 필요하여 지수적 계산 비용이 발생하며, 모든 rollout이 동일 턴 수를 가져야 하는 제약이 있다.
 
-3. **MT-PPO (Multi-Turn PPO)**
-   - 크리틱 모델 + GAE(Generalized Advantage Estimation)으로 토큰 수준 advantage 계산
-   - 턴 수준 보상 할당: 중간 턴의 마지막 토큰에 R^I, trajectory 마지막 토큰에 R^O, 나머지 0
-   - MT-GRPO의 지수적 복잡도 문제를 해결하는 확장 가능한 대안
+4. **MT-PPO (Multi-Turn PPO)**: PPO의 critic model과 GAE를 활용하여 토큰 수준 advantage estimation을 수행한다. 턴 단위 보상을 토큰 수준으로 할당하되, 중간 턴의 마지막 토큰에 R^I를, trajectory 마지막 토큰에 R^O를 부여한다.
 
-4. **턴 수준 보상 설계 (검색 에이전트 케이스 스터디)**
-   - **Verifiable Reward**: 검색 결과에 정답이 포함되는지 이진 판정 → 엄격하지만 객관적
-   - **LLM-as-Judge Reward**: LLM이 검색된 정보의 관련성·충분성을 연속적으로 평가 → 유연하지만 주관적
-   - 두 유형 모두 outcome reward(최종 답변 정확도)와 결합
+5. **Outcome Verifiable Reward**: Exact Match Reward(정답 일치 시 1.0, 형식만 정확 시 0.2, 형식 오류 시 -1.0) + Format Reward(태그 사용 검증).
+
+6. **Intermediate Verifiable Reward**: Retrieval Existence Reward(검색 결과에 정답 포함 시 0.3), Format Reward(태그 정확성), Search Count Reward(과도한 검색 억제 페널티).
+
+7. **LLM-as-Judge 보상**: GRM을 judge로 활용하여 rubric 기반 점수를 부여. 형식 정확성, 추론 품질, 검색 효과성을 평가.
+
+8. **훈련 파이프라인**: Qwen2.5-7B 기반, E5 retriever, 2018 Wikipedia dump, 최대 턴 수 4, retrieved token에 대한 policy loss masking 적용.
 
 ---
 
 ## Key Contribution
 
-1. **턴 수준 보상 설계의 첫 체계적 연구**: 멀티턴 LLM 에이전트 RL에서 dense intermediate reward의 중요성을 최초로 체계적으로 분석.
-2. **MT-GRPO/MT-PPO 알고리즘**: GRPO와 PPO를 턴 수준 보상을 활용하도록 확장. MT-PPO가 크리틱 모델 통해 확장 가능한 솔루션 제공.
-3. **검색 에이전트에서의 실증**: 멀티턴 검색 태스크에서 턴 수준 보상이 trajectory 수준 보상 대비 안정성·수렴 속도·정확도 모두에서 우수함을 입증.
-4. **보상 유형 비교**: Verifiable vs LLM-as-judge 보상의 특성과 적용 가능성을 분석.
+1. **Turn-level reward design의 첫 체계적 연구**: Multi-turn LLM 에이전트 훈련에서 턴 단위 보상의 중요성을 최초로 규명.
+2. **MT-GRPO와 MT-PPO 확장**: GRPO와 PPO를 multi-turn 변형으로 확장하여 fine-grained credit assignment를 가능하게 함.
+3. **MT-PPO의 확장성**: critic model과 GAE로 MT-GRPO의 지수적 비용 문제를 해결하고 가변 턴 수를 지원.
+4. **체계적 보상 설계**: verifiable reward와 LLM-as-judge reward 두 유형의 turn-level 보상을 체계적으로 설계.
+5. **Search count penalty**: 과도한 도구 호출을 억제하고 훈련 안정성을 확보하는 메커니즘 제안.
 
 ---
 
 ## Experiment & Results
 
-**모델**: Qwen2.5-7B, 멀티턴 검색 에이전트 (추론+검색 반복 → 최종 답변)
+6개 QA 데이터셋(NQ, TriviaQA, PopQA, HotpotQA, 2WikiMultiHopQA, Musique), Qwen2.5-7B 모델.
 
-**데이터셋**: 다양한 QA 데이터셋 (멀티턴 검색 태스크로 변환)
+**Answer Correctness (EM)**:
+- MT-PPO 평균 **0.447** vs PPO-OR(0.432), PPO-MR(0.429), GRPO-MR(0.414), GRPO-OR(0.351).
+- HotpotQA: **0.453** (PPO-OR 대비 +1.8%p), 2WikiMultiHopQA: **0.424** (+4.2%p), Musique: **0.209** (+1.0%p).
 
-**핵심 결과**:
-- MT-GRPO vs GRPO-OR(outcome only): 도구 실행 보상과 exact match 보상 모두에서 MT-GRPO가 더 안정적이고 높은 수렴값 달성
-- GRPO-MR(merged rewards)도 GRPO-OR보다 우수하나, MT-GRPO가 가장 우수
-- MT-PPO: MT-GRPO와 유사한 성능이지만 지수적 롤아웃 문제 없이 확장 가능
+**Format Correctness**: MT-PPO 평균 **99.9%** vs PPO-OR(89.5%), GRPO-OR(53.4%), StepSearch(55.5%).
 
-**훈련 안정성**: 턴 수준 보상 사용 시 reward curve의 분산이 현저히 감소, EMA 스무딩 곡선에서 일관된 상승 추세
+**Training Dynamics**: MT-PPO는 100스텝 이내 빠르게 수렴하며 낮은 분산. GRPO는 훈련 중 지속적 crash 발생.
 
-**포맷 정확도**: 100% format correctness 달성 — 턴 수준 보상이 에이전트의 구조화된 출력 학습을 촉진
+**Ablation**: Search count reward 제거 시 훈련 불안정 및 최대 검색 횟수 도달로 종료 실패. N_max 4→6 변경해도 정확도 추세 유사.
 
-**Verifiable vs LLM-as-Judge**: Verifiable이 더 안정적이나 적용 범위 제한, LLM-as-Judge가 더 유연하나 약간의 노이즈 존재
+---
+
+## Limitation
+
+MT-GRPO는 K턴 설정에서 G^(K-1)개의 rollout이 필요하여 지수적 비용 발생. MT-PPO는 이를 개선하지만 critic model 훈련이라는 추가 비용이 수반된다. 실험이 검색 에이전트(reasoning-augmented search) 단일 도메인에 한정되어, 코드 실행, 웹 브라우징 등 다양한 에이전트 유형으로의 일반화가 미검증이다. Verifiable reward 설계가 태스크별로 수작업이 필요하며, LLM-as-judge의 평가 일관성과 비용 문제도 미해결이다. Qwen2.5-7B 단일 모델 크기에서만 실험하여 모델 스케일에 따른 효과 변화가 미분석이다.

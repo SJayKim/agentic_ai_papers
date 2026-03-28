@@ -1,73 +1,64 @@
 # AgentRefine: Enhancing Agent Generalization through Refinement Tuning
 
 > **논문 정보**: Dayuan Fu, Keqing He, Yejie Wang, Wentao Hong, Zhuoma Gongque, Weihao Zeng, Wei Wang, Jingang Wang, Xunliang Cai, Weiran Xu (Beijing University of Posts and Telecommunications, Meituan)
-> **arXiv**: ICLR 2025 (2025.01)
-> **코드**: N/A
+> **arXiv**: 2501.01702 (2025) | **학회**: ICLR 2025
+> **코드**: https://agentrefine.github.io/
 
 ---
 
-## Overview
+## Problem
 
-| 항목 | 내용 |
-|------|------|
-| **Problem** | 기존 에이전트 튜닝(Agent-FLAN, AgentGym 등)은 학습 환경(held-in)에서는 우수하지만 새로운 환경(held-out)으로의 일반화가 극히 부족하다. 포맷 오류, 비논리적 추론, 동일 오류 반복 등의 문제가 빈발하며, 이는 올바른 trajectory를 단순 암기하는 것에서 비롯된다. |
-| **Motivation** | 기존 에이전트 모델은 환경이 명시적 부정 피드백을 제공해도 동일한 잘못된 행동을 반복한다 — 경험에서 학습하지 못하고 관찰-행동 쌍을 암기할 뿐이다. 자기 수정(self-refinement) 능력이 에이전트 일반화의 핵심이라는 가설을 세우고, 오류-수정 trajectory로 학습시키면 새 환경에서도 적응할 수 있다. |
-| **Limitation** | (1) GPT-4o로 합성 데이터를 생성하므로, 데이터 품질이 GPT-4o의 능력에 의존. (2) Held-in 태스크(Alfworld)에서는 Agent-FLAN/AgentGym보다 낮은 성능 — 일반화를 위해 특화 성능을 일부 희생. (3) 합성 환경의 다양성이 실제 세계 복잡성을 완전히 반영하지 못할 수 있다. (4) Refinement 턴 수가 2회 이상으로 강제되어, 자연스러운 오류 분포와 다를 수 있다. |
+오픈소스 LLM 기반 에이전트는 GPT-4 등 상용 모델과 비교해 여전히 큰 성능 격차가 존재한다. 기존 에이전트 튜닝(Agent-FLAN, AgentGym 등)은 학습 데이터와 동일한 환경(held-in)에서는 우수한 성능을 보이지만, 새로운 환경(held-out)으로의 일반화 성능이 크게 떨어진다. 분석 결과, 기존 모델들은 observation-action 매핑을 단순 암기하는 방식으로 학습하며, 학습 환경의 action 형식이 조금만 변경되어도 성능이 급락한다(Agent-FLAN: -30.4%, AgentGym: -25.6%). 한번 잘못된 행동을 출력하면 환경으로부터 명시적인 부정 피드백을 받아도 동일한 오류를 반복하는 "error loop" 현상이 관찰된다. 포맷 오류, 비논리적 추론, 중복 생성 등 다양한 일반화 실패 유형이 발생하며, general alignment 데이터 혼합으로도 이 문제를 근본적으로 해결하지 못한다.
+
+---
+
+## Motivation
+
+에이전트의 일반화 능력은 단순히 정답 궤적을 암기하는 것이 아니라, 환경 피드백을 기반으로 자신의 실수를 인식하고 수정하는 자기 정제(self-refinement) 능력에서 비롯된다는 가설을 세운다. Reflexion, Self-Refine 등 선행 연구에서 영감을 받아, 에이전트 일반화와 self-refinement 사이의 상관관계를 규명하고자 한다. 좋은 에이전트는 새로운 환경에서 오류를 만났을 때 이전 행동을 수정하고 합리적인 탐색을 통해 올바른 행동 시퀀스를 발견할 수 있어야 한다. TRPG(Tabletop Role-playing Game)에서 영감을 받아, LLM이 DM과 플레이어 역할을 동시에 수행하며 오류-수정 과정을 포함하는 합성 데이터를 자동 생성하는 프레임워크를 제안한다.
 
 ---
 
 ## Method
 
-AgentRefine는 합성 환경에서 **오류-수정 trajectory**를 생성하여, 에이전트가 실수에서 학습하는 능력을 튜닝하는 프레임워크다.
+1. **Script Generation (환경 스크립트 생성)**: Persona Hub에서 다양한 인간 페르소나를 샘플링하여 각 페르소나에 맞는 에이전트 환경을 생성. 위치, 아이템, 플레이어 정보를 JSON 형식으로 표현. 의도적으로 방해 위치/아이템을 포함시켜 오류 발생 가능성을 높인다.
 
-1. **데이터 생성 파이프라인 (TRPG 영감)**
-   - **Script Generation**: 다양한 인간 페르소나(Chan et al.)에 기반하여 LLM이 환경·태스크·사용 가능 행동을 포함한 스크립트 생성
-   - **Trajectory Generation**: LLM이 DM(Dungeon Master)과 Player 역할을 동시 수행
-     - Player: ReAct 형식으로 사고(thought) + 행동(action) 생성
-     - DM: Player의 행동을 관찰하고, 파라미터 오류·논리 오류·위치 오류를 판정
-     - 오류 발생 시 오류 턴을 유지하고 LLM에게 환경 피드백에 기반한 수정(refine) 유도
-   - **Verification**: 스크립트의 행동 유효성 코드 검증 + trajectory의 JSON 형식/완료 여부/오류-수정 턴 수(최소 2회) 검증
+2. **Trajectory Generation (궤적 생성)**: LLM이 Dungeon Master(DM)과 Player 두 역할을 동시에 수행하며 multi-turn 상호작용을 생성. DM은 thinking → observing → evaluating 3단계, Player는 ReAct 형식으로 Thought → Action을 수행. 각 턴 생성 후 verifier가 오류를 검출하면 해당 오류 턴을 유지하고 수정하도록 프롬프트.
 
-2. **Refinement Tuning**
-   - DM의 관찰을 User로, Player의 사고+행동을 Assistant로 변환하여 multi-turn chat 형식으로 구성
-   - **핵심: 오류 턴의 loss를 마스킹** — 모델이 잘못된 사고 과정을 학습하지 않도록 방지
-   - 올바른 행동과 수정 행동에서만 학습 → "암기가 아닌 자기 수정" 능력 획득
+3. **Verification (검증)**: 스크립트 검증(validation code로 action 이름 검사), 궤적 검증(JSON 오류, 태스크 미완료, action-validation 불일치). 오류-수정 턴이 2회 미만이면 재생성하여 충분한 refinement 과정을 보장.
 
-3. **기존 방법과의 차이**
-   - Agent-FLAN/AgentGym: 올바른 trajectory만 학습 → 패턴 암기 → 새 환경에서 적응 실패
-   - AgentRefine: 오류+수정 trajectory 학습 → 환경 피드백에서 적응 → 새 환경에서 탐색적 문제 해결
+4. **Refinement Tuning (정제 학습)**: 궤적을 SFT 데이터셋으로 변환(DM observation → user turn, Player thought+action → assistant turn). **Erroneous Loss Masking**: 오류 턴의 토큰에 대한 loss를 마스킹하여 잘못된 추론 과정을 학습하지 않도록 한다. 정상 턴과 수정 턴의 토큰만 학습 신호로 사용.
+
+5. **데이터 규모**: 4K~64K 규모의 합성 데이터 생성, LLaMA3-8B/70B, Mistral-v0.3 등 다양한 모델에 적용.
 
 ---
 
 ## Key Contribution
 
-1. **에이전트 일반화와 자기 수정의 상관 관계 규명**: 에이전트 일반화 능력이 올바른 행동 암기가 아닌 자기 수정 능력에서 비롯됨을 실증적으로 밝힘.
-2. **합성 에이전트 환경 프레임워크**: TRPG에서 영감을 받아 다양한 페르소나 기반 에이전트 환경·태스크를 자동 생성, 수동 환경 구축의 한계 극복.
-3. **오류 턴 loss 마스킹**: 오류 행동의 loss를 마스킹하는 것이 필수적임을 입증 — 마스킹 없이는 75% 성능 하락.
-4. **Held-out 일반화**: 학습에 포함되지 않은 5개 태스크에서 기존 에이전트 튜닝 방법을 일관되게 초과.
+1. **에이전트 일반화와 self-refinement 간의 상관관계를 최초로 규명**: 궤적 암기가 아닌 오류 수정 능력이 일반화의 핵심임을 실증.
+2. **Refinement Tuning 패러다임**: 오류 턴을 포함한 궤적에서 오류 loss를 마스킹하는 새로운 학습 방식.
+3. **TRPG 기반 합성 프레임워크**: 페르소나 기반으로 다양한 환경/태스크/궤적을 자동 생성하며 verifier로 품질 보장.
+4. **강건성 향상**: held-in 환경의 action 형식 변형에 대해 기존 방법은 20~30% 하락하지만, AgentRefine는 오히려 3.7% 상승하며 표준편차 3.73%로 안정적.
+5. **오픈소스 모델로도 합성 가능**: DeepSeek-v2.5로도 데이터 합성이 가능하여 상용 모델 의존도를 낮추는 경로 제시.
 
 ---
 
 ## Experiment & Results
 
-**모델**: LLaMA-3-8B, Mistral-7B, LLaMA-3-70B
+- **평가 환경**: SciWorld, Alfworld(held-in), BabyAI, PDDL, Jericho의 5개 에이전트 태스크 + HotpotQA 추론 태스크.
+- **Held-out 일반화 (LLaMA3-8B)**: SciWorld 14.4% vs Agent-FLAN 1.1% (+13.3%p), PDDL 16.6% vs 8.3% (+8.3%p), Jericho 32.3% vs 10.1% (+22.2%p).
+- **Perturbation 강건성 (Alfworld)**: AgentRefine 48.5% (Std 3.73%) vs Agent-FLAN 36.9% (Std 21.98%) vs AgentGym 36.3% (Std 19.97%). Agent-FLAN은 67.2%→36.9%로 30.4%p 하락, AgentRefine는 44.8%→48.5%로 오히려 +3.7%p.
+- **Ablation (8K)**: Refinement data 제거 시 SciWorld 33.1→21.3% (-11.8%p). Erroneous loss masking 미적용 시 33.1→19.0% (-14.1%p).
+- **Best-of-N (N=10)**: Alfworld 93.3%, BabyAI 67.0%, SciWorld 40.0%으로 greedy 대비 평균 25%p+ 향상.
+- **Scaling**: 데이터 4K→64K 시 Average Success Rate 26.4%→50.3%, Progress Rate 30.5%→57.4%.
+- **HotpotQA**: AgentRefine EM 37.0%, F1 44.6% vs Agent-FLAN EM 24.6%, F1 32.4%.
+- **오픈소스 합성**: DeepSeek-v2.5로 4K 데이터 합성 시 BabyAI 36.6% (Agent-FLAN 25.0% 대비 +11.6%p).
 
-**태스크 5개**: Alfworld(held-in for Agent-FLAN), BabyAI, SciWorld, PDDL, Jericho. AgentBoard 프레임워크로 평가.
+---
 
-**LLaMA-3-8B 결과 (Progress Rate)**:
-- Held-out 평균: AgentRefine **40.8%** vs Agent-FLAN 20.5%, AgentGym 34.6%, LLaMA-3-8B-Instruct 40.1%
-- Jericho: AgentRefine **32.3%** vs Agent-FLAN 10.1%, AgentGym 12.9% — 가장 큰 격차
-- PDDL: AgentRefine **37.8%** vs Agent-FLAN 25.5%, AgentGym 16.6%
+## Limitation
 
-**Mistral-7B 결과**: AgentRefine가 held-out에서 Agent-FLAN(87.6→held-in but 6.7 held-out) 대비 압도적 일반화
-
-**LLaMA-3-70B 결과**: AgentRefine가 Agent-FLAN(70B) 대비 SciWorld(46.4 vs 16.4), PDDL(58.6 vs 53.7)에서 우위
-
-**Ablation (Table 2, 8K 데이터)**:
-- w/o refinement loss(오류 마스킹 제거): 평균 36.1 → 전체 성능 하락
-- w/o refinement data(수정 데이터 제거): 평균 35.0 → 수정 trajectory의 핵심 역할 확인
-- w erroneous loss(오류 턴도 학습): 평균 **28.2** — 75% 하락, 오류 학습의 해로움 입증
-
-**강건성**: 행동 설명 순서를 바꾸는 perturbation에서 AgentRefine만 안정적 성능 유지 (Agent-FLAN은 급락)
-
-**스케일링**: 4K→64K 데이터 증가에 따라 성능 단조 증가 (Success 26.4→50.3, Progress 38.2→57.4)
+- Held-in 태스크(Alfworld)에서는 해당 환경에서 직접 학습한 Agent-FLAN(67.2%)이나 AgentGym(61.9%)에 비해 AgentRefine(44.8%)의 성능이 낮아, 특정 환경 최적화와 일반화 사이의 trade-off가 존재.
+- 합성 데이터 생성에 GPT-4o를 사용하며, 오픈소스 모델 대체 시 성능 차이가 발생하여 강한 LLM 의존도가 남아 있다.
+- 검증(verification)이 rule-based로 이루어져, 복잡한 논리/의미적 오류를 완전히 포착하지 못할 가능성이 있다.
+- GPT-4 판별 정확도가 88%로, 약 12%의 오류 턴 분류 불일치가 데이터 품질에 영향을 줄 수 있다.
+- 평가가 텍스트 기반 게임/시뮬레이션 환경에 집중되어, 웹 브라우징, 코드 생성 등 실제 에이전트 응용에의 일반화는 미검증.
