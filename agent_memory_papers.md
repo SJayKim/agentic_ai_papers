@@ -100,3 +100,18 @@
 | **AutoGen** | 2023.08 | COLM 2024 / Microsoft | Qingyun Wu | 커스터마이즈 가능한 다중 에이전트 대화 프레임워크, 사실상 표준 |
 | **MetaGPT** | 2023.08 | ICLR 2024 / FoundationAgents | Sirui Hong | SOP 기반 역할 할당으로 환각 전파 억제, HumanEval 85.9% Pass@1 |
 | **SWE-bench** | 2023.10 | ICLR 2024 Oral / Princeton | Carlos E. Jimenez | 2,294개 실제 GitHub 이슈로 코딩 에이전트 평가하는 사실상 표준 벤치마크 |
+
+## 7. Harness Engineering (하네스 엔지니어링)
+
+| 논문 | 발표 날짜 | 학회/발표기관 | 1저자 | 핵심 아이디어 |
+|------|-----------|---------------|-------|---------------|
+| **Externalization Survey** | 2026.04 | arXiv / SJTU | Chenyu Zhou | 메모리/스킬/프로토콜/하네스를 인지적 외재화 관점에서 통합 정리한 최초의 서베이 |
+| **NLAH** | 2026.03 | Tsinghua / HIT | Linyue Pan | 하네스 제어 로직을 자연어로 표현한 이식 가능 실행 아티팩트 + IHR 런타임 제안 |
+| **AutoHarness** | 2026.03 | Google DeepMind | Xinghua Lou | Thompson sampling 트리 탐색으로 LLM이 자기 자신을 위한 코드 하네스를 자동 합성 |
+| **TerminalCodingAgent** | 2026.03 | OpenDev | Nghi D. Q. Bui | 터미널 코딩 에이전트의 스캐폴딩/하네스/컨텍스트 엔지니어링 실전 기술 보고서 |
+| **InsideScaffold** | 2026.04 | Huawei Canada | Benjamin Rombaut | 13개 코딩 에이전트 소스코드 분석 → 3계층 12차원 분류 체계 + 5개 루프 프리미티브 |
+| **MetaHarness** | 2026.03 | Stanford | Yoonho Lee | 코딩 에이전트가 파일시스템 기반 실행 이력을 탐색하여 하네스를 자동 최적화 |
+| **CompilerHarness** | 2026.03 | SUSTech / ETH Zurich | Yingwei Zheng | 컴파일러 특화 에이전트 하네스(llvm-autofix) + 334개 LLVM 버그 벤치마크 |
+| **LLM Readiness Harness** | 2026.03 | Lumytics | Alexandre Maiorano | 평가·관측성·CI 게이트를 통합한 LLM/RAG 배포 준비도 하네스 |
+| **PromptwareEng** | 2025.03 | Tsinghua / NTU / PKU | Zhenpeng Chen | 프롬프트 개발에 SE 원칙을 적용하는 프롬프트웨어 엔지니어링 프레임워크 + 27개 연구 기회 |
+| **ConfuciusCodeAgent** | 2025.12 | Meta / Harvard | Sherman Wong | AX/UX/DX 3축 설계 + 계층적 메모리 + Meta-agent로 대규모 코드베이스 스캐폴딩 |

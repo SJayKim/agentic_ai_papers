@@ -186,13 +186,14 @@ Agent 도구 프롬프트:
 `agent_memory_papers.md`의 적절한 카테고리 테이블에 새 행을 추가하세요.
 
 - 5열 구조: | 논문 | 발표 날짜 | 학회/발표기관 | 1저자 | 핵심 아이디어 |
-- 아래 6개 카테고리 중 택1:
+- 아래 7개 카테고리 중 택1:
   1. **Memory Management** — 메모리 저장/검색/구조화/진화
   2. **Tool Use & MCP** — 외부 도구 호출, function calling, MCP
   3. **Planning & Task Decomposition** — 작업 분할, 계획 수립, 오케스트레이션
   4. **Self-Correction & Test-Time Compute** — 자가 교정, 추론 시간 연산, RL 기반 학습
   5. **Agentic RAG & Graph RAG** — 지식 그래프, 그래프 RAG, 능동적 검색
-  6. **General** — 위 5개에 해당하지 않는 에이전트 아키텍처/서베이/기타
+  6. **General** — 위 6개에 해당하지 않는 에이전트 아키텍처/서베이/기타
+  7. **Harness Engineering** — 에이전트 하네스/스캐폴딩 설계 및 최적화
 
 ## Step 4: Notion 업로드
 

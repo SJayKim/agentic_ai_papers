@@ -111,4 +111,4 @@ Problem 5~8줄, Motivation 5~8줄, Method 15~25줄, Experiment 10~20줄, Limitat
 ## Step 3: 개요 파일 업데이트
 
 `agent_memory_papers.md`의 적절한 카테고리 테이블에 새 행 추가 (5열 구조).
-- 카테고리 6개 중 택1: Memory Management / Tool Use & MCP / Planning & Task Decomposition / Self-Correction & Test-Time Compute / Agentic RAG & Graph RAG / General
+- 카테고리 7개 중 택1: Memory Management / Tool Use & MCP / Planning & Task Decomposition / Self-Correction & Test-Time Compute / Agentic RAG & Graph RAG / General / Harness Engineering

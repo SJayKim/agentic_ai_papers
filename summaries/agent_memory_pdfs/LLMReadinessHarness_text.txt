@@ -1,0 +1,715 @@
+LLM Readiness Harness: Evaluation, Observability, and CI
+Gates for LLM/RAG Applications
+Alexandre Cristovão Maioranoalexandre@lumytics.com
+Lumytics
+Abstract
+We present a readiness harness for LLM and RAG applications that turns evaluation into a
+deployment decision workflow. The system combines automated benchmarks, OpenTeleme-
+try observability, and CI quality gates under a minimal API contract, then aggregates
+workflow success, policy compliance, groundedness, retrieval hit rate, cost, and p95 latency
+into scenario-weighted readiness scores with Pareto frontiers. We evaluate the harness on
+ticket-routing workflows and BEIR grounding tasks (SciFact and FiQA) with full Azure
+matrix coverage (162/162 valid cells across datasets, scenarios, retrieval depths, seeds, and
+models). Results show that readiness is not a single metric: on FiQA undersla-first
+at k=5,gpt-4.1-minileads in readiness and faithfulness, whilegpt-5.2pays a substan-
+tial latency cost; on SciFact, models are closer in quality but still separable operationally.
+Ticket-routing regression gates consistently reject unsafe prompt variants, demonstrating
+that the harness can block risky releases instead of merely reporting offline scores. The
+result is a reproducible, operationally grounded framework for deciding whether an LLM or
+RAG system is ready to ship.
+1 Introduction
+Production teams struggle to apply release-engineering rigor to LLM and RAG systems. Evaluation, ob-
+servability, and quality gates are often ad hoc, leading to silent regressions, unpredictable cost, and policy
+violations. We target the hypothesis that higher textual quality does not necessarily maximize utility once
+cost, latency, groundedness, and policy constraints are considered.
+We propose a readiness harness that combines automated evaluation, observability, and CI gates, then sur-
+faces cost–utility frontiers for deployment decisions. The harness is deliberately pragmatic: it defines a stable
+API contract, produces run-level artifacts, and enables scenario-specific scoring for cost-first, risk-first, and
+SLA-first rollouts. While prior tools already measure RAG quality, we focus on release readiness by bind-
+ing those metrics to observability, CI gates, and operational constraints. This broader framing also creates
+an operational substrate for follow-on work on automated self-testing quality gates. In a later companion
+case study, automated self-testing is specialized into a longitudinal PROMOTE/HOLD/ROLLBACK release
+workflow for a deployed multi-agent application Maiorano (2026). We therefore position the present harness
+as a general readiness layer rather than a dogfooding-only protocol.
+Contributions.
+•An end-to-end readiness harness architecture (batch runner + API + CI gates).
+•A multi-dimensional readiness score and cost-utility frontier analysis.
+•A benchmark plan for workflow tickets (T1/T2) and retrieval (T3/BEIR).
+1arXiv:2603.27355v1  [cs.AI]  28 Mar 2026
+Tickets
+QueriesAPI
+/v1/inferStructured
+Output
+Retriever
+(BEIR index)LLM Provider
+Azure OpenAI
+Policy and
+Schema ChecksMetrics and
+Traces
+Run Artifacts
+report.json
+summary.csv
+CI Gates
+promptfooBatch Runner
+Figure 1: System architecture and instrumentation points.
+Table 1: Default OpenTelemetry spans and attributes.
+Span Purpose Key attributes
+infer Root span for the inference
+requestrun_id, dataset_id, pipeline_version, scenario, latency_ms,
+tokens_in, tokens_out, cost_usd_est
+route.classify Route label prediction ticket_id (hashed), dataset_id, predicted_label, confidence,
+latency_ms
+respond.finalize Escalation decision ticket_id (hashed), should_escalate, latency_ms
+rag.retrieve Retrieval step top_k, index_id, retrieved_doc_ids, latency_ms
+rag.generate LLM generation model_id, provider, cache_hit, latency_ms
+validate.policy Policy checks pass, violation_types, latency_ms
+2 System Overview
+The system consists of a local API service for inference, a batch worker for benchmarking, OpenTelemetry
+instrumentation OpenTelemetry (2025b;a), and CI quality gates via promptfoo Promptfoo (2025a;b). The
+API exposes a stable contract for single-case inference and batch runs, returning structured outputs plus
+metadata for cost, latency, and trace correlation. The batch worker orchestrates dataset sampling, stores
+artifacts per run (reports, scorecards, and frontiers), and can be triggered in CI or nightly schedules.
+The observability layer creates spans for routing, retrieval, generation, and policy validation, enabling post-
+hoc debugging of regressions. CI gates are enforced via promptfoo to detect schema violations, policy failures,
+and quality regressions before deployment.
+The API contract and instrumentation schema standardize required fields (run id, dataset id, pipeline meta-
+data, latency, tokenusage, andcostestimates)andoptionaltraceidsforcross-systemcorrelation. Forprivacy
+and governance, traces record hashed ticket identifiers and can redact or exclude raw user content, with re-
+tention and access controlled at the artifact storage layer. Figure 1 summarizes the runtime components and
+instrumentation points captured by the harness.
+Table 1 summarizes the default span names and attributes captured by the instrumentation layer for each
+inference run.
+3 Readiness Scoring
+We compute readiness using a small set of observable dimensions. Each run yields metrics for workflow
+success, policy compliance, groundedness (faithfulness), retrieval hit@k (BEIR), cost per task, and p95
+latency Thakur et al. (2021); Es et al. (2024). We define a weighted readiness scoreR=/summationtext
+iwi·mi, where
+weights are scenario-specific: cost-first, risk-first, and SLA-first. To preserve auditability in the presence of
+missing metrics, we computeR=/summationtext
+i∈Pwimi/summationtext
+i∈Pwi, wherePare the metrics present in a run. Missing metrics are
+explicitly reported alongside the score.
+2
+All scalar metrics are normalized to the[0,1]range. Rate-based signals (e.g., faithfulness, retrieval hit@k,
+policy pass rates) are used directly; cost and latency are reported with their raw values and mapped to
+optional normalized scores when budgets or thresholds are configured. Policy compliance is also treated as
+a hard gate in CI: runs that violate policies cannot pass gates even if their scalar score is high. We also
+compute cost-utility frontiers by identifying non-dominated pipelines across cost and quality dimensions.
+Scenario weights (sum to 1) are fixed and published in code. Table 2 presents the weights used for each
+evaluation dimension across the three deployment scenarios.
+Table 2: Scenario weights used in readiness scoring.
+Scenario Workflow Policy Faithfulness Retrieval Cost SLA
+cost-first 0.20 0.20 0.15 0.15 0.20 0.10
+risk-first 0.15 0.25 0.20 0.15 0.10 0.15
+SLA-first 0.20 0.15 0.15 0.10 0.10 0.30
+Cost is estimated from model token usage using published API pricing OpenAI (2025). The scoring function
+is intentionally simple to preserve auditability, enable calibration by product owners, and isolate the impact
+of ablations on each dimension. A weight ablation varying scenario assignments is reported in Table 10
+(Appendix).
+Not all dimensions are populated for every task type. For BEIR retrieval tasks (T3), workflow success
+and policy compliance are not applicable and are excluded fromP; the score is thus driven by faithfulness,
+retrieval hit@k, cost, and SLA. For ticket routing tasks (T1/T2), retrieval hit@k is not applicable; the score
+is driven by workflow success, policy compliance, faithfulness, cost, and SLA. This per-task scoping is explicit
+in exported artifacts so that cross-task score comparisons are made with awareness of which dimensions are
+active.
+Pareto frontiers are computed per scenario using available metrics, maximizing quality signals (e.g., faith-
+fulness, retrieval hit@k) while minimizing cost and latency. We report the chosen metric set for each run to
+make dominance checks explicit and reproducible.
+4 Benchmarks and Datasets
+We benchmark two task families, consisting of three defined tasks. Task 1 (T1) and Task 2 (T2) cover
+customer-support workflows using public ticket datasets to evaluate routing (T1), escalation decisions, and
+policy checks (T2). Task 3 (T3) evaluates retrieval grounding using BEIR subsets (scifact for factual ground-
+ing and fiqa for domain shift) Thakur et al. (2021). This separation keeps the framing consistent with both
+product needs (workflow and policy) and scientific rigor (retrieval OOD generalization).
+Datasets and splits.For T1/T2, we use IT Service Ticket Classification (Kaggle) Adisongoh (2025)
+and Multilingual Customer Support Tickets (Kaggle/HF) Bueck (2025) to cover structured routing and
+multilingual stress cases. We generate stratified 80/10/10 train/val/test splits with a fixed seed and publish
+a frozen regression subset (from the test split) for CI gates. Each split and regression suite is versioned with
+a manifest that records the seed, counts, and source URI. The multilingual dataset contains 28,587 tickets
+(en=16,338; de=12,249) across 10 queues, with median ticket length 426 characters. The IT service dataset
+contains 47,837 tickets across 8 queues (Hardware, HR Support, Access, Miscellaneous, Storage, Purchase,
+Internal Project, Administrative rights), giving a clean routing baseline and enabling TF-IDF versus LLM
+comparisons under a stable label schema. The multilingual dataset stresses language robustness (English
+and German) and queue imbalance, mirroring real enterprise support distributions. Appendix B.6 includes
+short examples of each dataset family for concreteness.
+We include a minimal regression set with ambiguous tickets and prompt-injection-style instructions to stress
+policy and grounding. For each dataset, we sample a fixed number of queries and run controlled ablations
+over retrieval depth and prompting configurations.
+3
+Table 3: Synthetic dataset quality comparison (template vs LLM).
+DatasetnQ JS Lex Uniq Esc Sch Pol Dup Viol
+Template v1 4000 1.0000 0.0000 0.0036 0.0695 0.1923 0.0000 0.0000 0.0000 0
+LLM augmentation 500 0.9936 0.0064 0.0898 0.3960 0.2040 0.0000 0.0000 0.0000 1
+For T3, we use BEIR SciFact and FiQA Thakur et al. (2021). SciFact consists of scientific claims paired with
+evidence-bearing abstracts, emphasizing factual grounding. FiQA covers finance questions with supporting
+passages from a domain-specific corpus, representing domain shift. We keep the original BEIR query/corpus
+splits and evaluate retrieval hit@k independently from workflow metrics.
+Synthetic dataset generation (product).To support product usage and avoid non-commercial license
+constraints, we define a synthetic ticket generator with audit-ready guardrails. We use templates as a safe
+base and optionally apply self-instruct style LLM expansion for diversity Wang et al. (2023); Honovich et al.
+(2022); Wei & Zou (2019). Labels (queue/priority/escalation) are fixed by rules and validated post-hoc, and
+distributions are enforced via stratified quotas. We filter with schema and policy checks, deduplication, and
+similarity thresholds, and publish manifests and dataset cards for traceability Gebru et al. (2018); Bender &
+Friedman (2018). The synthetic suite is designed to be multilingual (en/pt/es) to mirror enterprise support
+coverage, and is intended for product regression and CI gates rather than replacing real-world evaluation
+datasets. Table 3 summarizes template versus LLM generation quality metrics for the synthetic ticket suite.
+The LLM comparison uses a 500-sample run due to local compute limits, while the template run uses 4,000
+samples for stable distribution checks.
+In this synthetic track, both generators remain schema/policy-safe (zero schema errors and policy violations),
+but they differ in distribution behavior. The template baseline reaches perfect quota compliance (quality
+score 1.0000 and zero distribution violations), while the LLM-augmentation run is close in aggregate quality
+(0.9936) with higher lexical diversity and novelty (Lex 0.0898; Uniq 0.3960), but incurs one distribution
+violation at n=500. We treat this as operational guidance for synthetic-data generation behavior, not a
+strict ranking, because sample sizes and compute constraints differ across tracks.
+Task definitions.T1 success is correct routing (route_label) against dataset labels. T2 success requires
+zero policy violations and correct escalation when a gold escalation label is available; otherwise we report
+escalation rate separately and treat policy as the hard gate. Policy rules include a minimal credential-
+collection ban (e.g., asks_for_password), treated as a hard gate for CI. For T3, we use BEIR SciFact and
+FiQA,andreportretrievalmetricsseparatelyfromend-to-endworkflowoutcomestoavoidconflatingretrieval
+relevance with task readiness.
+5 Experiments
+Baselines include prompt-only LLM routing and RAG with policy gates. This version reports the hosted
+Azure matrix end-to-end (OpenAI model deployments:gpt-4.1,gpt-4.1-mini,gpt-5.2) alongside a TF-
+IDF + LinearSVC baseline for ticket routing tasks.
+For BEIR, we execute the full matrix on SciFact and FiQA: 3 scenarios (cost/risk/sla-first)×3 top-k
+values (3/5/10)×3 seeds (42/1337/2024)×3 models, withsample_n=60per run. After filtering to latest
+valid runs per (dataset, scenario, k, seed, model), coverage is complete: 27/27 per model in each dataset
+(81 SciFact + 81 FiQA clean runs). Retrieval ablation usessample_n=80(sla-first, k=5, seed=2024).
+Ticket sweeps run on two datasets with prompt v1/v2, three seeds, andsample_n=200; ticket regressions
+(baseline/bias/policy) usesample_n=60. Azure execution uses worker parallelism and resume/checkpoint
+support to recover safely from connection interruptions.
+We report cost, latency, workflow success, policy pass/violations, faithfulness, and retrieval hit@k. Answer
+relevance (a RAGAS sub-metric) was collected but returned empty across all runs under the current RA-
+4
+2.5 3 3.5 4 4.5 5 5.5 6 6.5 7 7.5 8 8.500.20.40.60.81
+p95 latency (s)Readiness score
+Cost-first Risk-first SLA-first
+Figure 2: Latency-utility frontiers across scenarios (SciFact; p95 latency vs readiness score).
+GAS configuration, so it is excluded from aggregate scores; the score formula uses only present metrics via
+thePmechanism (Section 3). Artifacts are exported to CSV/JSON/LaTeX from the same run manifests
+(Appendix B.8).
+The BEIR core results (Table 6) show stable model separation. At FiQA, k=5,sla-first,gpt-4.1-mini
+leads on readiness (0.808±0.022) and faithfulness (0.777±0.069), followed bygpt-4.1(0.782±0.016;
+faithfulness 0.665±0.047), whilegpt-5.2is lower on readiness and faithfulness (0.710±0.014; 0.387±
+0.016) and substantially slower (p95∼9.0s vs 3.6–4.0s). At SciFact, k=5,sla-first, the gap is smaller:
+gpt-4.1-mini0.811±0.017,gpt-4.10.798±0.033, andgpt-5.20.798±0.010; latency remains materially
+higher forgpt-5.2(p95∼6.2s). Per-run sample metrics for SciFact and FiQA are provided in Tables 8 and
+9 in the Appendix.
+Across models, increasing k improves retrieval hit@k (SciFact: 0.8167→0.8889; FiQA: 0.5278→0.6444 from
+k=3 to k=10) but increases cost (∼0.007–0.008 to∼0.020 per run) and does not always improve readiness
+under cost/SLA-weighted scoring. Pareto frontiers and non-dominated runs are shown in Figures 2, 3 and
+Table 4; tables now keep explicit model labels to avoid cross-model ambiguity.
+Retriever ablation on SciFact (Table 5) shows BM25 without reranker maximizes hit@k (0.850), while
+BM25+reranker gives the best faithfulness in this slice (0.525) with the lowest p95 latency (2859 ms). Note
+thatthisablationcoversasingledataset, seed, andkvalue(SciFact, seed=2024, k=5); broadergeneralization
+should be validated across seeds and datasets before drawing definitive retriever conclusions.
+Forticketrouting, compactandfullsummariesarereportedinTables11and13. Oncustomer-supporttickets
+(10 queues; random baseline≈10%), prompt v1/v2 are close in routing accuracy (0.295 vs 0.292 mean), with
+v2 reducing p95 latency (3150 ms vs 3444 ms) at slightly lower workflow success (0.148 vs 0.167). On IT
+tickets (8 queues; random baseline≈12.5%), v2 improves routing (0.408 vs 0.393 mean accuracy) and p95
+latency (2447 ms vs 2743 ms), while workflow success remains close (0.358 vs 0.362). Routing accuracy in
+both domains is above the random baseline but reflects the inherent complexity of multi-queue classification
+5
+Table 4: Pareto frontier (all scenarios; dataset: SciFact).
+Scenario Model k Seed Score Faithfulness Hit@k Cost ($) p95 latency (ms)
+Risk-first gpt-4.1-mini 10 1337 0.664 0.567 0.900 0.0200 3513
+Risk-first gpt-4.1-mini 10 42 0.685 0.644 0.883 0.0205 3479
+Risk-first gpt-4.1-mini 3 1337 0.741 0.539 0.783 0.0075 3721
+Risk-first gpt-4.1-mini 3 2024 0.749 0.515 0.850 0.0076 3419
+Risk-first gpt-4.1-mini 3 42 0.801 0.700 0.817 0.0077 4093
+Risk-first gpt-4.1-mini 5 1337 0.765 0.674 0.833 0.0111 3344
+Risk-first gpt-4.1-mini 5 2024 0.754 0.632 0.850 0.0113 3890
+Risk-first gpt-4.1-mini 5 42 0.774 0.707 0.833 0.0114 3975
+Cost-first gpt-4.1 10 1337 0.532 0.563 0.900 0.0201 3056
+Cost-first gpt-4.1 10 42 0.557 0.676 0.883 0.0205 3564
+Cost-first gpt-4.1 3 1337 0.724 0.526 0.783 0.0076 3079
+Cost-first gpt-4.1 3 2024 0.740 0.530 0.850 0.0077 2937
+Cost-first gpt-4.1 3 42 0.770 0.687 0.817 0.0077 2783
+Cost-first gpt-4.1 5 1337 0.681 0.571 0.833 0.0112 3139
+Risk-first gpt-4.1 10 1337 0.656 0.542 0.900 0.0201 3131
+Risk-first gpt-4.1 10 2024 0.590 0.358 0.883 0.0203 3037
+Risk-first gpt-4.1 10 42 0.694 0.669 0.883 0.0205 3117
+Risk-first gpt-4.1 5 1337 0.729 0.567 0.833 0.0112 3236
+Risk-first gpt-4.1 5 42 0.770 0.696 0.833 0.0114 2801
+SLA-first gpt-4.1 10 1337 0.723 0.534 0.900 0.0201 3050
+SLA-first gpt-4.1 10 42 0.745 0.638 0.883 0.0205 3190
+SLA-first gpt-4.1 3 2024 0.814 0.501 0.850 0.0076 2722
+SLA-first gpt-4.1 3 42 0.837 0.628 0.817 0.0077 3033
+SLA-first gpt-4.1 5 42 0.837 0.752 0.833 0.0114 3313
+Cost-first gpt-4.1-mini 10 42 0.564 0.707 0.883 0.0205 3284
+Cost-first gpt-4.1-mini 3 1337 0.732 0.551 0.783 0.0075 3167
+Cost-first gpt-4.1-mini 3 2024 0.721 0.446 0.850 0.0076 3886
+Cost-first gpt-4.1-mini 3 42 0.783 0.739 0.817 0.0077 3494
+Cost-first gpt-4.1-mini 5 1337 0.687 0.588 0.833 0.0111 3271
+Cost-first gpt-4.1-mini 5 42 0.719 0.740 0.833 0.0114 3214
+SLA-first gpt-4.1-mini 10 1337 0.748 0.641 0.900 0.0200 3787
+SLA-first gpt-4.1-mini 10 42 0.752 0.669 0.883 0.0205 3720
+SLA-first gpt-4.1-mini 3 1337 0.818 0.559 0.783 0.0075 3348
+SLA-first gpt-4.1-mini 3 2024 0.801 0.445 0.850 0.0076 3494
+SLA-first gpt-4.1-mini 3 42 0.860 0.727 0.817 0.0077 3475
+SLA-first gpt-4.1-mini 5 1337 0.802 0.591 0.833 0.0111 3684
+SLA-first gpt-4.1-mini 5 2024 0.800 0.577 0.850 0.0112 3451
+SLA-first gpt-4.1-mini 5 42 0.830 0.724 0.833 0.0114 3379
+Risk-first gpt-5.2 3 2024 0.767 0.579 0.850 0.0080 7553
+Cost-first gpt-5.2 3 2024 0.758 0.626 0.850 0.0080 6449
+SLA-first gpt-5.2 3 2024 0.833 0.597 0.850 0.0080 8075
+SLA-first gpt-5.2 5 2024 0.804 0.605 0.850 0.0116 5707
+under a zero-shot prompt contract. Seed robustness for these runs is summarized in Table 12. Detailed
+per-run values and regression variants are included in Table 13.
+6
+3 4 5 6 7 8 9 10 1100.20.40.60.81
+p95 latency (s)Readiness score
+Cost-first Risk-first SLA-first
+Figure 3: Latency-utility frontiers across scenarios (FiQA; p95 latency vs readiness score).
+Table 5: Retriever ablation (SciFact; sla-first; k=5; seed=2024).
+Scenario k Seed Retriever Reranker Hit@k Faithfulness p95 latency (ms)
+SLA-first 5 2024 bm25 off 0.850 0.479 3054
+SLA-first 5 2024 bm25 on 0.812 0.525 2859
+SLA-first 5 2024 dense off 0.812 0.470 3392
+SLA-first 5 2024 dense on 0.800 0.481 3229
+We run each configuration with seeds 42/1337/2024 and report mean±std (Table 6; Figure 4). p95
+latency is computed from per-sample run logs and summarized in the released analysis outputs. Azure runs
+support larger samples with lower tail latency and full-model matrix coverage, while preserving artifact-level
+reproducibility.
+For analysis tables, we filter to latest valid runs per (dataset, scenario, k, seed, model, provider), requiring
+ragas_status=ok, zero evaluator errors, and consistent dataset/pipeline/sample settings. The resulting
+filtered analysis sets are released with the public reproducibility artifact for SciFact and FiQA.
+6 Validation and Regression Tests
+Validation focuses on automated sanity checks and regression detection over artifact-complete runs. For
+ticket workflows, we run seeded regression variants on Azure (sample_n=60per dataset): abiasvariant that
+shifts routing behavior, and apolicyvariant that removes key safety constraints. Each candidate is compared
+against the latest baseline using CI thresholds.
+Across both ticket datasets (CS and IT), the policy regression reliably triggers hard-gate failures with large
+drops in policy pass and workflow success (∆Policy = -0.97 on CS and -0.93 on IT in the latest suite). In
+7
+Table 6: Seeded robustness (mean±std; p95 in ms; SciFact and FiQA).
+Dataset Model Scenario k Runs Faith. Hit@k p95
+FiQA gpt-4.1 Cost-first 3 3 0.65±0.04 0.53±0.08 3487±139
+FiQA gpt-4.1 Cost-first 5 3 0.65±0.06 0.57±0.06 3695±494
+FiQA gpt-4.1 Risk-first 3 3 0.65±0.01 0.53±0.08 3953±264
+FiQA gpt-4.1 Risk-first 5 3 0.67±0.06 0.57±0.06 3476±271
+FiQA gpt-4.1 SLA-first 3 3 0.61±0.04 0.53±0.08 3352±113
+FiQA gpt-4.1 SLA-first 5 3 0.67±0.05 0.57±0.06 3581±447
+FiQA gpt-4.1-mini Cost-first 3 3 0.73±0.06 0.53±0.08 4169±1014
+FiQA gpt-4.1-mini Cost-first 5 3 0.79±0.05 0.57±0.06 4375±226
+FiQA gpt-4.1-mini Risk-first 3 3 0.72±0.03 0.53±0.08 3989±152
+FiQA gpt-4.1-mini Risk-first 5 3 0.75±0.02 0.57±0.06 3664±34
+FiQA gpt-4.1-mini SLA-first 3 3 0.71±0.01 0.53±0.08 4240±339
+FiQA gpt-4.1-mini SLA-first 5 3 0.78±0.07 0.57±0.06 4033±51
+FiQA gpt-5.2 Cost-first 3 3 0.39±0.07 0.53±0.08 9709±811
+FiQA gpt-5.2 Cost-first 5 3 0.39±0.05 0.57±0.06 9205±322
+FiQA gpt-5.2 Risk-first 3 3 0.36±0.07 0.53±0.08 9108±846
+FiQA gpt-5.2 Risk-first 5 3 0.39±0.02 0.57±0.06 9530±549
+FiQA gpt-5.2 SLA-first 3 3 0.37±0.04 0.53±0.08 9244±1467
+FiQA gpt-5.2 SLA-first 5 3 0.39±0.02 0.57±0.06 9041±360
+SciFact gpt-4.1 Cost-first 3 3 0.58±0.09 0.82±0.03 2933±148
+SciFact gpt-4.1 Cost-first 5 3 0.58±0.14 0.84±0.01 3585±408
+SciFact gpt-4.1 Risk-first 3 3 0.56±0.07 0.82±0.03 3304±278
+SciFact gpt-4.1 Risk-first 5 3 0.59±0.10 0.84±0.01 3049±224
+SciFact gpt-4.1 SLA-first 3 3 0.55±0.07 0.82±0.03 3154±504
+SciFact gpt-4.1 SLA-first 5 3 0.58±0.15 0.84±0.01 3200±244
+SciFact gpt-4.1-mini Cost-first 3 3 0.58±0.15 0.82±0.03 3516±360
+SciFact gpt-4.1-mini Cost-first 5 3 0.63±0.10 0.84±0.01 3324±143
+SciFact gpt-4.1-mini Risk-first 3 3 0.58±0.10 0.82±0.03 3744±338
+SciFact gpt-4.1-mini Risk-first 5 3 0.67±0.04 0.84±0.01 3736±342
+SciFact gpt-4.1-mini SLA-first 3 3 0.58±0.14 0.82±0.03 3439±79
+SciFact gpt-4.1-mini SLA-first 5 3 0.63±0.08 0.84±0.01 3505±159
+SciFact gpt-5.2 Cost-first 3 3 0.62±0.07 0.82±0.03 6224±217
+SciFact gpt-5.2 Cost-first 5 3 0.58±0.09 0.84±0.01 6474±626
+SciFact gpt-5.2 Risk-first 3 3 0.60±0.09 0.82±0.03 7072±987
+SciFact gpt-5.2 Risk-first 5 3 0.56±0.11 0.84±0.01 6547±80
+SciFact gpt-5.2 SLA-first 3 3 0.61±0.07 0.82±0.03 6792±1152
+SciFact gpt-5.2 SLA-first 5 3 0.58±0.05 0.84±0.01 6229±579
+the current Azure regression set, the bias variant also fails gates in both datasets (smaller policy/workflow
+deltas than policy-variant failures, but still beyond configured thresholds): CS bias shifts routing (+0.07)
+with∆Policy=-0.08, and IT bias produces smaller quality shifts (∆Routing=-0.01,∆Policy=-0.02) but
+remains gate-failing. Table 7 summarizes deltas and gate outcomes; per-error-type breakdowns are provided
+in Tables 14 and 15 (Appendix).
+8
+Cost-first Risk-first SLA-first00.20.40.60.81
+ScenarioReadiness score (mean±std)
+FiQA | gpt-4.1 FiQA | gpt-4.1-mini FiQA | gpt-5.2
+SciFact | gpt-4.1 SciFact | gpt-4.1-mini SciFact | gpt-5.2
+Figure 4: Seed robustness for readiness score (mean±std; top_k=5).
+Table 7: Seeded prompt regressions and CI gate outcome (T1/T2).
+Dataset Variant∆Workflow∆Policy∆Routing∆p95 (ms) Gate
+CS bias 0.03 -0.08 0.07 -120 fail
+CS policy -0.27 -0.97 0.07 -371 fail
+IT bias -0.03 -0.02 -0.01 -293 fail
+IT policy -0.33 -0.93 0.02 13 fail
+We do not include a human validation study in this draft. Given the updated hosted-model scale, the
+next validation increment is a targeted manual audit on high-disagreement slices (model disagreement, gate-
+borderline cases, and long-tail latency outliers).
+7 Lessons Learned
+Four practical lessons emerged from the Azure matrix. First, newer/larger model classes are not automat-
+ically superior under a fixed prompt+schema contract: in our BEIR setup,gpt-4.1-miniis strongest on
+FiQA readiness/faithfulness (0.777±0.069), whilegpt-5.2shows a 50% drop in faithfulness (0.387±0.016)
+and carries a clear latency penalty. We hypothesize thatgpt-5.2may synthesize and paraphrase retrieved
+passages more aggressively rather than grounding answers close to the source text—behavior that RAGAS
+faithfulness penalizes—and that the fixed prompt contract was not tuned for the newer model’s instruction-
+following style. This underscores the need to re-evaluate prompts when upgrading model versions, even
+within the same provider family. Second, retrieval depth is a true operating knob: higher k consistently
+raises hit@k, but cost/latency growth can erase readiness gains under cost/SLA-weighted gates. Third,
+prompt updates are dataset-dependent: ticket prompt v2 improves latency on both datasets but improves
+routing mainly on IT (not CS), so "single winner" prompt assumptions are brittle. Fourth, regression gates
+remain high-leverage: policy-hard constraints catch harmful prompt variants that would pass if we monitored
+only aggregate quality metrics.
+Operationally, worker parallelism plus checkpoint/resume support was essential: it allowed recovery from ma-
+chine restarts and connectivity failures without discarding partial runs, which materially reduced experiment
+turnaround time.
+9
+8 Limitations and Threats to Validity
+Our evaluation relies on public datasets and reference-free metrics that do not fully capture production
+behavior. BEIR is predominantly English and emphasizes retrieval-grounding proxies rather than end-task
+business outcomes. Cost and latency here are measured at the harness boundary and should be validated in
+production telemetry with end-user traffic patterns. A small number of runs exhibited extreme p95 latency
+values (e.g., 32–33s forgpt-4.1in isolated seeds), consistent with transient Azure connectivity timeouts
+rather than intrinsic model behavior; such outliers can inflate p95 estimates and should be investigated via
+OTel trace inspection in production deployments.
+Although the core Azure matrix is complete (multi-seed, multi-scenario, multi-model), external validity
+remains bounded: runs were executed in one cloud provider/region configuration and with fixed prompt
+contracts. Ticket experiments were concentrated ongpt-4.1; cross-model ticket calibration is still pending.
+This paper does not provide a controlled cross-provider comparison. Results are reported for Azure-hosted
+OpenAI deployments under fixed prompt and retrieval contracts; cross-provider transferability should be
+tested in future work before generalization.
+Trace artifacts also require strict redaction and retention controls before production deployment.
+For synthetic data generation, LLM-based augmentation can introduce memorization risks and contamina-
+tion of evaluation data Carlini et al. (2020); Golchin & Surdeanu (2023); Jain et al. (2024), and may bias
+outputs toward the generator’s style or amplify label noise. Model collapse concerns apply when synthetic
+data is used for training Seddik et al. (2024). Our pipeline mitigates these with neutral prompts, schema
+and policy checks, deduplication, similarity filtering, and controlled distributions, but residual risks remain;
+synthetic data should be treated as a complement to (not a replacement for) real-world validation.
+9 Related Work
+We build on reference-free RAG evaluation (Ragas) Es et al. (2024), vendor-neutral observability standards
+(OpenTelemetry) OpenTelemetry (2025b), CI evaluation tooling (promptfoo) Promptfoo (2025a;b), and the
+BEIR benchmark for retrieval evaluation Thakur et al. (2021). We differentiate by combining these com-
+ponents into a single readiness workflow with explicit cost and latency instrumentation, run artifacts, and
+decision-oriented frontiers. This section positions our harness relative to existing eval frameworks and op-
+erational evaluation practices. Many RAG evaluation toolkits already exist, but they typically optimize
+or report quality signals in isolation rather than enforcing deployment readiness with observability and CI
+gating.
+Holistic evaluation suites such as HELM Liang et al. (2023) emphasize multi-metric, scenario-level bench-
+marking for language models, highlighting the need to surface trade-offs beyond accuracy. ARES introduces
+automated component-level evaluation for RAG systems using lightweight LM judges Saad-Falcon et al.
+(2024). We align with these efforts on multi-signal evaluation, but focus on release readiness by binding eval-
+uation to instrumentation, artifacts, and CI gates. Experience reports on RAG engineering failure points
+Barnett et al. (2024) motivate our emphasis on observability and policy/grounding checks as first-class
+readiness signals.
+Recent work on testing LLM applications proposes a layered testing perspective and a lightweight interaction
+protocol (AICL) for replayable evaluation Ma et al. (2025). We align with its emphasis on system-level
+testing while focusing on deployment readiness gates and observability artifacts. Work on output drift
+in financial workflows highlights the need for deterministic controls and traceable artifacts in regulated
+settings Khatchadourian & Franco (2025); our harness generalizes these ideas beyond finance and couples
+them with scenario-weighted trade-off analysis. Economic evaluation of LLMs formalizes accuracy–cost
+trade-offs using economic constraints Zellinger & Thomson (2025); we adopt Pareto reporting for decision
+support while keeping weights explicit and auditable. BEIR infrastructure updates and leaderboards further
+motivate reproducible retrieval baselines Kamalloo et al. (2023). A later companion study on automated
+self-testing quality gates Maiorano (2026) narrows the scope from cross-scenario readiness assessment to
+10
+longitudinal release governance for a single internally deployed multi-agent application. We view that work
+as a specialization of the broader evaluation-and-observability layer introduced here.
+10 Conclusion
+We present an evaluation and observability harness that turns LLM/RAG readiness into measurable, au-
+ditable signals with CI gates and Pareto-style deployment trade-offs. With the full Azure matrix now exe-
+cuted for BEIR (SciFact/FiQA), the harness supports model-by-model decisions under cost-first, risk-first,
+and SLA-first scoring without mixing runs across providers or model families.
+The current evidence shows that model choice, retrieval depth, and policy gates interact in non-trivial
+ways: FiQA favorsgpt-4.1-minifor faithfulness/readiness, while SciFact is more tightly clustered and
+gpt-5.2mainly pays a latency premium. Ticket CI gates also proved effective, rejecting all latest bias/policy
+regression candidates. Reproducible artifacts are therefore necessary to avoid over-generalized conclusions
+from single metrics. Future work includes broader multilingual and industry datasets, stronger adversarial
+validation, and human-audit layers on disagreement slices, plus cross-provider replication under matched
+protocols. Another immediate direction is to specialize this general readiness layer into task-specific release
+workflows, such as automated self-testing quality gates for agentic applications Maiorano (2026), while
+keeping shared observability and artifact contracts stable across systems.
+A Additional Tables
+Table 8: Top runs by readiness score (compact view; dataset: SciFact).
+Scenario Model k Seed Hit@k Faithfulness Score p95 latency (ms)
+SLA-first gpt-4.1-mini 3 42 0.817 0.727 0.860 3475
+SLA-first gpt-5.2 3 42 0.817 0.686 0.847 6455
+SLA-first gpt-4.1 3 42 0.817 0.628 0.837 3033
+SLA-first gpt-4.1 5 42 0.833 0.752 0.837 3313
+SLA-first gpt-5.2 3 2024 0.850 0.597 0.833 8075
+SLA-first gpt-4.1-mini 5 42 0.833 0.724 0.830 3379
+SLA-first gpt-4.1-mini 3 1337 0.783 0.559 0.818 3348
+SLA-first gpt-4.1 3 2024 0.850 0.501 0.814 2722
+SLA-first gpt-5.2 3 1337 0.783 0.552 0.812 5847
+SLA-first gpt-4.1 3 1337 0.783 0.527 0.810 3708
+Table 10: Readiness score weight ablation (top-1 agreement and top-5 overlap).
+Dataset Scenario Top-1 (U/NC/PG) Top-5 overlap (U/NC/PG)
+FiQA Cost-first Y/Y/Y 5/5 | 5/5 | 5/5
+FiQA Risk-first N/N/Y 5/5 | 5/5 | 5/5
+FiQA SLA-first Y/N/Y 4/5 | 3/5 | 5/5
+SciFact Cost-first Y/N/Y 5/5 | 3/5 | 5/5
+SciFact Risk-first Y/N/Y 5/5 | 3/5 | 5/5
+SciFact SLA-first Y/N/Y 5/5 | 3/5 | 5/5
+CS Tickets Risk-first Y/Y/Y 5/5 | 3/5 | 5/5
+IT Tickets Risk-first Y/Y/Y 5/5 | 4/5 | 3/5
+11
+Table 9: Top runs by readiness score (compact view; dataset: FiQA).
+Scenario Model k Seed Hit@k Faithfulness Score p95 latency (ms)
+SLA-first gpt-4.1-mini 3 1337 0.617 0.713 0.829 3890
+SLA-first gpt-4.1-mini 5 42 0.567 0.848 0.824 3977
+SLA-first gpt-4.1-mini 5 1337 0.633 0.775 0.818 4075
+SLA-first gpt-4.1 3 1337 0.617 0.647 0.814 3325
+SLA-first gpt-4.1-mini 3 2024 0.483 0.710 0.807 4566
+SLA-first gpt-4.1-mini 3 42 0.483 0.698 0.806 4264
+SLA-first gpt-4.1 5 42 0.567 0.717 0.793 3377
+SLA-first gpt-4.1 5 1337 0.633 0.654 0.789 4094
+SLA-first gpt-4.1-mini 5 2024 0.517 0.709 0.783 4048
+SLA-first gpt-4.1 3 42 0.483 0.600 0.783 3254
+Table 11: Ticket routing results (T1/T2; compact view).
+Run N R Acc Macro F1 Policy Workflow p95 ms
+Prompt v1 (seed 1337) (CS) 200 0.325 0.280 0.985 0.215 3203
+Prompt v1 (seed 1337) (IT) 200 0.410 0.359 0.965 0.390 2912
+Prompt v2 (seed 1337) (CS) 200 0.305 0.269 0.890 0.165 2948
+Prompt v2 (seed 42) (IT) 200 0.430 0.369 0.905 0.375 2350
+Table 12: Ticket seed robustness (mean±std across seeded prompt runs; provider/model explicit).
+Dataset Prompt Provider Model Runs Routing Acc Macro F1 Workflow p95 latency (ms)
+Customer support (CS) v1 azure gpt-4.1 3 0.295±0.033 0.204±0.068 0.167±0.053 3444±292
+Customer support (CS) v2 azure gpt-4.1 3 0.292±0.013 0.215±0.050 0.148±0.015 3150±194
+IT tickets (IT) v1 azure gpt-4.1 3 0.393±0.029 0.351±0.010 0.362±0.037 2743±146
+IT tickets (IT) v2 azure gpt-4.1 3 0.408±0.026 0.377±0.009 0.358±0.038 2447±93
+12
+B Prompts, Schemas, and Pseudocode
+This appendix provides concrete artifacts for reproducibility: exemplar prompts, schemas, pseudocode, and
+trace excerpts used by the readiness harness.
+B.1 Ticket routing prompt (T1/T2)
+System:
+You are a strict routing classifier for customer support tickets.
+Return only valid JSON that matches the schema.
+User:
+Ticket: "My login fails with error 401 after resetting my password."
+Labels: ["account_support", "technical_support", "billing", "product_support"]
+Policy: Do not request passwords, secrets, or PII.
+Promptv1→v2changes.Theticket-routingstudyusedtwopromptvariants. Promptv1listslabeldefini-
+tionsinlineasEnglishdescriptions. Promptv2replacesthoseinlinedefinitionswithadecision-guidanceblock
+(escalation heuristics and policy reminders) and adds an explicit JSON schema withadditionalProperties:
+false. The reduced public reproducibility artifact does not ship the full internal prompt files; instead, this
+appendix provides a representative excerpt and the released tables report the measured effect of the prompt
+revision. The tighter output constraint in v2 reduces LLM token generation and lowers p95 latency on both
+datasets (+11% IT, +9% CS), while improving routing accuracy on IT (+1.5 pp) and slightly reducing it
+on CS (−0.3 pp)—consistent with the finding that routing gains are dataset-dependent.
+B.2 Routing output schema (JSON)
+{
+"type": "object",
+"properties": {
+"route_label": {"type": "string"},
+"confidence": {"type": "number", "minimum": 0, "maximum": 1},
+"should_escalate": {"type": "boolean"},
+"policy_violations": {"type": "array", "items": {"type": "string"}}
+},
+"required": ["route_label", "confidence", "should_escalate", "policy_violations"]
+}
+B.3 Batch runner pseudocode
+for scenario in ["risk-first", "cost-first", "sla-first"]:
+for top_k in [3, 5, 10]:
+sample = dataset.sample(n=60, seed=seed)
+results = []
+for item in sample:
+response = call_infer_api(item, top_k, scenario)
+record_metrics(response)
+results.append(response)
+# resume/checkpoint: load prior rows before rerun
+# worker pool + delay controls API pressure
+write_run_artifacts(results)
+run_ragas(results)
+update_summary_tables()
+13
+B.4 Example trace excerpt
+infer (run_id=azure_core_beir_scifact_gpt-4.1_sla-first_k5_seed42_..., scenario=sla-first, latency_ms
+=4285, cost_usd_est=0.0114)
+route.classify (predicted_label=technical_support, latency_ms=412)
+rag.retrieve (top_k=5, index_id=beir_scifact, latency_ms=58)
+rag.generate (model_id=gpt-4.1, provider=azure, cache_hit=false, latency_ms=3611)
+validate.policy (pass=true, latency_ms=12)
+respond.finalize (should_escalate=false, latency_ms=9)
+B.5 Regression example
+Change: prompt update removed a hard policy reminder.
+Observed: policy_violations rose from 0.00 to 0.12 in CI gate.
+Action: revert prompt change and add promptfoo gate to prevent regressions.
+B.6 Dataset examples
+Ticket (IT Service, synthetic):
+Text: "VPN drops after 5 minutes; reconnect fails on Windows 11."
+Label: "access"
+Ticket (Multilingual, synthetic):
+Text (de): "Login funktioniert nicht, Fehler 403 nach Passwort-Reset."
+Label: "account_support"
+SciFact (BEIR, synthetic):
+Query: "Does vitamin D reduce the risk of influenza?"
+Evidence snippet: "We found no significant reduction in influenza incidence..."
+FiQA (BEIR, synthetic):
+Query: "What is the 50/30/20 budgeting rule?"
+Passage snippet: "A common guideline allocates 50% to needs..."
+B.7 Synthetic generation example
+Synthetic ticket (LLM, es):
+{
+"ticket_id": "synllm_42_00001",
+"language": "es",
+"channel": "chat",
+"priority": "high",
+"queue": "technical_support",
+"summary": "la conexion VPN se corta durante sincronizacion (chat)",
+"description": "El usuario reporta que la conexion VPN se corta durante la sincronizacion de datos. El
+problema persiste tras reiniciar. Impacto: retrasa reportes. Canal: chat. Prioridad: alto. Producto:
+integrations.",
+"requester_type": "user",
+14
+"product_area": "integrations",
+"policy_flags": [],
+"should_escalate": true,
+"escalation_reason": "data_loss"
+}
+Quality snapshot (LLM, N=500, strict):
+schema_error_rate=0.00
+policy_violation_rate=0.00
+lexical_diversity=0.0898
+unique_summary_rate=0.3960
+description_len_mean=212.8
+B.8 Artifact format examples
+summary.csv (one row)
+run_id,dataset_id,scenario,top_k,score,faithfulness,answer_relevance,p95_latency_ms
+azure_core_beir_scifact_gpt-4.1-mini_sla-first_k5_seed42_20260220_085315,beir_scifact,sla-first
+,5,0.830,0.724,,3379
+report.json (excerpt)
+{
+"run_id": "azure_core_beir_scifact_gpt-4.1-mini_sla-first_k5_seed42_20260220_085315",
+"dataset_id": "beir_scifact",
+"scenario": "sla-first",
+"llm": {"provider": "azure", "model": "gpt-4.1-mini"},
+"metrics": {"faithfulness": 0.724, "answer_relevance": null},
+"latency_ms": {"p95": 3379}
+}
+C Ticket Routing Results (Full)
+D Ticket Error Summary
+Acknowledgments and AI Tools Disclosure
+This research leveraged AI-assisted tools to support code development and manuscript preparation, under
+full human oversight and accountability. The following tools were used:
+•Language models:OpenAI Codex CLI (a code-assistance tool powered by the GPT-5 family,
+distinct from the deprecated Codex model series), Anthropic Claude Code (Opus/Sonnet), and
+Google Gemini CLI were used for code drafting/review and language refinement of author-written
+text.
+•Web search:MCP Tavily integration was used to support literature discovery and fact-checking.
+All scientific arguments, empirical methodology, statistical analysis, research questions, and conclusions were
+conceived, developed, and validated by the authors. AI assistance was limited to code drafting/review and
+language refinement; it was not used to generate or alter experimental data, metrics, or conclusions. Authors
+reviewed and validated all AI-assisted outputs before inclusion. AI systems were not listed as authors. No
+generative-AI artwork or figures were used in the manuscript. A companion public reproducibility repository,
+15
+Table 13: Ticket routing results (T1/T2; full).
+Run Model NR Acc F1PolicyWorkflowp95 ms
+tfidf_baseline_cs_cost_s42_20260327_085108 (CS)TF-IDF 200 0.5000.481 - 0.500 0
+Prompt v1 (seed 1337) (CS) gpt-4.1 (azure)200 0.3250.280 0.985 0.215 3203
+Prompt v1 (seed 2024) (CS) gpt-4.1 (azure)200 0.3000.183 0.965 0.175 3769
+Prompt v1 (seed 42) (CS) gpt-4.1 (azure)200 0.2600.150 0.970 0.110 3360
+Prompt v2 (seed 1337) (CS) gpt-4.1 (azure)200 0.3050.269 0.890 0.165 2948
+Prompt v2 (seed 2024) (CS) gpt-4.1 (azure)200 0.2800.203 0.890 0.145 3169
+Prompt v2 (seed 42) (CS) gpt-4.1 (azure)200 0.2900.172 0.890 0.135 3334
+Regression: baseline (CS) gpt-4.1 (azure) 60 0.2830.212 0.967 0.267 3289
+Regression: bias (CS) gpt-4.1 (azure) 60 0.3500.161 0.883 0.300 3169
+Regression: policy (CS) gpt-4.1 (azure) 60 0.3500.239 0.000 0.000 2918
+tfidf_baseline_it_cost_s42_20260327_085127 (IT) TF-IDF 200 0.8800.889 - 0.880 0
+Prompt v1 (seed 1337) (IT) gpt-4.1 (azure)200 0.4100.359 0.965 0.390 2912
+Prompt v1 (seed 2024) (IT) gpt-4.1 (azure)200 0.3600.340 0.940 0.320 2661
+Prompt v1 (seed 42) (IT) gpt-4.1 (azure)200 0.4100.353 0.965 0.375 2656
+Prompt v2 (seed 1337) (IT) gpt-4.1 (azure)200 0.4150.387 0.870 0.385 2535
+Prompt v2 (seed 2024) (IT) gpt-4.1 (azure)200 0.3800.375 0.850 0.315 2457
+Prompt v2 (seed 42) (IT) gpt-4.1 (azure)200 0.4300.369 0.905 0.375 2350
+Regression: baseline (IT) gpt-4.1 (azure) 60 0.3830.253 0.933 0.333 2759
+Regression: bias (IT) gpt-4.1 (azure) 60 0.3730.290 0.915 0.305 2466
+Regression: policy (IT) gpt-4.1 (azure) 60 0.4000.324 0.000 0.000 2772
+Table 14: Ticket routing error summary (compact; WF = workflow success, p95 in ms).
+Run N Acc F1 WF p95 Top conf.
+CS prompt v1 (seed 1337) 200 0.325 0.280 0.215 3203 -
+CS prompt v2 (seed 1337) 200 0.305 0.269 0.165 2948 -
+IT prompt v1 (seed 1337) 200 0.410 0.359 0.390 2912 -
+IT prompt v2 (seed 42) 200 0.430 0.369 0.375 2350 -
+https://github.com/alemaiorano/llm-readiness-harness-reproducibility, provides manuscript
+sources, frozen analysis outputs, lightweight export scripts, and claim-to-artifact traceability. The public
+artifact is intentionally narrower than the full internal experimentation stack and is designed for independent
+verification of the released manuscript.
+References
+Adisongoh. It service ticket classification dataset, 2025. URLhttps://www.kaggle.com/datasets/adison
+goh/it-service-ticket-classification-dataset. Dataset page; no DOI/preprint identifier.
+Scott Barnett, Stefanus Kurniawan, Srikanth Thudumu, Zach Brannelly, and Mohamed Abdelrazek. Seven
+failure points when engineering a retrieval augmented generation system.arXiv preprint arXiv:2401.05856,
+2024. URLhttps://arxiv.org/abs/2401.05856.
+Emily M. Bender and Batya Friedman. Data statements for natural language processing: Toward mitigating
+system bias and enabling better science.Transactions of the Association for Computational Linguistics,
+6:587–604, 2018. doi: 10.1162/tacl_a_00041. URLhttps://aclanthology.org/Q18-1041/.
+Tobias Bueck. Multilingual customer support tickets, 2025. URLhttps://www.kaggle.com/datasets/to
+biasbueck/multilingual-customer-support-tickets. Dataset page; no DOI/preprint identifier.
+Nicholas Carlini, Florian Tramer, Eric Wallace, Matthew Jagielski, Ariel Herbert-Voss, Katherine Lee, Adam
+Roberts, Tom Brown, Dawn Song, Ulfar Erlingsson, Alina Oprea, and Colin Raffel. Extracting training
+16
+Table 15: Ticket routing error summary (full).
+Run N Routing Acc Macro F1 Workflow p95 latency (ms) Top confusions
+CS prompt v1 (seed 1337) 200 0.325 0.280 0.215 3203 -
+CS prompt v2 (seed 1337) 200 0.305 0.269 0.165 2948 -
+IT prompt v1 (seed 1337) 200 0.410 0.359 0.390 2912 -
+IT prompt v2 (seed 42) 200 0.430 0.369 0.375 2350 -
+data from large language models.arXiv preprint arXiv:2012.07805, 2020. URLhttps://arxiv.org/ab
+s/2012.07805.
+Shahul Es, Jithin James, Luis Espinosa-Anke, and Steven Schockaert. Ragas: Automated evaluation of
+retrieval augmented generation. InProceedings of the 18th Conference of the European Chapter of the
+Association for Computational Linguistics (Volume 1: Long Papers), 2024. doi: 10.48550/arXiv.2309.15
+217. URLhttps://aclanthology.org/2024.eacl-long.16/.
+Timnit Gebru, Jamie Morgenstern, Briana Vecchione, Jennifer Wortman Vaughan, Hanna Wallach, Hal
+Daumé III, and Kate Crawford. Datasheets for datasets.arXiv preprint arXiv:1803.09010, 2018. URL
+https://arxiv.org/abs/1803.09010.
+ShahriarGolchinandMihaiSurdeanu. Datacontaminationquiz: Atooltodetectandestimatecontamination
+in large language models.arXiv preprint arXiv:2311.06233, 2023. URLhttps://arxiv.org/abs/2311
+.06233.
+Oran Honovich, Thomas Scialom, Shunyu Yao, David Chan, Rae Kim, Michael Jiang, et al. Unnatural
+instructions: Tuning language models with (almost) no human labor.arXiv preprint arXiv:2212.09689,
+2022. URLhttps://arxiv.org/abs/2212.09689.
+Naman Jain, King Han, Alex Gu, Wen-Ding Li, Fanjia Yan, Tianjun Zhang, Sida Wang, Armando Solar-
+Lezama, Koushik Sen, and Ion Stoica. Livecodebench: Holistic and contamination free evaluation of large
+language models for code.arXiv preprint arXiv:2403.07974, 2024. URLhttps://arxiv.org/abs/2403
+.07974.
+Ehsan Kamalloo, Nandan Thakur, Carlos Lassance, Xueguang Ma, Jheng-Hong Yang, and Jimmy Lin.
+Resources for brewing beir: Reproducible reference models and an official leaderboard.arXiv preprint
+arXiv:2306.07471, 2023. URLhttps://arxiv.org/abs/2306.07471.
+Raffi Khatchadourian and Rolando Franco. Llm output drift: Cross-provider validation & mitigation for
+financial workflows.arXiv preprint arXiv:2511.07585, 2025. URLhttps://arxiv.org/abs/2511.07585.
+Percy Liang, Rishi Bommasani, Tony Lee, et al. Holistic evaluation of language models.Transactions on
+Machine Learning Research, 2023. URLhttps://arxiv.org/abs/2211.09110.
+Wei Ma, Yixiao Yang, Qiang Hu, Shi Ying, Zhi Jin, Bo Du, Zhenchang Xing, Tianlin Li, Junjie Shi, Yang Liu,
+and Lingxiao Jiang. Rethinking testing for llm applications: Characteristics, challenges, and a lightweight
+interaction protocol.arXiv preprint arXiv:2508.20737, 2025. URLhttps://arxiv.org/abs/2508.20737.
+Alexandre Cristovão Maiorano. Automated self-testing as a quality gate: Evidence-driven release manage-
+ment for llm applications.arXiv preprint arXiv:2603.15676, 2026. doi: 10.48550/arXiv.2603.15676. URL
+https://arxiv.org/abs/2603.15676.
+OpenAI. Openai api pricing, 2025. URLhttps://platform.openai.com/docs/pricing. Web
+documentation source; no DOI/preprint identifier.
+OpenTelemetry. Opentelemetry collector quick start, 2025a. URLhttps://opentelemetry.io/docs/coll
+ector/quick-start/. Web documentation source; no DOI/preprint identifier.
+OpenTelemetry. Opentelemetry documentation, 2025b. URLhttps://opentelemetry.io/docs/. Web
+documentation source; no DOI/preprint identifier.
+17
+Promptfoo. Promptfoo ci/cd integration for llm evaluation and security, 2025a. URLhttps://www.prompt
+foo.dev/docs/integrations/ci-cd/. Web documentation source; no DOI/preprint identifier.
+Promptfoo. Promptfoo http/https provider, 2025b. URLhttps://www.promptfoo.dev/docs/providers
+/http/. Web documentation source; no DOI/preprint identifier.
+Jon Saad-Falcon, Omar Khattab, Christopher Potts, and Matei Zaharia. Ares: An automated evaluation
+framework for retrieval-augmented generation systems.arXiv preprint arXiv:2311.09476, 2024. URL
+https://arxiv.org/abs/2311.09476.
+Mohamed El Amine Seddik, Suei-Wen Chen, Soufiane Hayou, Pierre Youssef, and Merouane Debbah. How
+bad is training on synthetic data? a statistical analysis of language model collapse.arXiv preprint
+arXiv:2404.05090, 2024. URLhttps://arxiv.org/abs/2404.05090.
+Nandan Thakur, Nils Reimers, Andreas Rücklé, Abhishek Srivastava, and Iryna Gurevych. BEIR: A het-
+erogeneous benchmark for zero-shot evaluation of information retrieval models. InThirty-Fifth Confer-
+ence on Neural Information Processing Systems Datasets and Benchmarks Track (Round 2), 2021. doi:
+10.48550/arXiv.2104.08663. URLhttps://openreview.net/forum?id=wCu6T5xFjeJ.
+Yizhong Wang, Yeganeh Kordi, Swaroop Mishra, Alisa Liu, Noah A. Smith, Tushar Khot, and Hannaneh
+Hajishirzi. Self-instruct: Aligning language models with self-generated instructions. InProceedings of
+the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), pp.
+13484–13508, 2023. doi: 10.18653/v1/2023.acl-long.754. URLhttps://aclanthology.org/2023.acl-l
+ong.754/.
+Jason Wei and Kai Zou. EDA: Easy data augmentation techniques for boosting performance on text classifi-
+cation tasks. InProceedings of the 2019 Conference on Empirical Methods in Natural Language Processing
+and the 9th International Joint Conference on Natural Language Processing (EMNLP-IJCNLP), pp. 6382–
+6388, 2019. doi: 10.18653/v1/D19-1670. URLhttps://aclanthology.org/D19-1670/.
+Michael J. Zellinger and Matt Thomson. Economic evaluation of llms.arXiv preprint arXiv:2507.03834,
+2025. URLhttps://arxiv.org/abs/2507.03834.
+18
