@@ -1,797 +1,1387 @@
 === PAGE 1 ===
-rStar-Math: Small LLMs Can Master Math Reasoning
-with Self-Evolved Deep Thinking
-Xinyu Guan∗Li Lyna Zhang∗⋄Yifei Liu
-Ning Shang Youran Sun Yi Zhu Fan Yang Mao Yang
-Microsoft Research Asia
+S2R: Teaching LLMs to Self-verify and Self-correct
+via Reinforcement Learning
+Ruotian Ma1*, Peisong Wang2*, Cheng Liu1, Xingyan Liu1,
+Jiaqi Chen3,Bang Zhang1,Xin Zhou4,Nan Du1†,Jia Li5†
+1Tencent2Tsinghua University
+3The University of Hong Kong4Fudan University
+5The Hong Kong University of Science and Technology (Guangzhou)
+ruotianma@tencent.com, wps22@mails.tsinghua.edu.cn
 Abstract
-We present rStar-Math to demonstrate that small language models (SLMs) can rival
-or even surpass the math reasoning capability of OpenAI o1, without distillation
-from superior models. rStar-Math achieves this by exercising “deep thinking”
-through Monte Carlo Tree Search (MCTS), where a math policy SLM performs
-test-time search guided by an SLM-based process reward model . rStar-Math
-introduces three innovations to tackle the challenges in training the two SLMs:
-(1)a novel code-augmented CoT data sythesis method, which performs extensive
-MCTS rollouts to generate step-by-step verified reasoning trajectories used to train
-the policy SLM; (2)a novel process reward model training method that avoids naïve
-step-level score annotation, yielding a more effective process preference model
-(PPM) ;(3)aself-evolution recipe in which the policy SLM and PPM are built
-from scratch and iteratively evolved to improve reasoning capabilities. Through
-4 rounds of self-evolution with millions of synthesized solutions for 747k math
-problems, rStar-Math boosts SLMs’ math reasoning to state-of-the-art levels. On
-the MATH benchmark, it improves Qwen2.5-Math-7B from 58.8% to 90.0% and
-Phi3-mini-3.8B from 41.4% to 86.4%, surpassing o1-preview by +4.5% and +0.9%.
-On the USA Math Olympiad (AIME), rStar-Math solves an average of 53.3% (8/15)
-of problems, ranking among the top 20% the brightest high school math students.
-Code and data will be available at https://github.com/microsoft/rStar .
-Task
-(pass@1 Acc)rStar-Math
-(Qwen-7B)rStar-Math
-(Qwen-1.5B)rStar-Math
-(Phi3-mini)OpenAI
-o1-previewOpenAI
-o1-miniQWQ
-32B-previewGPT-4o DeepSeek-V3
-MATH 90.0 88.6 86.4 85.5 90.0 90.6 76.6 90.2
-AIME 2024 53.3 46.7 43.3 44.6 56.7 50.0 9.3 39.2
-Olympiad Bench 65.6 64.6 60.3 - 65.3 61.2 43.3 55.4
-College Math 60.5 59.3 59.1 - 57.8 55.8 48.5 58.9
-Omni-Math 50.5 48.5 46.0 52.5 60.5 49.6 30.5 35.9
-Table 1: rStar-Math enables frontier math reasoning in SLMs via deep thinking over 64 trajectories.
+Recent studies have demonstrated the effective-
+ness of LLM test-time scaling. However, ex-
+isting approaches to incentivize LLMs’ deep
+thinking abilities generally require large-scale
+data or significant training efforts. Meanwhile,
+it remains unclear how to improve the think-
+ing abilities of less powerful base models. In
+this work, we introduce S2R, an efficient frame-
+work that enhances LLM reasoning by teach-
+ing models to self-verify and self-correct dur-
+ing inference. Specifically, we first initial-
+ize LLMs with iterative self-verification and
+self-correction behaviors through supervised
+fine-tuning on carefully curated data. The
+self-verification and self-correction skills are
+then further strengthened by both outcome-
+level and process-level reinforcement learn-
+ing, with minimized resource requirements,
+enabling the model to adaptively refine its
+reasoning process during inference. Our re-
+sults demonstrate that, with only 3.1k self-
+verifying and self-correcting behavior initial-
+ization samples, Qwen2.5-math-7B achieves an
+accuracy improvement from 51.0% to 81.6%,
+outperforming models trained on an equiva-
+lent amount of long-CoT distilled data. Exten-
+sive experiments and analysis based on three
+base models across both in-domain and out-of-
+domain benchmarks validate the effectiveness
+ofS2R. Our code and data are available at
+https://github.com/NineAbyss/S2R .
 1 Introduction
-Recent studies have demonstrated that large language models (LLMs) are capable of tackling
-mathematical problems [Team, 2024a, Yang et al., 2024, OpenAI, 2024, Liu et al., 2024]. However,
-the conventional approach of having LLMs generate complete solutions in a single inference – akin to
-System 1 thinking [Daniel, 2011] – often yields fast but error-prone results [Valmeekam et al., 2023,
-OpenAI, 2023]. In response, test-time compute scaling [Snell et al., 2024, Qi et al., 2024] suggests a
-paradigm shift toward a System 2-style thinking, which emulates human reasoning through a slower
-and deeper thought process. In this paradigm, an LLM serves as a policy model to generate multiple
-math reasoning steps, which are then evaluated by another LLM acting as a reward model [OpenAI,
-2024]. The steps and solutions deemed more likely to be correct are selected. The process repeats
-iteratively and ultimately derives the final answer.
-∗Equal contribution.
-⋄Project leader; correspondence to lzhani@microsoft.com
-§Xinyu Guan and Youran Sun did this work during the internship at MSRA. Xinyu Guan
-(2001gxy@gmail.com) is with Peking University, Youran Sun is with Tsinghua University.arXiv:2501.04519v1  [cs.CL]  8 Jan 2025
+Recent advancements in Large Language Models
+(LLMs) have demonstrated a paradigm shift from
+scaling up training-time efforts to test-time com-
+pute (Snell et al., 2024a; Kumar et al., 2024; Qi
+et al., 2024; Yang et al., 2024). The effectiveness
+of scaling test-time compute is illustrated by Ope-
+nAI o1 (OpenAI, 2024), which shows strong rea-
+*Equal contribution. This work was done during Peisong,
+Cheng, Jiaqi and Bang were interning at Tencent.
+†Corresponding authors.
+3 4 5 6 7 8
+Data Size (log )
+767880828486Accuracy (%)
+rStar-Math-7BEurus-2-7B-PRIME
+Qwen2.5-7B-SimpleRL-ZeroQwen2.5-Math-7B-InstructQwen2.5-Math-7B-S2R-ORL (ours)MATH500Figure 1: The data efficiency of S2Rcompared to
+competitive methods, with all models initialized from
+Qwen2.5-Math-7B.
+soning abilities by performing deep and thorough
+thinking, incorporating essential skills like self-
+checking, self-verifying, self-correcting and self-
+exploring during the model’s reasoning process.
+This paradigm not only enhances reasoning in do-
+mains like mathematics and science but also offers
+new insights into improving the generalizability,
+helpfulness and safety of LLMs across various gen-
+eral tasks (OpenAI, 2024; Guo et al., 2025).
+Recent studies have made various attempts to
+replicate the success of o1. These efforts in-
+clude using large-scale Monte Carlo Tree Search
+(MCTS) to construct long-chain-of-thought (long-
+CoT) training data, or to scale test-time reason-
+ing to improve the performance of current mod-
+els (Guan et al., 2025; Zhao et al., 2024; Snell
+et al., 2024b); constructing high-quality long-CoT
+data for effective behavior cloning with substan-
+tial human effort (Qin et al., 2024); and exploring
+reinforcement learning to enhance LLM thinking
+abilities on large-scale training data and models
+(Guo et al., 2025; Team et al., 2025; Cui et al.,
+2025; Yuan et al., 2024). Recently, DeepSeek R1
+(Guo et al., 2025) demonstrated that large-scale re-
+inforcement learning can incentivize LLM’s deep
+thinking abilities, with the R1 series showcasing
+1arXiv:2502.12853v1  [cs.CL]  18 Feb 2025
 
 === PAGE 2 ===
-(a) step -by-step verified reasoning trajectoryStep 1 Step 2MCTS -driven deep thinking
-Answer step
- (correct)One step Apply Verifiers
-(PPM/ python ) SLM
--0.50.8
-0.60.70.9
-PPMquestion …
-final step..
-full solutions....
-..
-(b) Construction of per -step preference pairs based on Q -values
-SLM-r1PPM -augmented
-MCTS
- PPM -r2 PPM -r3 PPM -r4SLM-r2 SLM-r3 SLM-r4
-Terminal -guided
-MCTSTerminal -guided
-MCTSPPM -augmented
-MCTS
-Round 1 Round 2 Round 3 Round 4
-..
-(c) 4 rounds of self -evolutionQ-value 
-filtering
--0.7 0.5
-1 1 -1 -1Answer step
- (wrong)Figure 1: The overview of rStar-Math.
-In the test-time compute paradigm, the key is to train a powerful policy model that generates promising
-solution steps and a reliable reward model that accurately evaluates them, both of which depend
-onhigh-quality training data. Unfortunately, it is well-known that off-the-shelf high-quality math
-reasoning data is scarce, and synthesizing high-quality math data faces fundamental challenges. For
-the policy model, it is challenging to distinguish erroneous reasoning steps from the correct ones,
-complicating the elimination of low-quality data. It is worth noting that in math reasoning, a correct
-final answer does not ensure the correctness of the entire reasoning trace [Lanham et al., 2023].
-Incorrect intermediate steps significantly decrease data quality. As for the reward model, process
-reward modeling (PRM) shows a great potential by providing fine-grained feedback on intermediate
-steps [Lightman et al., 2023]. However, the training data is even scarcer in this regard: accurate
-step-by-step feedback requires intense human labeling efforts and is impractical to scale, while those
-automatic annotation attempts show limited gains due to noisy reward scores [Luo et al., 2024, Wang
-et al., 2024c, Chen et al., 2024]. Due to the above challenges, existing distill-based data synthesis
-approaches to training policy models, e.g., scaling up GPT4-distilled CoT data [Tang et al., 2024,
-Huang et al., 2024], have shown diminishing returns and cannot exceed the capability of their teacher
-model; meanwhile, as of today, training reliable PRMs for math reasoning remains an open question.
-In this work, we introduce rStar-Math , a self-evolvable System 2-style reasoning approach that
-achieves the state-of-the-art math reasoning, rivaling and sometimes even surpassing OpenAI o1 on
-challenging math competition benchmarks with a model size as small as 7 billion. Unlike solutions
-relying on superior LLMs for data synthesis, rStar-Math leverages smaller language models (SLMs)
-with Monte Carlo Tree Search (MCTS) to establish a self-evolutionary process, iteratively generating
-higher-quality training data. To achieve self-evolution, rStar-Math introduces three key innovations.
-First, a novel code-augmented CoT data synthesis method, which performs extensive MCTS rollouts to
-generate step-by-step verified reasoning trajectories with self-annotated MCTS Q-values . Specifically,
-math problem-solving is decomposed into multi-step generation within MCTS. At each step, the
-SLM serving as the policy model samples candidate nodes, each generating a one-step CoT and the
-corresponding Python code. To verify the generation quality, only nodes with successful Python
-code execution are retained, thus mitigating errors in intermediate steps. Moreover, extensive MCTS
-rollouts automatically assign a Q-value to each intermediate step based on its contribution: steps
-contributing to more trajectories that lead to the correct answer are given higher Q-values and
-considered higher quality. This ensures that the reasoning trajectories generated by SLMs consist of
-correct, high-quality intermediate steps.
-Second, a novel method that trains an SLM acting as a process preference model , i.e., a PPM to
-implement the desired PRM, that reliably predicts a reward label for each math reasoning step. The
-PPM leverages the fact that, although Q-values are still not precise enough to score each reasoning
-step des
+the promising potential of long-thought reasoning.
+However, these approaches generally requires sig-
+nificant resources to enhance LLMs’ thinking abili-
+ties, including large datasets, substantial training-
+time compute, and considerable human effort and
+time costs. Meanwhile, it remains unclear how to
+incentivize valid thinking in smaller or less power-
+ful LLMs beyond distilling knowledge from more
+powerful models.
+In this work, we propose S2R, an efficient alter-
+native to enhance the thinking abilities of LLMs,
+particularly for smaller or less powerful LLMs. In-
+stead of having LLMs imitate the thinking process
+of larger, more powerful models, S2Rfocus on
+teaching LLMs to think deeply by iteratively adopt-
+ing two critical thinking skills: self-verifying and
+self-correcting. By acquiring these two capabil-
+ities, LLMs can continuously reassess their solu-
+tions, identify mistakes during solution exploration,
+and refine previous solutions after self-checking.
+Such a paradigm also enables flexible allocation of
+test-time compute to different levels of problems.
+Our results show that, with only 3.1k training sam-
+ples, Qwen2.5-math-7B significantly benefits from
+learning self-verifying and self-correcting behav-
+iors, achieving a 51.0% to 81.6% accuracy improve-
+ment on the Math500 test set. This performance
+outperforms the same base model distilled from
+an equivalent amount of long-CoT data (accuracy
+80.2%) from QwQ-32B-Preview (Team, 2024a).
+More importantly, S2Remploys both outcome-
+level and process-level reinforcement learning (RL)
+to further enhance the LLMs’ self-verifying and
+self-correcting capabilities. Using only rule-based
+reward models, RL improves the validity of both
+the self-verification and self-correction process, al-
+lowing the models to perform more flexible and
+effective test-time scaling through a self-directed
+trial-and-error process. By comparing outcome-
+level and process-level RL for our task, we found
+that process-level supervision is particularly effec-
+tive in boosting accuracy of the thinking skills at
+intermediate steps, which might benefit base mod-
+els with limited reasoning abilities. In contrast,
+outcome-level supervision enables models explore
+more flexible trial-and-error paths towards the cor-
+rect final answer, leading to consistent improve-
+ment in the reasoning abilities of more capable
+base models. Additionally, we further show the po-
+tential of offline reinforcement learning as a more
+efficient alternative to the online RL training.
+We conducted extensive experiments across 3LLMs on 7 math reasoning benchmarks. Experi-
+mental results demonstrate that S2Routperforms
+competitive baselines in math reasoning, including
+recently-released advanced o1-like models Eurus-
+2-7B-PRIME (Cui et al., 2025), rStar-Math-7B
+(Guan et al., 2025) and Qwen2.5-7B-SimpleRL
+(Zeng et al., 2025). We also found that S2Ris
+generalizable to out-of-domain general tasks, such
+as MMLU-PRO, highlighting the validity of the
+learned self-verifying and self-correcting abilities.
+Additionally, we conducted a series of analytical
+experiments to better demonstrate the reasoning
+mechanisms of the obtained models, and provide
+insights into performing online and offline RL train-
+ing for enhancing LLM reasoning.
+2 Methodology
+The main idea behind teaching LLMs self-
+verification and self-correction abilities is to stream-
+line deep thinking into a critical paradigm: self-
+directed trial-and-error with self-verification and
+self-correction. Specifically: (1) LLMs are allowed
+to explore any potential (though possibly incorrect)
+solutions, especially when tackling difficult prob-
+lems; (2) during the process, self-verification is
+essential for detecting mistakes on-the-fly; (3) self-
+correction enables the model to fix detected mis-
+takes. This paradigm forms an effective test-time
+scaling approach that is more accessible for less
+powerful base models and is generalizable across
+various tasks.
+In this section, we first formall
 
 === PAGE 3 ===
-generating increasingly high-quality training data using the above two methods to train a stronger
-policy model and PPM for next round. Each round achieves progressive refinement: (1) a stronger
-policy SLM, (2) a more reliable PPM, (3) generating better reasoning trajectories via PPM-augmented
-MCTS, and (4) improving training data coverage to tackle more challenging and even competition-
-level math problems.
-Extensive experiments across four SLMs (1.5B-7B) and seven math reasoning tasks demonstrate
-the effectiveness of rStar-Math. Remarkably, rStar-Math improves all four SLMs, matching or even
-surpassing OpenAI o1 on challenging math benchmarks. On MATH benchmark, with 8 search
-trajectories, rStar-Math boosts Qwen2.5-Math-7B from 58.8% to 89.4% and Qwen2.5-Math-1.5B
-from 51.2% to 87.8%. With 64 trajectories, the scores rise to 90% and 88.4%, outperforming
-o1-preview by 4.5% and 2.6% and matching o1-mini’s 90%. On the Olympiad-level AIME 2024,
-rStar-Math solves on average 53.3% (8/15) of the problems, exceeding o1-preview by 8.7% and all
-other open-sourced LLMs. We further conduct comprehensive experiments to verify the superiority
-of step-by-step verified reasoning trajectories over state-of-the-art data synthesis baselines, as well as
-the PPM’s effectiveness compared to outcome reward models and Q value-based PRMs. Finally, we
-present key findings from rStar-Math deep thinking, including the intrinsic self-reflection capability
-and PPM’s preference for theorem-applications intermediate steps.
-2 Related Works
-Math Data Synthesis . Advancements in LLM math reasoning have largely relied on curating
-high-quality CoT data, with most leading approaches being GPT-distilled, using frontier models like
-GPT-4 for synthesis [Wang et al., 2024b, Gou et al., 2023, Luo et al., 2023]. Notable works include
-NuminaMath [Jia LI and Polu, 2024a] and MetaMath [Yu et al., 2023b]. While effective, this limits
-reasoning to the capabilities of the teacher LLM. Hard problems that the teacher LLM cannot solve
-are excluded in the training set. Even solvable problems may contain error-prone intermediate steps,
-which are hard to detect. Although rejection sampling methods [Yuan et al., 2023, Brown et al., 2024]
-can improve data quality, they do not guarantee correct intermediate steps. As a result, scaling up CoT
-data has diminishing returns, with gains nearing saturation—e.g., OpenMathInstruct-2 [Toshniwal
-et al., 2024] only sees a 3.9% boost on MATH despite an 8× increase in dataset size.
-Scaling Test-time Compute has introduced new scaling laws, allowing LLMs to improve perfor-
-mance across by generating multiple samples and using reward models for best-solution selection
-[Snell et al., 2024, Wu et al., 2024, Brown et al., 2024]. Various test-time search methods have been
-proposed [Kang et al., 2024, Wang et al., 2024a], including random sampling [Wang et al., 2023]
-and tree-search methods [Yao et al., 2024, Hao et al., 2023, Zhang et al., 2024b, Qi et al., 2024] like
-MCTS. However, open-source methods for scaling test-time computation have shown limited gains in
-math reasoning, often due to policy LLM or reward model limitations. rStar-Math addresses this by
-iteratively evolving the policy LLM and reward model, achieving System 2 mathematical reasoning
-performance comparable to OpenAI o1 [OpenAI, 2024].
-Reward Models are crucial for effective System 2 reasoning but are challenging to obtain. Recent
-works include LLM-as-a-Judge for verification [Zheng et al., 2023, Qi et al., 2024] and specialized
-reward models like Outcome Reward Model [Yang et al., 2024, Yu et al., 2023a] and Process Reward
-Model (PRM) [Lightman et al., 2024]. While PRMs offer promising dense, step-level reward signals
-for complex reasoning [Luo et al., 2024, Wang et al., 2024c], collecting step-level annotations
-remains an obstacle. While Kang et al. [2024], Wang et al. [2024a] rely on costly human-annotated
-datasets like PRM800k [Lightman et al., 2024], recent approaches [Wang et 
+Verification 
+Construction
+Initial
+Policy
+Input
+Questions
+Sample  𝐾  responses for each questionDifficulty 
+Level 5 
+Difficulty 
+Level 3 
+Difficulty 
+Level 1 …………𝐫={ 𝒔𝟏,𝒗𝟏,𝒔𝟐,𝒗𝟐,𝒔𝟑,𝒗𝟑,𝒔𝟒,𝒗𝟒 }
+𝐫={ 𝒔𝟏,𝒗𝟏,𝒔𝟐,𝒗𝟐 }
+𝐫={ 𝒔𝟏,𝒗𝟏 }
+Construct trajectories based on difficulty distribution“Problem -Solving” Verification  
+Problem: 
+27 increased by twice a number is 39. What is the number?
+Model’s answer:
+6
+Verification:
+Let's denote the unknown number as x. The problem can 
+be written as the equation: 27 + 2x = 39. To find x, we need 
+to solve this equation step by step. 
+Step 1: … Step 2: … x = 6. The given answer is 6. 
+Therefore, the answer is correct.“Confirmative” Verification  
+Problem: 
+27 increased by twice a number is 39. What is the number?
+Model’s answer:
+6
+Verification:
+To verify the solution, we will substitute the given answer into 
+the original statement to determine its validity. 
+Given answer for the number: 6. We will now check the 
+statement using the given answer: 27 increased by twice 6 
+should equal 39. Twice 6 is 12. 27 increased by 12 is 27 + 12, 
+which equals 39. Therefore, the answer is correct.
+Supervised  Fine -tuningTarget output   𝒓= 𝒔𝟏,𝒗𝟏,𝒔𝟐,𝒗𝟐,𝒔𝟑,𝒗𝟑
+SFT  Mask   𝒎= 𝟎 ,𝟏 ,𝟎 ,𝟏 ,𝟏 ,𝟏 
+Initial Policy 
+      Model  𝜋0
+Input question 𝑥
+(Backward)
+Stage 1: Behavior Initialization Stage 0:  Data ConstructionStage 2: Reinforcement Learning
+SFT  Model       
+𝜋𝑆𝐹𝑇 Input
+Questions 𝒔𝟏,𝒗𝟏,….,𝒔𝒋,𝒗𝒋
+ 𝒔𝟏,𝒗𝟏,𝒔𝟐,𝒗𝟐,𝒔𝟑,𝒗𝟑
+Process -level rewardOutcome -level reward
+/  
+( Backward )
+( Backward )
+:  Correct Response
+:  Incorrect ResponseFigure 2: Overview of S2R.
+reinforcement learning framework. Given a prob-
+lemx, the language model policy πis expected
+to generate a sequence of interleaved reasoning
+actions y= (a1, a2,···, aT)until reaching the
+termination action <end> . We represent the series
+of actions before an action at∈yasy:at, i.e.,
+y:at= (a1, a2,···, at−i), where atis excluded.
+The number of tokens in yis denoted as |y|, and
+the total number of actions in yis denoted as |y|a.
+We restrict the action space to three types:
+“solve ”, “verify ”, and “ <end> ”, where “ solve ”
+actions represent direct attempts to solve the
+problem, “ verify ” actions correspond to self-
+assessments of the preceding solution, and “ <end> ”
+actions signal the completion of the reasoning pro-
+cess. We denote the type of action aiasType (·),
+where Type (ai)∈ {verify ,solve ,<end>}. We
+expect the policy to learn to explore new solutions
+by generating “ solve ” actions, to self-verify the
+correctness of preceding solutions with “ verify ”
+actions, and to correct the detected mistakes with
+new “ solve ” actions if necessary. Therefore, for
+each action ai, the type of the next action ai+1is
+determined by the following rules:
+Type (ai+1) =
+
+verify , Type (ai) =solve
+solve , Type (ai) =verify
+and Parser (ai) = INCORRECT
+<end> , Type (ai) =verify
+and Parser (ai) = CORRECT
+Here, Parser (a)∈ { CORRECT ,INCORRECT }
+(for any action awhere Type (a) = verify ) isa function (e.g., a regex) that converts the model’s
+free-form verification text into binary judgments.
+For simplicity, we denote the j-th solve action as
+sjand the j-th verify action as vj. Then we have
+y= (s1, v1, s2, v2,···, sk, vk,<end> ).
+2.2 Initializing Self-verification and
+Self-correction Behaviors
+2.2.1 Learning Valid Self-verification
+Learning to perform valid self-verification is the
+most crucial part in S2R, as models can make mis-
+takes during trial-and-error, and recognizing inter-
+mediate mistakes is critical for reaching the correct
+answer. In this work, we explore two methods for
+constructing self-verification behavior.
+“Problem-Solving” Verification The most in-
+tuitive method for verification construction is to
+directly query existing models to generate verifi-
+cations on the policy models’ responses, and then
+filter for valid verifications. By querying exist-
+ing models using different prompts, we found that
+existing models tend to perform verification in a
+“Problem-Solvin
 
 === PAGE 4 ===
-System 2 methods like Best-of-N [Brown et al., 2024] or self-consistency [Wang et al., 2023], which
-require generating full solutions in one inference. Second, the step-by-step generation in MCTS
-naturally yields step-level training data for both models. Standard MCTS rollout automatically assign
-Q-value to each step based on its contribution to the final correct answer, obviating the need for
-human-generated step-level annotations for process reward model training.
-Ideally, advanced LLMs such as GPT-4 could be integrated within MCTS to generate training
-data. However, this approach faces two key challenges. First, even these powerful models struggle
-to consistently solve difficult problems, such as Olympiad-level mathematics. Consequently, the
-resulting training data would primarily consist of simpler solvable problems, limiting its diversity and
-quality. Second, annotating per-step Q-values demands extensive MCTS rollouts; insufficient tree
-exploration can lead to spurious Q-value assignments, such as overestimating suboptimal steps. Given
-that each rollout involves multiple single-step generations and these models are computationally
-expensive, increasing rollouts significantly raises inference costs.
-Overview . To this end, we explore using two 7B SLMs (a policy SLM and a PRM) to generate higher-
-quality training data, with their smaller size allowing for extensive MCTS rollouts on accessible
-hardware (e.g., 4 ×40GB A100 GPUs). However, self-generating data presents greater challenges for
-SLMs, due to their weaker capabilities. SLMs frequently fail to generate correct solutions, and even
-when the final answer is correct, the intermediate steps are often flawed or of poor quality. Moreover,
-SLMs solve fewer challenging problems compared to advanced models like GPT-4.
-This section introduces our methodology, as illustrated in Fig. 1. To mitigate errors and low-quality
-intermediate steps, we introduce a code-augmented CoT synthetic method, which performs extensive
-MCTS rollouts to generate step-by-step verified reasoning trajectories, annotated with Q-values. To
-further improve SLM performance on challenging problems, we introduce a four-round self-evolution
-recipe. In each round, both the policy SLM and the reward model are updated to stronger versions,
-progressively tackling more difficult problems and generating higher-quality training data. Finally, we
-present a novel process reward model training approach that eliminates the need for precise per-step
-reward annotations, yielding the more effective process preference model (PPM).
-3.2 Step-by-Step Verified Reasoning Trajectory
-We start by introducing our method for generating step-by-step verified reasoning trajectories with
-per-step Q-value annotations. Given a problem xand a policy model M, we run the standard MCTS
-to incrementally construct a search tree for step-by-step solution exploration. As shown in Fig. 1(a),
-the root node represents question x, while child nodes correspond to intermediate steps sgenerated
-byM. A root-to-leaf path ending at terminal node sdforms a trajectory t=x⊕s1⊕s2⊕...⊕sd,
-with each step siassigned a Q-value Q(si). From the search tree T, we extract solution trajectories
-T={t1,t2, ...,tn}(n≥1). Our goal is to select high-quality trajectories from Tto construct the
-training set. For this purpose, we introduce code-augmented CoT synthesis method to filter out
-low-quality generations and perform extensive rollouts to improve the reliability of Q-value accuracy.
-Code-augmented CoT Generation . Prior MCTS approaches primarily generate natural language
-(NL) CoTs [Qi et al., 2024, Zhang et al., 2024a]. However, LLMs often suffer from hallucination,
-producing incorrect or irrelevant steps yet still arrive at the correct answer by chance [Lanham et al.,
-2023]. These flawed steps are challenging to detect and eliminate. To address this, we propose a
-novel code execution augmented CoT. As shown in Fig. 2, the policy model generates a one-step NL
-CoT along
+from the same problem-solving view for verifica-
+tion. We refer to this type of verification behavior
+as “Confirmative” Verification. Specifically, we
+construct “Confirmative” Verification by prompt-
+ing existing LLMs to "verify the correctness of
+the answer without re-solving the problem", and
+filtering out invalid verifications using LLM-as-a-
+judge. The detail implementation can be found in
+Appendix §A.1.
+2.2.2 Learning Self-correction
+Another critical part of S2Ris enabling the model
+to learn self-correction. Inspired by Kumar et al.
+(2024) and Snell et al. (2024b), we initialize the
+self-correcting behavior by concatenating a series
+of incorrect solutions (each followed by a verifi-
+cation recognizing the mistakes) with a final cor-
+rect solution. As demonstrated by Kumar et al.
+(2024), LLMs typically fail to learn valid self-
+correction behavior through SFT, but the validity of
+self-correction can be enhanced through reinforce-
+ment learning. Therefore, we only initialize the
+self-correcting behavior at this stage, leaving fur-
+ther enhancement of the self-correcting capabilities
+to the RL stage.
+2.2.3 Constructing Dynamic Trial-and-Error
+Trajectory
+We next construct the complete trial-and-error tra-
+jectories for behavior initialization SFT, following
+three principles:
+•To ensure the diversity of the trajectories, we
+construct trajectories of various lengths. Specif-
+ically, we cover k∈ {1,2,3,4}fory=
+(a1,···, a2k) = ( s1, v1,···, sk, vk)in the tra-
+jectories.
+•To ensure that the LLMs learn to verify and cor-
+rect their own errors, we construct the failed trials
+in each trajectory by sampling and filtering from
+the LLMs’ own responses.
+•As a plausible test-time scaling method allocates
+reasonable effort to varying levels of problems, it
+is important to ensure the trial-and-error trajec-
+tories align with the difficulty level of problems.
+Specifically, more difficult problems will require
+more trial-and-error iterations before reaching the
+correct answer. Thus, we determine the length
+of each trajectory based on the accuracy of the
+sampled responses for each base model.2.2.4 Supervised Fine-tuning for Thinking
+Behavior Initialization
+Once the dynamic self-verifying and self-
+correcting training data DSFT is ready, we opti-
+mize the policy πfor thinking behavior initializa-
+tion by minimizing the following objective:
+L=−E(x,y)∼DSFTX
+at∈yδmask(at) logπ(at|x, y :at)
+(1)
+where the mask function δmask(at)for action atin
+y= (a1,···, aT)is defined as:
+δmask(at) =
+
+1,ifType (at) =verify
+1,ifType (at) =solve andt=T−1
+1,ifType (at) =<end> andt=T
+0,otherwise
+That is, we optimize the probability of all verifica-
+tions and only the last correct solution sNby using
+masks during training.
+2.3 Boosting Thinking Capabilities via
+Reinforcement Learning
+After Stage 1, we initialized the policy model π
+with self-verification and self-correction behavior,
+obtaining πSFT. We then explore further enhanc-
+ing these thinking capabilities of πSFT via rein-
+forcement learning. Specifically, we explore two
+simple RL algorithms: the outcome-level REIN-
+FORCE Leave-One-Out (RLOO) algorithm and a
+proces-level group-based RL algorithm.
+2.3.1 Outcome-level RLOO
+We first introduce the outcome-level REINFORCE
+Leave-One-Out (RLOO) algorithm (Ahmadian
+et al., 2024; Kool et al., 2019) to further enhance
+the self-verification and self-correction capabili-
+ties of πSFT. Given a problem xand the response
+y= (s1, v1, ..., s T, vT), we define the reward func-
+tionRo(x, y)based on the correctness of the last
+solution sT:
+Ro(x, y) =(
+1, V golden (sT) =correct
+−1, otherwise
+Here Vgolden (·)∈ { correct ,incorrect }rep-
+resents ground-truth validation by matching the
+golden answer with the given solution. We cal-
+culate the advantage of each response yusing an
+estimated baseline and KL reward shaping as fol-
+lows:
+A(x, y) =Ro(x, y)−ˆb−βlogπθold(y|x)
+πref(y|x)(2)
+4
 
 === PAGE 5 ===
-Specifically, starting from the initial root node x, we perform multiple MCTS iterations through
-selection ,expansion ,rollout , and back-propagation . At step i, we collect the latest reasoning trajectory
-x⊕s1⊕s2⊕...⊕si−1as the current state. Based on this state, we prompt (see Appendix A.3)
-the policy model to generate ncandidates si,0, ..., s i,n−1for step i. Python code execution is then
-employed to filter valid nodes. As shown in Fig. 2, each generation si,jis concatenated with the code
-from all previous steps, forming s1⊕s2⊕...⊕si−1⊕si,j. Candidates that execute successfully
-are retained as valid nodes and scored by the PPM, which assigns a Q-value q(si). Then, we use the
-well-known Upper Confidence bounds for Trees (UCT) [Kocsis and Szepesvári, 2006] to select the
-best node among the ncandidates. This selection process is mathematically represented as:
-UCT(s) =Q(s) +cs
-lnNparent (s)
-N(s);where Q(s) =q(s)
-N(s)(1)
-where N(s)denotes the number of visits to node s, andNparent(s)is the visit count of s’s parent node.
-The predicted reward q(s)is provided by the PPM and will be updated through back-propagation. c
-is a constant that balances exploitation and exploration.
-Extensive Rollouts for Q-value Annotation . Accurate Q-value Q(s)annotation in Eq. 1 is crucial
-for guiding MCTS node selection towards correct problem-solving paths and identifying high-quality
-steps within trajectories. To improve Q-value reliability, we draw inspiration from Go players, who
-retrospectively evaluate the reward of each move based on game outcomes. Although initial estimates
-may be imprecise, repeated gameplay refines these evaluations over time. Similarly, in each rollout,
-we update the Q-value of each step based on its contribution to achieving the correct final answer.
-After extensive MCTS rollouts, steps consistently leading to correct answers achieve higher Q-values,
-occasional successes yield moderate Q-values, and consistently incorrect steps receive low Q-values.
-Specifically, we introduce two self-annotation methods to obtain these step-level Q-values. Fig. 1(c)
-shows the detailed setting in the four rounds of self-evolution.
-Terminal-guided annotation . During the first two rounds, when the PPM is unavailable or insufficiently
-accurate, we use terminal-guided annotation. Formally, let q(si)kdenote the q value for step siafter
-back-propagation in the kthrollout. Following AlphaGo [Silver et al., 2017] and rStar [Qi et al.,
-2024], we score each intermediate node based on its contribution to the final correct answer:
-q(si)k=q(si)k−1+q(sd)k; (2)
-where the initial q value q(si)0= 0in the first rollout. If this step frequently leads to a correct answer,
-itsqvalue will increase; otherwise, it decreases. Terminal nodes are scored as q(sd) = 1 for correct
-answers and q(sd) =−1otherwise, as shown in Fig. 1.
-PRM-augmented annotation . Starting from the third round, we use PPM to score each step for more
-effective generation. Compared to terminal-guided annotation, which requires multiple rollouts for
-a meaningful qvalue, PPM directly predicts a non-zero initial qvalue. PPM-augmented MCTS
-also helps the policy model to generate higher-quality steps, guiding solutions towards correct paths.
-Formally, for step si, PPM predicts an initial q(si)0value based on the partial trajectory:
-q(si)0=PPM (x⊕s1⊕s2⊕...⊕si−1⊕si) (3)
-Thisqvalue will be updated based on terminal node’s q(sd)value through MCTS back-propagation
-in Eq. 2. For terminal node sd, we do not use PRM for scoring during training data generation.
-Instead, we assign a more accurate score based on ground truth labels as terminal-guided rewarding.
-3.3 Process Preference Model
-Process reward models, which provide granular step-level reward signals, is highly desirable for
-solving challenging math problems. However, obtaining high-quality step-level training data remains
-an open challenge. Existing methods rely on human annotations [Lightman et al., 2023] or MCTS-
-generated scores [Zhang et al., 2
+where βis the KL divergence regularization coeffi-
+cient, and πrefis the reference policy (in our case,
+πSFT).ˆb(x, y(m)) =1
+M−1P
+j=1,...,M
+j̸=m.Ro(x, y(j))
+is the baseline estimation of RLOO, which repre-
+sents the leave-one-out mean of Msampled out-
+puts{y(1), ...y(M)}for each input x, serving as a
+baseline estimation for each y(m). Then, we op-
+timize the policy πθby minimizing the following
+objective after each sampling episode based on
+πθold:
+L(θ) =−E x∼D
+y∼πθold(·|x)
+min 
+r(θ)A(x, y),
+clip 
+r(θ),1−ϵ,1 +ϵ
+A(x, y) (3)
+where r(θ) =πθ(y|x)
+πθold(y|x)is the probability ratio.
+When implementing the above loss function, we
+treatyas a complete trajectory sampled with an
+input problem x, meaning we optimize the entire
+trajectory with outcome-level supervision. With
+this approach, we aim to incentivize the policy
+model to explore more dynamic self-verification
+and self-correcting trajectories on its own, which
+has been demonstrated as an effective practice in
+recent work (Guo et al., 2025; Team et al., 2025).
+2.3.2 Process-level Group-based RL
+Process-level supervision has demonstrated effec-
+tiveness in math reasoning (Lightman et al., 2023a;
+Wang et al., 2024c). Since the trajectory of S2R
+thinking is naturally divided into self-verification
+and self-correction processes, it is intuitive to adopt
+process-level supervision for RL training.
+Inspired by RLOO and process-level GRPO
+(Shao et al., 2024), we designed a group-based
+process-level optimization method. Specifically,
+we regard each action ain the output trajectory y
+as a sub-process and define the action level reward
+function Ra(a|x, y :a)based on the action type.
+For each “ solve ” action sj, we expect the policy to
+generate the correct solution; for each “ verify ” ac-
+tionvj, we expect the verification to align with the
+actual solution validity. The corresponding rewards
+are defined as follows:
+Ra(sj|x, y :sj) =
+1, V golden (sj) =correct
+−1, otherwise
+Ra(vj|x, y :vj) =
+1, Parser (vj) =Vgolden (sj)
+−1, otherwiseTo calculate the advantage of each action at, we
+estimate the baseline as the average reward of the
+group of actions sharing the same reward context :
+R(at|x, y) = (Ra(ai|x, y :ai))t−1
+i=1
+which is defined as the reward sequence of the
+previous actions y:atof each action at. We denote
+the set of actions sharing the same reward context
+R(at|x, y)asG(R(at|x, y)). Then the baseline
+can be estimated as follows:
+ˆb(at|x, y) =
+1
+|G(R(at|x, y))|X
+a∈G(R(at|x,y))Ra(a|x(a), y(a)
+:a)
+(4)
+And the advantage of each action atis:
+A(at|x, y) =Ra(at|x, y :at)−ˆb(at|x, y)
+−βlogπθold(at|x, y)
+πref(at|x, y)(5)
+The main idea of the group-based baseline estima-
+tion is that the actions sharing the same reward
+context are provided with similar amounts of in-
+formation before the action is taken. For instance,
+all actions sharing a reward context consisting of
+one failed attempt and one successful verification
+(i.e.,R(at|x, y) = (−1,1)) are provided with the
+information about the problem, a failed attempt,
+and the reassessment on the failure. Given the
+same amount of information, it is reasonable to es-
+timate a baseline using the average reward of these
+actions.
+Putting it all together, we minimize the following
+surrogate loss function to update the policy param-
+etersθ, using trajectories collected from πold:
+L(θ) =−E x∼D
+y∼πθold(·|x)1
+|y|aX
+a∈ymin 
+ra(θ)A(a|x, y :a),
+clip 
+ra(θ),1−ϵ,1 +ϵ
+A(a|x, y :a)
+(6)
+where ra(θ) =πθ(a|x,y:a)
+πθold(a|x,y:a)is the importance ratio.
+2.4 More Efficient Training with Offline RL
+While online RL is known for its high resource
+requirements, offline RL, which does not require
+real-time sampling during training, offers a more
+efficient alternative for RL training. Additionally,
+offline sampling allows for more accurate baseline
+5
 
 === PAGE 6 ===
-major obstacle. For instance, among a set of correct steps, it is difficult to rank them as best, second-
-best, or average and then assign precise scores. Similarly, among incorrect steps, differentiating
-the worst from moderately poor steps poses analogous challenges. Even expert human annotation
-struggles with consistency, particularly at scale, leading to inherent noise in training labels.
-We introduce a novel training method that trains a process preference model (PPM) by constructing
-step-level positive-negative preference pairs. As shown in Fig. 1(b), instead of using Q-values as
-direct reward labels, we use them to select steps from MCTS tree for preference pair construction.
-For each step, we select two candidates with the highest Q-values as positive steps and two with the
-lowest as negative steps. Critically, the selected positive steps must lead to a correct final answer,
-while negative steps must lead to incorrect answers. For intermediate steps (except the final answer
-step), the positive and negative pairs share the same preceding steps. For the final answer step, where
-identical reasoning trajectories rarely yield different final answers, we relax this restriction. We select
-two correct trajectories with the highest average Q-values as positive examples and two incorrect
-trajectories with the lowest average Q-values as negative examples. Following [Ouyang et al., 2022],
-we define our loss function using the standard Bradley-Terry model with a pairwise ranking loss:
-Lppm(θ) =−1
-2×2E(x,ypos
-i,yneg
-i∈D)[log(σ(rθ(x, ypos
-i)−rθ(x, yneg
-i)))] (4)
-when iis not final answer step , ypos
-i=s1⊕...⊕si−1⊕spos
-i;yneg
-i=s1⊕...⊕si−1⊕sneg
-i (5)
-Here, rθ(x, yi)denotes the output of the PPM, where xis the problem and yis the trajectory from
-the first step to the ithstep.
-3.4 Self-Evolved Deep Thinking
-3.4.1 Training with Step-by-Step Verified Reasoning Trajectory
-Math Problems Collection . We collect a large dataset of 747k math word problems with final
-answer ground-truth labels, primarily from NuminaMath [Jia LI and Polu, 2024a] and MetaMath [Yu
-et al., 2023b]. Notably, only competition-level problems (e.g., Olympiads and AIME/AMC) from
-NuminaMath are included, as we observe that grade-school-level problems do not significantly
-improve LLM complex math reasoning. To augment the limited competition-level problems, we
-follow [Li et al., 2024] and use GPT-4 to synthesize new problems based on the seed problems in 7.5k
-MATH train set and 3.6k AMC-AIME training split. However, GPT-4 often generated unsolvable
-problems or incorrect solutions for challenging seed problems. To filter these, we prompt GPT-4 to
-generate 10 solutions per problem, retaining only those with at least 3 consistent solutions.
-Reasoning Trajectories Collection . Instead of using the original solutions in the 747k math dataset,
-we conduct extensive MCTS rollouts (Sec. 3.2) to generate higher-quality step-by-step verified
-reasoning trajectories. In each self-evolution round, we perform 16 rollouts per math problem, which
-leads to 16 reasoning trajectories. Problems are then categories by difficulty based on the correct ratio
-of the generated trajectories: easy (all solutions are correct), medium (a mix of correct and incorrect
-solutions) and hard (all solutions are incorrect). For hard problems with no correct trajectories, an
-additional MCTS with 16 rollouts is performed. After that, all step-by-step trajectories and their
-annotated Q-values are collected and filtered to train the policy SLM and process preference model.
-Supervised Fine-tuning the Policy SLM . Through extensive experiments, we find that selecting
-high-quality reasoning trajectories is the key for fine-tuning a frontier math LLM. While methods
-such as GPT-distillation and Best-of-N can include low-quality or erroneous intermediate steps, a
-more effective approach ensures that every step in the trajectory is of high quality. To achieve this,
-we use per-step Q-values to select optimal trajectories f
+Stage 1: Behavior Initialization
+Base Model Source # Training Data
+Llama-3.1-8B-Instruct MATH 4614
+Qwen2-7B-Instruct MATH 4366
+Qwen2.5-Math-7B MATH 3111
+Stage 2: Reinforcement Learning
+Base Model Source # Training Data
+Llama-3.1-8B-Instruct MATH+GSM8K 9601
+Qwen2-7B-Instruct MATH+GSM8K 9601
+Qwen2.5-Math-7B MATH+OpenMath2.0 10000
+Table 1: Training data statistics.
+calculations with better trajectories grouping for
+each policy. As part of our exploration into more
+efficient RL training in S2Rframework, we also
+experimented with offline RL to assess its potential
+in further enhancing the models’ thinking abilities.
+In Appendix §D.2, we include more details and
+formal definition for offline RL training.
+3 Experiment
+To verify the effectiveness of the proposed method,
+we conducted extensive experiments across 3 dif-
+ferent base policy models on various benchmarks.
+3.1 Experiment Setup
+Base Models To evaluate the general applicabil-
+ity of our method across different LLMs, we con-
+ducted experiments using three distinct base mod-
+els: Llama-3.1-8B-Instruct (Dubey et al., 2024),
+Qwen2-7B-Instruct (qwe, 2024), and Qwen2.5-
+Math-7B (Qwen, 2024). Llama-3.1-8B-Instruct
+and Qwen2-7B-Instruct are versatile general-
+purpose models trained on diverse domains with-
+out a specialized focus on mathematical reasoning.
+In contrast, Qwen2.5-Math-7B is a state-of-the-
+art model specifically tailored for mathematical
+problem-solving and has been widely adopted in
+recent research on math reasoning (Guan et al.,
+2025; Cui et al., 2025; Zeng et al., 2025).
+Training Data Setup ForStage 1: Behavior Ini-
+tialization , we used the widely adopted MATH
+(Hendrycks et al., 2021a) training set for dynamic
+trial-and-error data collection1. For each base
+model, we sampled 5 responses per problem in the
+training data. After data filtering and sampling, we
+constructed a dynamic trial-and-error training set
+consisting of 3k-4k instances for each base model.
+Detailed statistics of the training set are shown
+1We use the MATH split from Lightman et al. (2023a), i.e.,
+12000 problems for training and 500 problems for testing.in Table 1. For Stage 2: Reinforcement Learn-
+ing, we used the MATH+GSM8K (Cobbe et al.,
+2021a) training data for RL training on the policy
+πSFT initialized from Llama-3.1-8B-Instruct and
+Qwen2-7B-Instruct. Since Qwen2.5-math-7b al-
+ready achieves high accuracy on the GSM8K train-
+ing data after Stage 1, we additionally include train-
+ing data randomly sampled from the OpenMath2
+dataset (Toshniwal et al., 2024). Following (Cui
+et al., 2025), we filter out excessively easy or diffi-
+cult problems based on each πSFT from Stage 1 to
+enhance the efficiency and stability of RL training,
+resulting in RL training sets consisting of approxi-
+mately 10000 instances. Detailed statistics of the
+final training data can be found in Table 1. Addi-
+tional details on training data construction can be
+found in in Appendix §A.1.
+Baselines We benchmark our proposed method
+against four categories of strong baselines:
+•Frontier LLMs includes cutting-edge proprietary
+models such as GPT-4o, the latest Claude, and
+OpenAI’s o1-preview and o1-mini.
+•Top-tier open-source reasoning models cov-
+ers state-of-the-art open-source models known
+for their strong reasoning capabilities, including
+Mathstral-7B-v0.1 (Team, 2024b), NuminaMath-
+72B (LI et al., 2024), LLaMA3.1-70B-Instruct
+(Dubey et al., 2024), and Qwen2.5-Math-72B-
+Instruct (Yang et al., 2024).
+•Enhanced models built on Qwen2.5-Math-7B :
+Given the recent popularity of Qwen2.5-Math-7B
+as a base policy model, we evaluate S2Ragainst
+three competitive baselines that have demon-
+strated superior performance based on Qwen2.5-
+Math-7B: Eurus-2-7B-PRIME (Cui et al., 2025),
+rStar-Math-7B (Guan et al., 2025), and Qwen2.5-
+7B-SimpleRL (Zeng et al., 2025). These mod-
+els serve as direct and strong baseline for our
+Qwen2.5-Math-7B-based variants.
+•SFT with different CoT constructions : We also
+compare with training on competitive types 
 
 === PAGE 7 ===
-Table 2: Percentage of the 747k math problems correctly solved in each round. Only problems have
-correct solutions are included in the training set. The first round uses DeepSeek-Coder-Instruct as the
-policy LLM, while later rounds use our fine-tuned 7B policy SLM.
-# models in MCTS GSM-level MATH-level Olympiad-level All
-Round 1 DeepSeek-Coder-V2-Instruct 96.61% 67.36% 20.99% 60.17%
-Round 2 policy SLM-r1 97.88% 67.40% 56.04% 66.60%
-Round 3 policy SLM-r2, PPM-r2 98.15% 88.69% 62.16% 77.86%
-Round 4 policy SLM-r3, PPM-r3 98.15% 94.53% 80.58% 90.25%
-Table 3: Pass@1 accuracy of the resulting policy SLM in each round, showing continuous improve-
-ment until surpassing the bootstrap model.
-Round# MATH AIME 2024 AMC 2023 Olympiad Bench College Math GSM8K GaokaoEn 2023
-DeepSeek-Coder-V2-Instruct
-(bootstrap model)75.3 13.3 57.5 37.6 46.2 94.9 64.7
-Base (Qwen2.5-Math-7B) 58.8 0.0 22.5 21.8 41.6 91.6 51.7
-policy SLM-r1 69.6 3.3 30.0 34.7 44.5 88.4 57.4
-policy SLM-r2 73.6 10.0 35.0 39.0 45.7 89.1 59.7
-policy SLM-r3 75.8 16.7 45.0 44.1 49.6 89.3 62.8
-policy SLM-r4 78.4 26.7 47.5 47.1 52.5 89.7 65.7
-Each round uses MCTS to generate step-by-step verified reasoning trajectories, which are then used
-to train the new policy SLM and PPM. The new models are then applied in next round to generate
-higher-quality training data. Fig. 1(c) and Table 2 detail the models used for data generation in each
-round, along with the identifiers of the trained policy model and PPM. Next, we outline the details
-and specific improvements targeted in each round.
-Round 1: Bootstrapping an initial strong policy SLM-r1 . To enable SLMs to self-generate
-reasonably good training data, we perform a bootstrap round to fine-tune an initial strong policy
-model, denoted as SLM-r1. As shown in Table 2, we run MCTS with DeepSeek-Coder-V2-Instruct
-(236B) to collect the SFT data. With no available reward model in this round, we use terminal-guided
-annotation for Q-values and limit MCTS to 8 rollouts for efficiency. For correct solutions, the top-2
-trajectories with the highest average Q-values are selected as SFT data. We also train PPM-r1, but the
-limited rollouts yields unreliable Q-values, affecting the effectiveness of PPM-r1 ( Table 4).
-Round 2: Training a reliable PPM-r2 . In this round, with the policy model updated to the 7B
-SLM-r1, we conduct extensive MCTS rollouts for more reliable Q-value annotation and train the
-first reliable reward model, PPM-r2. Specifically, we perform 16 MCTS rollouts per problem. The
-resulting step-by-step verified reasoning trajectories show significant improvements in both quality
-and Q-value precision. As shown in Table 4, PPM-r2 is notably more effective than in the bootstrap
-round. Moreover, the policy SLM-r2 also continues to improve as expected (Table 3).
-Round 3: PPM-augmented MCTS to significantly improve data quality . With the reliable
-PPM-r2, we perform PPM-augmented MCTS in this round to generate data, leading to significantly
-higher-quality trajectories that cover more math and Olympiad-level problems in the training set
-(Table 2). The generated reasoning trajectories and self-annotated Q-values are then used to train the
-new policy SLM-r3 and PPM-r3, both of which show significant improvements.
-Round 4: Solving challenging math problems . After the third round, while grade school and
-MATH problems achieve high success rates, only 62.16% of Olympiad-level problems are included in
-the training set. This is NOT solely due to weak reasoning abilities in our SLMs, as many Olympiad
-problems remain unsolved by GPT-4 or o1. To improve coverage, we adopt a straightforward strategy.
-For unsolved problems after 16 MCTS rollouts, we perform an additional 64 rollouts, and if needed,
-increase to 128. We also conduct multiple MCTS tree expansions with different random seeds. This
-boosts the success rate of Olympiad-level problems to 80.58%.
-After four rounds of self-evolution, 90.25% of the 747k math problems are successfully covered into
-the tr
+Datasets
+Average
+ModelMATH
+500AIME
+2024AMC
+2023College
+MathOlympiad
+BenchGSM8KGaokaoEn
+2023
+Frontier LLMs
+GPT-4o⋆76.6 9.3 47.5 48.5 43.3 92.9 67.5 55.1
+Claude3.5-Sonnet⋆78.3 16.0 - - - 96.4 - -
+GPT-o1-preview⋆85.5 44.6 90.0 - - - - -
+GPT-o1-mini⋆90.0 56.7 95.0 57.8 65.3 94.8 78.4 76.9
+Top-tier Open-source Reasoning LLMs
+Mathstral-7B-v0.1⋆57.8 0.0 37.5 33.7 21.5 84.9 46.0 40.2
+NuminaMath-72B-CoT⋆64.0 3.3 70.0 39.7 32.6 90.8 58.4 51.3
+LLaMA3.1-70B-Instruct⋆65.4 23.3 50.0 42.5 27.7 94.1 54.0 51.0
+Qwen2.5-Math-72B-Instruct⋆85.6 30.0 70.0 49.5 49.0 95.9 71.9 64.6
+General Model: Llama-3.1-8B-Instruct
+Llama-3.1-8B-Instruct 48.0 6.7 30.0 30.8 15.6 84.4 41.0 36.6
+Llama-3.1-8B-Instruct + Original Solution SFT 31.0 3.3 7.5 22.0 8.0 58.7 28.3 22.7
+Llama-3.1-8B-Instruct + Long CoT SFT 51.4 6.7 27.5 36.3 19.0 87.0 48.3 39.5
+Llama-3.1-8B-S2R-BI ( ours) 49.6 10.0 20.0 33.3 17.6 85.3 41.0 36.7
+Llama-3.1-8B-S2R-PRL ( ours) 53.6 6.7 25.0 33.7 18.5 86.7 43.1 38.2
+Llama-3.1-8B-S2R-ORL ( ours) 55.0 6.7 32.5 34.7 20.7 87.3 45.2 40.3
+General Model: Qwen2-7B-Instruct
+Qwen2-7B-Instruct 51.2 3.3 30.0 18.2 19.1 86.4 39.0 35.3
+Qwen2-7B-Instruct + Original Solution SFT 41.2 0.0 25.0 30.1 10.2 74.5 34.8 30.8
+Qwen2-7B-Instruct + Long CoT SFT 60.4 6.7 32.5 36.3 23.4 81.2 53.5 42.0
+Qwen2-7B-S2R-BI ( ours) 61.2 3.3 27.5 41.1 27.1 87.4 49.1 42.4
+Qwen2-7B-S2R-PRL ( ours) 65.4 6.7 35.0 36.7 27.0 89.0 49.9 44.2
+Qwen2-7B-S2R-ORL ( ours) 64.8 3.3 42.5 34.7 26.2 86.4 50.9 44.1
+Math-Specialized Model: Qwen2.5-Math-7B
+Qwen2.5-Math-7B 51.0 16.7 45.0 21.5 16.7 58.3 39.7 35.6
+Qwen2.5-Math-7B-Instruct 83.2 13.3 72.5 47.0 40.4 95.6 67.5 59.9
+Eurus-2-7B-PRIME⋆(Cui et al., 2025) 79.2 26.7 57.8 45.0 42.1 88.0 57.1 56.6
+rStar-Math-7B⋆2(Guan et al., 2025) 78.4 26.7 47.5 52.5 47.1 89.7 65.7 58.2
+Qwen2.5-7B-SimpleRL⋆(Zeng et al., 2025) 82.4 26.7 62.5 - 43.3 - - -
+Qwen2.5-Math-7B + Original Solution SFT 58.0 6.7 42.5 35.8 20.0 79.5 51.9 42.1
+Qwen2.5-Math-7B + Long CoT SFT 80.2 16.7 60.0 49.6 42.1 91.4 69.1 58.4
+Qwen2.5-Math-7B-S2R-BI ( ours) 81.6 23.3 60.0 43.9 44.4 91.9 70.1 59.3
+Qwen2.5-Math-7B-S2R-PRL ( ours) 83.4 26.7 70.0 43.8 46.4 93.2 70.4 62.0
+Qwen2.5-Math-7B-S2R-ORL ( ours) 84.4 23.3 77.5 43.8 44.9 92.9 70.1 62.4
+Table 2: The performance of S2Rand other strong baselines on the most challenging math benchmarks is presented.
+BIrefers to the behavior-initialized models through supervised fine-tuning, ORL denotes models trained with
+outcome-level RL, and PRL refers to models trained with process-level RL. The highest results are highlighted
+inbold and the second-best results are marked with underline . For some baselines, we use the results from their
+original reports or from Guan et al. (2025), denoted by∗.
+provide more details on the baseline data con-
+struction in Appendix §A.2.3.
+More details on the baselines are included in
+Appendix §A.2.
+Evaluation Datasets We evaluate the proposed
+method on 7 diverse mathematical benchmarks.
+To ensure a comprehensive evaluation, in addi-
+tion to the in-distribution GSM8K (Cobbe et al.,
+2021b) and MATH500 (Lightman et al., 2023a)
+test sets, we include challenging out-of-distribution
+benchmarks covering various difficulty levels and
+mathematical domains, including the AIME 2024
+competition problems (AI-MO, 2024a), the AMC
+2023 exam (AI-MO, 2024b), the advanced rea-
+soning tasks from Olympiad Bench (He et al.,2024), and college-level problem sets from College
+Math (Tang et al., 2024a). Additionally, we as-
+sess performance on real-world standardized tests,
+the GaoKao (Chinese College Entrance Exam) En
+2023 (Liao et al., 2024). A detailed description of
+these datasets is provided in Appendix §B.1.
+Evaluation Metrics We report Pass@1 accuracy
+for all baselines. For inference, we employ vLLM
+(Kwon et al., 2023) and develop evaluation scripts
+based on Qwen Math’s codebase. All evaluations
+are performed using greedy decoding. Details of
+the prompts used during inference are provided in
+2To ensure a fair comparison, we report the Pass@1
+(greedy) 
 
 === PAGE 8 ===
-Table 4: The quality of PPM consistently improves across rounds. The policy model has been fixed
-with policy SLM-r1 for a fair comparison.
-Round# MATH AIME 2024 AMC 2023 Olympiad Bench College Math GSM8K GaokaoEn 2023
-PPM-r1 75.2 10.0 57.5 35.7 45.4 90.9 60.3
-PPM-r2 84.1 26.7 75.0 52.7 54.2 93.3 73.0
-PPM-r3 85.2 33.3 77.5 59.5 55.6 93.9 76.6
-PPM-r4 87.0 43.3 77.5 61.5 56.8 94.2 77.8
-4 Evaluation
-4.1 Setup
-Evaluation Datasets . We evaluate rStar-Math on diverse mathematical benchmarks. In addition to
-the widely-used GSM8K [Cobbe et al., 2021], we include challenging benchmarks from multiple
-domains: (i)competition and Olympiad-level benchmarks, such as MATH-500 [Lightman et al.,
-2023], AIME 2024 [AI-MO, 2024a], AMC 2023 [AI-MO, 2024b] and Olympiad Bench [He et al.,
-2024]. Specifically, AIME is the exams designed to challenge the brightest high school math students
-in American, with the 2024 dataset comprising 30 problems from AIME I and II exams; (ii)college-
-level math problems from College Math [Tang et al., 2024] and (iii)out-of-domain math benchmark:
-GaoKao (Chinese College Entrance Exam) En 2023 [Liao et al., 2024].
-Base Models and Setup . rStar-Math is a general approach applicable to various LLMs. To show
-its effectiveness and generalizability, we use SLMs of different sizes as the base policy models:
-Qwen2.5-Math-1.5B [Qwen, 2024b], Phi3-mini-Instruct (3B) [Microsoft, 2024, Abdin et al., 2024],
-Qwen2-Math-7B [Qwen, 2024a] and Qwen2.5-Math-7B [Qwen, 2024c]. Among these, Phi3-mini-
-Instruct is a general-purpose SLM without specialization in math reasoning.
-Due to limited GPU resources, we performed 4 rounds of self-evolution exclusively on Qwen2.5-
-Math-7B, yielding 4 evolved policy SLMs (Table 3) and 4 PPMs (Table 4). For the other 3 policy
-LLMs, we fine-tune them using step-by-step verified trajectories generated from Qwen2.5-Math-7B’s
-4th round. The final PPM from this round is then used as the reward model for the 3 policy SLMs.
-Baselines . rStar-Math is a System 2 method. We compare it against three strong baselines representing
-both System 1 and System 2 approaches: (i)Frontier LLMs , including GPT-4o, the latest Claude,
-OpenAI o1-preview and o1-mini. We measure their accuracy on AMC 2023, Olympiad Bench,
-College Math, Gaokao and GSM8K, with accuracy numbers for other benchmarks are taken from
-public technical reports [Team, 2024a]. (ii)Open-sourced superior reasoning models , including
-DeepSeek-Coder-v2-Instruct, Mathstral [Team, 2024b], NuminaMath-72B [Jia LI and Polu, 2024a],
-and LLaMA3.1 [Dubey et al., 2024], which represent the current mainstream System 1 approaches
-for improving LLM math reasoning. (iii)Both System 1 and System 2 performance of the base models
-trained from the original models teams , including Instruct versions (e.g., Qwen2.5-Math-7B-Instruct)
-and Best-of-N (e.g., Qwen2.5-Math-72B-Instruct+Qwen2.5-Math-RM-72B). Notably, the reward
-model used for the three Qwen base models is a 72B ORM, significantly larger than our 7B PPM.
-Evaluation Metric . We report Pass@1 accuracy for all baselines. For System 2 baselines, we use
-default evaluation settings, such as default thinking time for o1-mini and o1-preview. For Qwen
-models with Best-of-N, we re-evaluate MATH-500, AIME/AMC accuracy; other benchmarks results
-are from their technical reports. For a fair comparison, rStar-Math run MCTS to generate the
-same number of solutions as Qwen. Specifically, for AIME/AMC, we generate 16 trajectories for
-AIME/AMC and 8 for other benchmarks, using PPM to select the best solution. We also report
-performance with increased test-time computation using 64 trajectories, denoted as rStar-Math64.
-4.2 Main Results
-Results on diverse challenging math benchmarks . Table 5 shows the results of rStar-Math with
-comparing to state-of-the-art reasoning models. We highlight three key observations: (1)rStar-Math
-significantly improves SLMs math reasoning capabilities, achieving performance comparable to
-or surpassing OpenAI o1 wit
+Appendix §A.3. All implementation details, in-
+cluding hyperparameter settings, can be found in
+Appendix §B.2.
+3.2 Main Results
+Table 2 shows the main results of S2Rcompared
+with baseline methods. We can observe that: (1)
+S2Rconsistently improves the reasoning abilities
+of models across all base models. Notably, on
+Qwen2.5-Math-7B, the proposed method improves
+the base model by 32.2% on MATH500 and by
+34.3% on GSM8K. (2) Generally, S2Routperforms
+the baseline methods derived from the same base
+models across most benchmarks. Specifically, on
+Qwen2.5-Math-7B, S2Rsurpasses several recently
+proposed competitive baselines, such as Eurus-
+2-7B-PRIME, rStar-Math-7B and Qwen2.5-7B-
+SimpleRL. While Eurus-2-7B-PRIME and rStar-
+Math-7B rely on larger training datasets (Figure
+1) and require more data construction and reward
+modeling efforts, S2Ronly needs linear sampling
+efforts for data construction, 10k RL training data
+and rule-based reward modeling. These results
+highlight the efficiency of S2R. (3) With the
+same scale of SFT data, S2Ralso outperforms
+the long-CoT models distilled from QwQ-32B-
+Preview, demonstrating that learning to self-verify
+and self-correct is an effective alternative to long-
+CoT for test-time scaling in smaller LLMs.
+Comparing process-level and outcome-level RL ,
+we find that outcome-level RL generally outper-
+forms process-level RL across the three models.
+This is likely because outcome-level RL allows
+models to explore trajectories without emphasizing
+intermediate accuracy, which may benefit enhanc-
+ing long-thought reasoning in stronger base models
+like Qwen2.5-Math-7B. In contrast, process-level
+RL, which provides guidance for each intermediate
+verification and correction step, may be effective
+for models with lower initial capabilities, such as
+Qwen2-7B-Instruct. As shown in Figure 3, process-
+level RL can notably enhance the verification and
+correction abilities of Qwen2-7B-S2R-BI.
+3.3 Generalizing to Cross-domain Tasks
+Despite training on math reasoning tasks, we found
+that the learned self-verifying and self-correcting
+capability can also generalize to out-of-distribution
+general domains. In Table 3, we evaluate the
+SFT model and the outcome-level RL model based
+on Qwen2.5-Math-7B on four cross-domain tasks:
+FOLIO (Han et al., 2022) on logical reasoning,Model FOLIOCRUX-
+EvalStrategy-
+QAMMLUPro-
+STEM
+Qwen2.5-Math-72B-Instruct 69.5 68.6 94.3 66.0
+Llama-3.1-70B-Instruct∗65.0 59.6 88.8 61.7
+OpenMath2-Llama3.1-70B∗68.5 35.1 95.6 55.0
+QwQ-32B-Preview∗84.2 65.2 88.2 71.9
+Eurus-2-7B-PRIME 56.7 50.0 79.0 53.7
+Qwen2.5-Math-7B-Instruct 61.6 28.0 81.2 44.7
+Qwen2.5-Math-7B 37.9 40.8 61.1 46.0
+Qwen2.5-Math-7B-S2R-BI ( ours) 58.1 48.0 88.7 49.8
+Qwen2.5-Math-7B-S2R-ORL ( ours) 61.6 50.9 90.8 50.0
+Table 3: Performance of the proposed method and the
+baseline methods on 4 cross-domain tasks. The results
+with∗are reported by Shen et al. (2025).
+CRUXEval (Gu et al., 2024) on code reasoning,
+StrategyQA (Geva et al., 2021) on multi-hop rea-
+soning and MMLUPro-STEM on multi-task com-
+plex understanding (Wang et al., 2024d; Shen et al.,
+2025), with details of these datasets provided in Ap-
+pendix §B.1. The results show that after learning to
+self-verify and self-correct, the proposed method
+effectively boosts the base model’s performance
+across all tasks and achieves comparative results
+to the baseline models. These findings indicate
+that the learned self-verifying and self-correcting
+capabilities are general thinking skills, which can
+also benefit reasoning in general domains. Addi-
+tionally, we expect that the performance in spe-
+cific domains can be further improved by applying
+S2Rtraining on domain data with minimal reward
+model requirements (e.g., rule-based or LLM-as-
+a-judge). For better illustration, we show cases on
+how the trained models perform self-verifying and
+self-correcting on general tasks in Appendix §E.
+3.4 Analyzing Self-verification and
+Self-correction Abilities
+In this section, we conduct analytical exper
 
 === PAGE 9 ===
-Table 5: The results of rStar-Math and other frontier LLMs on the most challenging math benchmarks.
-rStar-Math64shows the Pass@1 accuracy achieved when sampling 64 trajectories.
-Competition and College Level OOD
-Model Method MATHAIME
-2024AMC
-2023Olympiad
-BenchCollege
-MathGSM8KGaokao
-En 2023
-Frontier LLMs
-GPT-4o System 1 76.6 9.3 47.5 43.3 48.5 92.9 67.5
-Claude3.5-Sonnet System 1 78.3 16.0 - - - 96.4 -
-GPT-o1-preview - 85.5 44.6 90.0 - - - -
-GPT-o1-mini - 90.0 56.7 95.0 65.3 57.8 94.8 78.4
-Open-Sourced Reasoning LLMs
-DeepSeek-Coder-V2-Instruct System 1 75.3 13.3 57.5 37.6 46.2 94.9 64.7
-Mathstral-7B-v0.1 System 1 57.8 0.0 37.5 21.5 33.7 84.9 46.0
-NuminaMath-72B-CoT System 1 64.0 3.3 70.0 32.6 39.7 90.8 58.4
-LLaMA3.1-8B-Instruct System 1 51.4 6.7 25.0 15.4 33.8 76.6 38.4
-LLaMA3.1-70B-Instruct System 1 65.4 23.3 50.0 27.7 42.5 94.1 54.0
-Qwen2.5-Math-72B-Instruct System 1 85.6 30.0 70.0 49.0 49.5 95.9 71.9
-Qwen2.5-Math-72B-Instruct+72B ORM System 2 85.8 36.7 72.5 54.5 50.6 96.4 76.9
-General Base Model: Phi3-mini-Instruct (3.8B)
-Phi3-mini-Instruct (base model) System 1 41.4 3.33 7.5 12.3 33.1 85.7 37.1
-rStar-Math (3.8B SLM+7B PPM) System 2 85.4 40.0 77.5 59.3 58.0 94.5 77.1
-rStar-Math64(3.8B SLM+7B PPM) System 2 86.4 43.3 80.0 60.3 59.1 94.7 77.7
-Math-Specialized Base Model: Qwen2.5-Math-1.5B
-Qwen2.5-Math-1.5B (base model) System 1 51.2 0.0 22.5 16.7 38.4 74.6 46.5
-Qwen2.5-Math-1.5B-Instruct System 1 60.0 10.0 60.0 38.1 47.7 84.8 65.5
-Qwen2.5-Math-1.5B-Instruct+72B ORM System 2 83.4 20.0 72.5 47.3 50.2 94.1 73.0
-rStar-Math (1.5B SLM+7B PPM) System 2 87.8 46.7 80.0 63.5 59.0 94.3 77.7
-rStar-Math64(1.5B SLM+7B PPM) System 2 88.6 46.7 85.0 64.6 59.3 94.8 79.5
-Math-Specialized Base Model: Qwen2-Math-7B
-Qwen2-Math-7B (base model) System 1 53.4 3.3 25.0 17.3 39.4 80.4 47.3
-Qwen2-Math-7B-Instruct System 1 73.2 13.3 62.5 38.2 45.9 89.9 62.1
-Qwen2-Math-7B-Instruct+72B ORM System 2 83.4 23.3 62.5 47.6 47.9 95.1 71.9
-rStar-Math (7B SLM+7B PPM) System 2 88.2 43.3 80.0 63.1 58.4 94.6 78.2
-rStar-Math64(7B SLM+7B PPM) System 2 88.6 46.7 85.0 63.4 59.3 94.8 79.2
-Math-Specialized Base Model: Qwen2.5-Math-7B
-Qwen2.5-Math-7B (base model) System 1 58.8 0.0 22.5 21.8 41.6 91.6 51.7
-Qwen2.5-Math-7B-Instruct System 1 82.6 6.0 62.5 41.6 46.8 95.2 66.8
-Qwen2.5-Math-7B-Instruct+72B ORM System 2 88.4 26.7 75.0 49.9 49.6 97.9 75.1
-rStar-Math (7B SLM+7B PPM) System 2 89.4 50.0 87.5 65.3 59.0 95.0 80.5
-rStar-Math64(7B SLM+7B PPM) System 2 90.0 53.3 87.5 65.6 60.5 95.2 81.3
-geometry-based, requiring visual understanding, a capability rStar-Mathcurrently does not support.
-(2)Despite using smaller policy models (1.5B-7B) and reward models (7B), rStar-Math significantly
-outperforms state-of-the-art System 2 baselines. Compared to Qwen Best-of-N baselines, which
-use the same base models (Qwen2-Math-7B, Qwen2.5-Math-1.5B/7B) but a 10 ×larger reward
-model (Qwen2.5-Math-RM-72B), rStar-Math consistently improves the reasoning accuracy of all
-base models to state-of-the-art levels. Even against Best-of-N with a 10 ×larger Qwen2.5-Math-72B-
-Instruct policy model, rStar-Math surpasses it on all benchmarks except GSM8K, using the same
-number of sampled solutions. (3)Beyond well-known benchmarks like MATH, GSM8K, and AIME,
-which may risk over-optimization, rStar-Math shows strong generalizability on other challenging
-math benchmarks, including Olympiad Bench, College Math, and the Chinese College Entrance
-Math Exam (Gaokao), setting new state-of-the-art scores. As discussed in Sec. 3.4, our training set is
-primarily sourced from public datasets, with no specific optimizations for these benchmarks.
-Scaling up test-time computation . rStar-Math uses MCTS to augment the policy model, searching
-solutions guided by the PPM. By increasing test-time computation, it explores more trajectories,
-potentially improving performance. In Fig. 3, we show the impact of test-time compute scaling
-by comparing the accuracy of the official Qwen Best-of-N across different numbers of sampled
-traje
+Base Model MethodsOverall
+Verification
+Acc.Initial Verification Acc.
+Vgolden (s0)
+=correctVgolden (s0)
+=incorrect
+Llama3.1-8B-InstructProblem-solving 80.10 87.28 66.96
+Confirmative 65.67 77.27 78.22
+Qwen2-7B-InstructProblem-solving 73.28 90.24 67.37
+Confirmative 58.31 76.16 70.05
+Qwen2.5-Math-7BProblem-solving 77.25 91.21 56.67
+Confirmative 61.58 82.80 68.04
+Table 4: Comparison of problem-solving and confirma-
+tive verification.
+are trained for problem-solving, and recent studies
+have highlighted the difficulty of existing LLMs in
+performing reverse thinking (Berglund et al., 2023;
+Chen et al., 2024b). During data collection, we also
+found that existing models tend to verify through
+problem-solving, even when prompted to verify
+without re-solving (see Table 6 in Appendix §A.1).
+(2) In practice, accuracy alone does not fully re-
+flect the validity of a method. For example, when
+answer accuracy is sufficiently high, predicting all
+answers as correct will naturally lead to high verifi-
+cation accuracy, but this is not a desired behavior.
+By further examining the initial verification accu-
+racy for both correct and incorrect answers, we
+found that problem-solving verification exhibits a
+notable bias toward predicting answers as correct,
+while the predictions from confirmative verification
+are more balanced. We deduce that this bias arises
+might be because problem-solving verification is
+more heavily influenced by the preceding solution,
+aligning with previous studies showing that LLMs
+struggle to identify their own errors (Huang et al.,
+2023; Tyen et al., 2023). In contrast, confirma-
+tive verification performs verification from differ-
+ent perspectives, making it less influenced by the
+LLMs’ preceding solution.
+In all experiments, we used confirmative verifi-
+cation for behavior initialization.
+3.4.2 Boosting Self-verifying and
+Self-correcting with RL
+In this experiment, we investigate the effect of
+RL training on the models’ self-verifying and self-
+correcting capabilities.
+We assess self-verification using the following
+metrics: (1) Verification Accuracy : The overall
+accuracy of verification predictions, as described
+in §3.4.1. (2) Error Recall : The recall of verifica-
+tion when the preceding answers are incorrect. (3)
+Correct Precision : The precision of verification
+when it predicts the answers as correct. Both Error
+Verification Accuracy Error Recall Correct Precision5060708090100 Value (%)
+58.3181.91
+65.5867.8686.67
+73.59
+63.9387.34
+69.80Self-verification Metrics
+Incorrect
+ to CorrectCorrect
+ to Incorrect0510152025 Value (%)20.00
+8.4222.17
+5.3919.55
+3.93Self-correction MetricsEvaluation on Verification and Correction (Base Model: Qwen2-7B-Instruct)
+SFT
+SFT + Process-level RL
+SFT + Outcome-level RL
+Verification Accuracy Error Recall Correct Precision5060708090 Value (%)61.5866.8384.94
+74.61
+64.7590.28
+66.4970.1187.85Self-verification Metrics
+Incorrect
+ to CorrectCorrect
+ to Incorrect02468101214 Value (%)6.52
+1.9612.22
+1.4613.64
+0.97Self-correction MetricsEvaluation on Verification and Correction (Base Model: Qwen2.5-Math-7B)
+SFT
+SFT + Process-level RL
+SFT + Outcome-level RLFigure 3: Evaluation on verification and correction.
+Recall and Correct Precision directly affectthefi-
+nalanswer accuracy: if verification fails to detect
+an incorrect answer, or if it incorrectly predicts an
+answer as correct, the final answer will be wrong.
+For self-correction, we use the following metrics:
+(1)Incorrect to Correct Rate : the rate at which the
+model successfully corrects an incorrect initial an-
+swer to a correct final answer. (2) Correct to Incor-
+rect Rate : the rate at which the model incorrectly
+changes a correct initial answer to an incorrect final
+answer. We provide the formal definitions of the
+metrics used in Appendix §C.
+In Figure 3, we present the results of the
+behavior-initialized model (SFT) and different RL
+models obtained from Qwen2.5-Math-7B. We ob-
+serve that: (1) Both RL methods effectively en-
+hance self-verification
 
 === PAGE 10 ===
-Figure 3: Reasoning performance under scaling up the test-time compute.
-observations: (1)With only 4 trajectories, rStar-Math significantly outperforms Best-of-N baselines,
-exceeding o1-preview and approaching o1-mini, demonstrating its effectiveness. (2)Scaling test-time
-compute improves reasoning accuracy across all benchmarks, though with varying trends. On Math,
-AIME, and Olympiad Bench, rStar-Math shows saturation or slow improvement at 64 trajectories,
-while on College Math, performance continues to improve steadily.
-4.3 Ablation Study and Analysis
-We ablate the effectiveness of our three innovations. For System 2-style inference, Pass@1 accuracy
-is measured with 16 trajectories for AIME and AMC, and 8 for other benchmarks.
-Table 6: The continuously improved math reasoning capabilities through rStar-Math self-evolved
-deep thinking. Starting from round 2, the 7B base model powered by rStar-Math surpasses GPT-4o.
-Round# MATH AIME 2024 AMC 2023 Olympiad Bench College Math GSM8K GaokaoEn 2023
-GPT-4o 76.6 9.3 47.5 43.3 48.5 92.9 67.5
-Base 7B model 58.8 0.0 22.5 21.8 41.6 91.6 51.7
-rStar-Math Round 1 75.2 10.0 57.5 35.7 45.4 90.9 60.3
-rStar-Math Round 2 86.6 43.3 75.0 59.4 55.6 94.0 76.4
-rStar-Math Round 3 87.0 46.7 80.0 61.6 56.5 94.2 77.1
-rStar-Math Round 4 89.4 50.0 87.5 65.3 59.0 95.0 80.5
-The effectiveness of self-evolution . The impressive results in Table 5 are achieved after 4 rounds of
-rStar-Math self-evolved deep thinking. Table 6 shows the math reasoning performance in each round,
-demonstrating a continuous improvement in accuracy. In round 1, the main improvement comes from
-applying SFT to the base model. Round 2 brings a significant boost with the application of a stronger
-PPM in MCTS, which unlocks the full potential of System 2 deep reasoning. Notably, starting from
-round 2, rStar-Math outperforms GPT-4o. Rounds 3 and 4 show further improvements, driven by
-stronger System 2 reasoning through better policy SLMs and PPMs.
-The effectiveness of step-by-step verified reasoning trajectory . rStar-Math generates step-by-step
-verified reasoning trajectories, which eliminate error intermediate steps and further expand training
-set with more challenging problems. To evaluate its effectiveness, we use the data generated from
-round 4 as SFT training data and compare it against three strong baselines: (i)GPT-distillation, which
-includes open-sourced CoT solutions synthesized using GPT-4, such as MetaMath [Yu et al., 2023b],
-NuminaMath-CoT [Jia LI and Polu, 2024b]; (ii)Random sampling from self-generation, which
-use the same policy model (i.e., policy SLM-r3) to randomly generate trajectories; (iii)Rejection
-sampling, where 32 trajectories are randomly sampled from the policy model, with high-quality
-solutions ranked by our trained ORM (appendix A.1). For fairness, we select two correct trajectories
-for each math problem in baseline (ii) and (iii). All SFT experiments use the same training recipe.
-Table 7 shows the math reasoning accuracy of Qwen2.5-Math-7B fine-tuned on different datasets.
-We highlight two observations: (i)Fine-tuning with our step-by-step verified trajectories signifi-
-cantly outperforms all other baselines. This is primarily due to our PPM-augmented MCTS for
-code-augmented CoT synthesis, which provides denser verification during math solution generation.
-It proves more effective than both random sampling, which lacks verification, and rejection sampling,
-10
+Datasets
+Average
+ModelMATH
+500AIME
+2024AMC
+2023College
+MathOlympiad
+BenchGSM8KGaokaoEn
+2023
+General Model: Qwen2-7B-Instruct
+Qwen2-7B-Instruct 51.2 3.3 30.0 18.2 19.1 86.4 39.0 35.3
+Qwen2-7B-S2R-BI ( ours) 61.2 3.3 27.5 41.1 27.1 87.4 49.1 42.4
+Qwen2-7B-S2R-PRL ( ours) 65.4 6.7 35.0 36.7 27.0 89.0 49.9 44.2
+Qwen2-7B-S2R-ORL ( ours) 64.8 3.3 42.5 34.7 26.2 86.4 50.9 44.1
+Qwen2-7B–Instruct-S2R-PRL-offline ( ours)61.6 10.0 32.5 40.2 26.5 87.6 50.4 44.1
+Qwen2-7B-Instruct-S2R-ORL-offline ( ours)61.0 6.7 37.5 40.5 27.3 87.4 49.6 44.3
+Math-Specialized Model: Qwen2.5-Math-7B
+Qwen2.5-Math-7B 51.0 16.7 45.0 21.5 16.7 58.3 39.7 35.6
+Qwen2.5-Math-7B-S2R-BI ( ours) 81.6 23.3 60.0 43.9 44.4 91.9 70.1 59.3
+Qwen2.5-Math-7B-S2R-PRL ( ours) 83.4 26.7 70.0 43.8 46.4 93.2 70.4 62.0
+Qwen2.5-Math-7B-S2R-ORL ( ours) 84.4 23.3 77.5 43.8 44.9 92.9 70.1 62.4
+Qwen2.5-Math-7B-S2R-PRL-offline ( ours) 83.4 23.3 62.5 50.0 46.7 92.9 72.2 61.6
+Qwen2.5-Math-7B-S2R-ORL-offline ( ours) 82.0 20.0 67.5 49.8 45.8 92.6 70.4 61.2
+Table 5: Comparison of S2Rusing online and offline RL training.
+Level 1 Level 2 Level 3 Level 4 Level 5
+Difficulty Level0.20.30.40.50.60.70.80.91.0Accuracy0.814
+0.733
+0.610
+0.367
+0.2390.930
+0.722
+0.638
+0.445
+0.276SFT Accuracy
+SFT+RL AccuracySFT Trials
+SFT+RL Trials
+0123456
+Trial Numbers3.2793.3673.9245.117
+4.104
+2.2092.8444.219 4.2345.254Accuracy and Trial Numbers across Difficulty Level (Base Model: Llama3.1-8B-Instruct)
+Level 1 Level 2 Level 3 Level 4 Level 5
+Difficulty Level0.600.650.700.750.800.850.900.951.00Accuracy0.9300.944 0.943
+0.773
+0.6190.9300.9440.962
+0.836
+0.649SFT Accuracy
+SFT+RL AccuracySFT Trials
+SFT+RL Trials
+0.00.51.01.52.02.5
+Trial Numbers1.1161.3111.7711.8282.254
+1.0471.2441.7901.8832.149Accuracy and Trial Numbers across Difficulty Level (Base Model: Qwen2.5-Math-7B)
+Figure 4: The accuracy and average trial number of
+different models across difficulty levels. Evaluated on
+MATH500 test set.
+3.4.3 Improvement across Difficulty Levels
+To further illustrate the effect of S2Rtraining, Fig-
+ure 4 shows the answer accuracy and average num-
+ber of trials (i.e., the average value of " K" across
+ally= (s1, v1,···, sK, vK)under each difficulty
+level) for the SFT and SFT+RL models. We ob-
+serve that: (1) By learning to self-verify and self-
+correct during reasoning, the models learn to dy-
+namically allocate test-time effort. For easier prob-
+lems, the models can reach a confident answer with
+fewer trials, while for more difficult problems, they
+require more trials to achieve a confident answer.
+(2) RL further improves test-time effort allocation,
+particularly for less capable model (e.g., Llama3.1-
+8B-Instruct). (3) After RL training, the answer
+accuracy for more difficult problems is notably
+improved, demonstrating the effectiveness of the
+self-verifying and self-correcting paradigm in en-
+hancing the models’ reasoning abilities.3.5 Exploring Offline RL
+As described in §2.4, we explore offline RL as
+a more efficient alternative to online RL train-
+ing, given the effectiveness of offline RL has been
+demonstrated in recent studies (Baheti et al., 2023;
+Cheng et al., 2025; Wang et al., 2024b).
+Table 5 presents the results of offline RL with
+process-level and outcome-level supervision, com-
+pared to online RL. We can observe that: (1) Differ-
+ent from online RL, process-level supervision out-
+performs outcome-level supervision in offline RL
+training. This interesting phenomenon may be due
+to: a) Outcome-level RL, which excels at allowing
+models to freely explore dynamic trajectories, is
+more suitable for on-the-fly sampling during online
+parameter updating. b) In contrast, process-level
+RL, which requires accurate baseline estimation for
+intermediate steps, benefits from offline trajectory
+sampling, which can provide more accurate base-
+line estimates with larger scale data sampling. (2)
+Offline RL consistently improves performance over
+the behavior-initialized models across most bench-
+marks and achieves comparable results to online
+R
 
 === PAGE 11 ===
-Table 7: Ablation study on the effectiveness of our step-by-step verified reasoning trajectories as the
-SFT dataset. We report the SFT accuracy of Qwen2.5-Math-7B fine-tuned with different datasets.
-Dataset MATH AIME AMC Olympiad Bench College Math GSM8K GaokaoEn 2023
-GPT-4o - 76.6 9.3 47.5 43.3 48.5 92.9 67.5
-GPT4-distillation
-(Open-sourced)MetaMath 55.2 3.33 32.5 19.1 39.2 85.1 43.6
-NuminaMath-CoT 69.6 10.0 50.0 37.2 43.4 89.8 59.5
-Self-generation
-by policy SLM-r3Random sample 72.4 10.0 45.0 41.0 48.0 87.5 57.1
-Rejection sampling 73.4 13.3 47.5 44.7 50.8 89.3 61.7
-Step-by-step verified (ours) 78.4 26.7 47.5 47.1 52.5 89.7 65.7
-where ORM provides only sparse verification. (ii)Even randomly sampled code-augmented CoT
-solutions from our SLM yields comparable or better performance than GPT-4 synthesized Numina-
-Math and MetaMath datasets. This indicates that our policy SLMs, after rounds of self-evolution, can
-generate high-quality math solutions. These results demonstrates the huge potential of our method to
-self-generate higher-quality reasoning data without relying on advanced LLM distillation.
-The effectiveness of PPM . We train both a strong ORM and Q-value score-based PRM (PQM) for
-comparison. To ensure a fair evaluation, we use the highest-quality training data: the step-by-step
-verified trajectories generated in round 4, with selected math problems matching those used for PPM
-training. Similar to PPM, we use step-level Q-values as to select positive and negative trajectories
-for each math problem. The ORM is trained using a pairwise ranking loss [Ouyang et al., 2022],
-while the PQM follows [Chen et al., 2024, Zhang et al., 2024a] to use Q-values as reward labels and
-optimize with MSE loss. Detailed training settings are provided in Appendix A.1.
-Table 8: Ablation study on the reward model. Process reward models (PQM and PPM) outperform
-ORM, with PPM pushing the frontier of math reasoning capabilities.
-RM Inference MATH AIME AMC Olympiad Bench College Math GSM8K GaokaoEn
-o1-mini - 90.0 56.7 95.0 65.3 55.6 94.8 78.6
-ORM Best-of-N 82.6 26.7 65.0 55.1 55.5 92.3 72.5
-PQM MCTS 88.2 46.7 85.0 62.9 57.6 94.6 79.5
-PPM MCTS 89.4 50.0 87.5 65.3 59.0 95.0 80.5
-Table 8 compares the performance of ORM, PQM, and PPM for System 2 reasoning using our final
-round policy model. ORM provides reward signals only at the end of problem solving, so we use
-the Best-of-N method, while PRM and PPM leverage MCTS-driven search. As shown in Table 8,
-both PQM and PPM outperform ORM by providing denser step-level reward signals, leading to
-higher accuracy on complex math reasoning tasks. However, PQM struggles on more challenging
-benchmarks, such as MATH and Olympiad Bench, due to the inherent imprecision of Q-values. In
-contrast, PPM constructs step-level preference data for training, enabling our 7B policy model to
-achieve comparable or superior performance to o1-mini across all benchmarks.
-5 Findings and Discussions
-The emergence of intrinsic self-reflection capability . A key breakthrough in OpenAI o1 is its
-intrinsic self-reflection capability. When the model makes an error, it recognizes the mistake and can
-self-correct with a correct answer [Noam Brown and Lightman, 2024]. Yet it has consistently been
-found to be largely ineffective in open-sourced LLMs. The community has actively explored various
-approaches, including self-correction [Huang et al., 2023, Kumar et al., 2024], self-reflection [Renze
-and Guven, 2024, Shinn et al., 2024], to explicitly train or prompt LLMs to develop such capability.
-In our experiments, we unexpectedly observe that our MCTS-driven deep thinking exhibits self-
-reflection during problem-solving. As shown in Fig. 4, the model initially formalizes an equation using
-SymPy in the first three steps, which would lead to an incorrect answer (left branch). Interestingly,
-in the fourth step (right branch), the policy model recognizes the low quality of its earlier steps and
-refrains from continuing along the initial problem-s
+based methods that samples multiple responses for
+each question and obtains the final answer with
+self-consistency (Wang et al., 2023) or by selecting
+best-of-N answer using a verifier or reward model
+(Wang et al., 2024c; Zhang et al., 2024b; Lightman
+et al., 2023b; Havrilla et al., 2024b); (2) Search-
+based methods that apply search algorithms such as
+Monte Carlo Tree Search (Tian et al., 2024; Wang
+et al., 2024a; Zhang et al., 2024a; Qi et al., 2024),
+beam search (Snell et al., 2024b), or other effective
+algorithms (Feng et al., 2023; Yao et al., 2023) to
+search for correct trajectories; (3) Iterative-refine-
+based methods that iteratively improve test per-
+formance through self-refinement (Madaan et al.,
+2024a; Shinn et al., 2024; Chen et al., 2024a, 2025).
+Recently, there has been a growing focus on train-
+ing LLMs to perform test-time search on their own,
+typically by conducting longer and deeper thinking
+(OpenAI, 2024; Guo et al., 2025). These test-time
+scaling efforts not only directly benefit LLM rea-
+soning, but can also be integrated back into training
+time, enabling iterative improvement for LLM rea-
+soning (Qin et al., 2024; Feng et al., 2023; Snell
+et al., 2024b; Luong et al., 2024). In this work,
+we also present an efficient framework for train-
+ing LLMs to perform effective test-time scaling
+through self-verification and self-correction itera-
+tions. This approach is achieved without extensive
+efforts, and the performance of S2Rcan also be
+consistently promoted via iterative training.
+4.2 Self-verification and Self-correction
+Enabling LLMs to perform effective self-
+verification and self-correction is a promising
+solution for achieving robust reasoning for LLMs
+(Madaan et al., 2024b; Shinn et al., 2023; Paul
+et al., 2023; Lightman et al., 2023a), and these
+abilities are also critical for performing deep
+reasoning. Previous studies have shown that
+direct prompting of LLMs for self-verification or
+self-correction is suboptimal in most scenarios
+(Huang et al., 2023; Tyen et al., 2023; Ma et al.,
+2024; Zhang et al., 2024c). As a result, recent
+studies have explored various approaches to
+enhance these capabilities during post-training
+(Saunders et al., 2022; Rosset et al., 2024; Kumar
+et al., 2024). These methods highlight the potential
+of using human-annotated or LLM-generated
+data to equip LLMs with self-verification or
+self-correction capabilities (Zhang et al., 2024d;
+Jiang et al., 2024), while also indicating that
+behavior imitation via supervised fine-tuning aloneis insufficient for achieving valid self-verification
+or self-correction (Kumar et al., 2024; Qu et al.,
+2025; Kamoi et al., 2024). In this work, we
+propose effective methods to enhance LLMs’
+self-verification and self-correction abilities
+through principled imitation data construction and
+RL training, and demonstrate the effectiveness of
+our approach with in-depth analysis.
+4.3 RL for LLM Reasoning
+Reinforcement learning has proven effective in en-
+hancing LLM performance across various tasks
+(Ziegler et al., 2019; Stiennon et al., 2020; Bai et al.,
+2022; Ouyang et al., 2022; Setlur et al., 2025). In
+LLM reasoning, previous studies typically employ
+RL in an actor-critic framework (Lightman et al.,
+2024; Tajwar et al., 2024; Havrilla et al., 2024a),
+and research on developing accurate reward mod-
+els for RL training has been a long-standing fo-
+cus, particularly in reward modeling for Process-
+level RL (Lightman et al., 2024; Setlur et al., 2024,
+2025; Luo et al., 2024). Recently, several studies
+have demonstrate that simplified reward modeling
+and advantage estimation (Ahmadian et al., 2024;
+Shao et al., 2024; Team et al., 2025; Guo et al.,
+2025) in RL training can also effectively enhance
+LLM reasoning. Recent advances in improving
+LLMs’ deep thinking (Guo et al., 2025; Team et al.,
+2025) further highlight the effectiveness of utiliz-
+ing unhackable rewards (Gao et al., 2023; Everitt
+et al., 2021) to consistently enhance LLM reason-
+ing. In this work
 
 === PAGE 12 ===
-Question: Given positive integers $x$ and $y$ such that $2x^2y^3 + 4y^3 = 149 + 3x^2$, 
-what is the value of $x + y$?
-<code>
-from sympy  import symbols, Eq, solve
-# Define the variables x and y
-x, y = symbols('x y')
-<end_of_step > PPM score: -0.08
-# Define the equation
-equation = Eq(2*x**2*y**3 + 4*y**3, 149 + 3*x**2)
-<end_of_step > PPM score: -0.219 
-# Solve the equation for y in terms of x
-solution = solve(equation, y)
-<end_of_step > PPM score: -0.348 
-# Now print the final answer
-print(solution) \n
-<end_of_code >
-<output>
-[(3*x**2/(2*x**2 + 4) + 149/(2*x**2 + 4))**(1/3), -(3*x**2/(2*x**2 + 4) + 
-149/(2*x**2 + 4))**(1/3)/2 - sqrt(3)*I*(3*x**2/(2*x**2 + 4) + 149/(2*x**2 + 
-4))**(1/3)/2, -(3*x**2/(2*x**2 + 4) + 149/(2*x**2 + 4))**(1/3)/2 + 
-sqrt(3)*I*(3*x**2/(2*x**2 + 4) + 149/(2*x**2 + 4))**(1/3)/2]
-<end_of_output >PPM score: -0.517# Since we need positive integers, we need to find the 
-values of x and y that satisfy the equation
-# We will check for small integer values of x and y
-for x_val  in range(1, 10):
-   for y_val  in range(1, 10):
-      if 2*x_val**2*y_val**3 + 4*y_val**3 == 149 + 3*x_val**2:
-          print(f \"x = { x_val }, y = { y_val }\")
-          print(f\"x + y = { x_val + y_val }\")
-break
-<end_of_step >PPM score: 0.620 
-# Now print the final answer
-# The loop will find the first valid pair (x, y) and print x + y
-<end_of_code >
-<output>
-x = 3, y = 2
-x + y = 5
-<end_of_output >PPM score: 0.698
-<answer>
-From the result, we can see that the value of x + y is 
-\\boxed{5}
-<end_of_answer>PPM score: 0.835<answer>
-The value of \\(x + y \\) is \\boxed{8}.
-<end_of_answer> PPM score: -0.529 Intrinsic self -reflection :
-Thinking outside the box,
-find an easier solution!
-Low-quality Steps
-CorrectWrongWrongFigure 4: An example of intrinsic self-reflection during rStar-Math deep thinking.
-Figure 5: Pass@1 accuracy of policy models and their accuracy after applying System 2 reasoning
-with various reward models, shows that reward models primarily determine the final performance.
-PPM shapes the reasoning boundary in System 2 deep thinking . Both the policy and reward mod-
-els are crucial for System 2 deep reasoning. Our experiments show that once the policy model attains
-a reasonably strong capability level, (see Appendix A.1 ), the PPM becomes the key determinant of
-the upper performance limit. Fig. 5 summarizes the accuracy of policy models of different sizes, as
-well as the improvements achieved with reward models. Despite variations in Pass@1 accuracy due
-to differences in training strategies, datasets, and model scales, the reward model proves to be the
-dominant factor in System 2 reasoning. For instance, although the SFT accuracy of rStar-Math-7B is
-lower than Qwen2.5-Math-72B-Instruct, pairing it with our 7B PPM allows rStar-Math to outperform
-the 72B policy model with Qwen 72B ORM. Moreover, despite varying Pass@1 accuracy across our
-three policy SLM sizes, the final reasoning accuracy converges after applying the PPM.
-PPM spots theorem-application steps . When solving challenging math problems, identifying and
-applying relevant theorems or key conclusions often form the cornerstone of successful problem-
-solving [Xin et al., 2024]. In our experiments, we find that during rStar-Math problem-solving, our
-PPM effectively identifies critical theorem-application intermediate steps within policy model’s deep
-thinking process. These steps are predicted with high reward scores, guiding the policy model to
-generate the correct solution. Appendix A.2 provides examples where the PPM successfully identifies
-key theorems such as Fermat’s little theorem [Weisstein, a], Vieta’s formulas [Weisstein, b], the
-AM-GM inequality [amg], the Pythagorean theorem [pyt], and the Shoelace Theorem [sho], etc.
-12
+ities for LLMs’ deep reasoning, S2Roffers an in-
+terpretable framework for understanding how SFT
+and RL enhance LLMs’ deep reasoning. It also
+offers insights into the selection of RL strategies
+for enhancing LLMs’ long-CoT reasoning.
+References
+2024. Qwen2 technical report.
+Arash Ahmadian, Chris Cremer, Matthias Gallé,
+Marzieh Fadaee, Julia Kreutzer, Olivier Pietquin,
+Ahmet Üstün, and Sara Hooker. 2024. Back to ba-
+sics: Revisiting reinforce style optimization for learn-
+ing from human feedback in llms. arXiv preprint
+arXiv:2402.14740 .
+AI-MO. 2024a. Aime 2024.
+AI-MO. 2024b. Amc 2023.
+Ashutosh Baheti, Ximing Lu, Faeze Brahman, Ro-
+nan Le Bras, Maarten Sap, and Mark Riedl. 2023.
+Leftover lunch: Advantage-based offline reinforce-
+ment learning for language models. arXiv preprint
+arXiv:2305.14718 .
+Yuntao Bai, Andy Jones, Kamal Ndousse, Amanda
+Askell, Anna Chen, Nova DasSarma, Dawn Drain,
+Stanislav Fort, Deep Ganguli, Tom Henighan, et al.
+2022. Training a helpful and harmless assistant with
+reinforcement learning from human feedback. arXiv
+preprint arXiv:2204.05862 .
+Lukas Berglund, Meg Tong, Max Kaufmann, Mikita
+Balesni, Asa Cooper Stickland, Tomasz Korbak, and
+Owain Evans. 2023. The reversal curse: Llms trained
+on" a is b" fail to learn" b is a". arXiv preprint
+arXiv:2309.12288 .
+Bradley Brown, Jordan Juravsky, Ryan Ehrlich, Ronald
+Clark, Quoc V Le, Christopher Ré, and Azalia Mirho-
+seini. 2024. Large language monkeys: Scaling infer-
+ence compute with repeated sampling. arXiv preprint
+arXiv:2407.21787 .
+Jiefeng Chen, Jie Ren, Xinyun Chen, Chengrun Yang,
+Ruoxi Sun, and Sercan Ö Arık. 2025. Sets: Leverag-
+ing self-verification and self-correction for improved
+test-time scaling. arXiv preprint arXiv:2501.19306 .
+Justin Chih-Yao Chen, Archiki Prasad, Swarnadeep
+Saha, Elias Stengel-Eskin, and Mohit Bansal.
+2024a. Magicore: Multi-agent, iterative, coarse-
+to-fine refinement for reasoning. arXiv preprint
+arXiv:2409.12147 .
+Justin Chih-Yao Chen, Zifeng Wang, Hamid Palangi,
+Rujun Han, Sayna Ebrahimi, Long Le, Vincent Perot,
+Swaroop Mishra, Mohit Bansal, Chen-Yu Lee, et al.
+2024b. Reverse thinking makes llms stronger reason-
+ers.arXiv preprint arXiv:2411.19865 .Xingyu Chen, Jiahao Xu, Tian Liang, Zhiwei He,
+Jianhui Pang, Dian Yu, Linfeng Song, Qiuzhi Liu,
+Mengfei Zhou, Zhuosheng Zhang, et al. 2024c. Do
+not think that much for 2+ 3=? on the overthinking
+of o1-like llms. arXiv preprint arXiv:2412.21187 .
+Pengyu Cheng, Tianhao Hu, Han Xu, Zhisong Zhang,
+Yong Dai, Lei Han, Xiaolong Li, et al. 2025. Self-
+playing adversarial language game enhances llm rea-
+soning. Advances in Neural Information Processing
+Systems , 37:126515–126543.
+Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian,
+Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias
+Plappert, Jerry Tworek, Jacob Hilton, Reiichiro
+Nakano, Christopher Hesse, and John Schulman.
+2021a. Training verifiers to solve math word prob-
+lems. arXiv preprint arXiv:2110.14168 .
+Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian,
+Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias
+Plappert, Jerry Tworek, Jacob Hilton, Reiichiro
+Nakano, et al. 2021b. Training verifiers to solve math
+word problems. arXiv preprint arXiv:2110.14168 .
+Ganqu Cui, Lifan Yuan, Zefan Wang, Hanbin Wang,
+Wendi Li, Bingxiang He, Yuchen Fan, Tianyu Yu,
+Qixin Xu, Weize Chen, et al. 2025. Process rein-
+forcement through implicit rewards. arXiv preprint
+arXiv:2502.01456 .
+Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey,
+Abhishek Kadian, Ahmad Al-Dahle, Aiesha Letman,
+Akhil Mathur, Alan Schelten, Amy Yang, Angela
+Fan, et al. 2024. The llama 3 herd of models. arXiv
+preprint arXiv:2407.21783 .
+Tom Everitt, Marcus Hutter, Ramana Kumar, and Vic-
+toria Krakovna. 2021. Reward tampering problems
+and solutions in reinforcement learning: A causal
+influence diagram perspective. Synthese , 198(Suppl
+27):6435–6467.
+Xidong Feng, Ziyu Wan, Muning Wen, Ying Wen,
+Weinan Zhang, and Jun Wang. 2023. Alphazero-like
+tree-search can guide large language model decoding
+and train
 
 === PAGE 13 ===
-Generalization discussions . rStar-Math offers a general methodology for improving LLM reasoning
-applicable to various domains. First, rStar-Math can generalize to more challenging math tasks,
-such as theorem proving, though its current focus is on word problems due to dataset limitations.
-Nonetheless, rStar-Math demonstrates the potential to prove mathematical statements. As shown in
-Appendix A.2, it successfully proves an Olympiad-level problem involving Fermat’s Little Theorem,
-providing a step-by-step correct proof through its deep reasoning process. Second, rStar-Mathcan
-generalize to other domains, such as code and commonsense reasoning. Notably, synthesizing step-
-by-step verified training trajectories for general reasoning requires a mechanism to provide feedback
-on whether a given trajectory reaches the desired output at the end of MCTS rollout. For instance,
-in code reasoning, this could involve designing extensive test cases; in general reasoning, feedback
-could be obtained through human labeling or mutual verification with another LLM [Qi et al., 2024].
-6 Conclusion
-In this work, we present rStar-Math, a self-evolved System 2 deep thinking approach that significantly
-boosts the math reasoning capabilities of small LLMs, achieving state-of-the-art OpenAI o1-level
-performance. Our approach demonstrates that SLMs can self-generate high-quality training data
-for frontier-level math reasoning. Extensive experiments across four different-sized SLMs and
-challenging math benchmarks demonstrate the superiority of rStar-Math, with achieving leading
-results while outperforming existing math reasoning LLMs and Best-of-N baselines. We also reveal
-key findings, including the emergence of self-reflection and the effectiveness of the PPM in identifying
-critical intermediate steps, such as theorem-application steps. Finally, rStar-Math can achieve further
-improvements by collecting more challenging math problems, we leave this as future work.
-Acknowledgement
-In the early stages of this work, we faced significant challenges due to limited GPU resources and
-restricted access to the GPT-4 API. We are deeply grateful to Qiufeng Yin and Chengmin Chi for
-their assistance in collecting math problems and providing GPT-4 resources for new math problem
-synthesis. Special thanks go to my colleagues, Lingxiao Ma, Ying Cao, Baotong Lu, Jing Liu, Jiahang
-Xu, Chengruidong Zhang, Siyuan Wang, Gaokai Zhang, Yujian Li, and Yang Wang, for generously
-sharing their GPU quotas with us.
-References
-Inequality of arithmetic and geometric means. URL https://artofproblemsolving.com/wiki/
-index.php/AM-GM_Inequality .
-Pythagorean theorem. URL https://en.wikipedia.org/wiki/Pythagorean_theorem .
-Shoelace theorem. URL https://artofproblemsolving.com/wiki/index.php/Shoelace_
-Theorem .
-Marah Abdin, Sam Ade Jacobs, Ammar Ahmad Awan, Jyoti Aneja, Ahmed Awadallah, Hany
-Awadalla, Nguyen Bach, Amit Bahree, Arash Bakhtiari, Harkirat Behl, et al. Phi-3 technical report:
-A highly capable language model locally on your phone. arXiv preprint arXiv:2404.14219 , 2024.
-AI-MO. Aime 2024, 2024a. URL https://huggingface.co/datasets/AI-MO/
-aimo-validation-aime .
-AI-MO. Amc 2023, 2024b. URL https://huggingface.co/datasets/AI-MO/
-aimo-validation-amc .
-Bradley Brown, Jordan Juravsky, Ryan Ehrlich, Ronald Clark, Quoc V Le, Christopher Ré, and
-Azalia Mirhoseini. Large language monkeys: Scaling inference compute with repeated sampling.
-arXiv preprint arXiv:2407.21787 , 2024.
-Guoxin Chen, Minpeng Liao, Chengxi Li, and Kai Fan. Alphamath almost zero: process supervision
-without process, 2024.
-Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser,
-Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, et al. Training verifiers to solve
-math word problems. arXiv preprint arXiv:2110.14168 , 2021.
-13
+Xinyu Guan, Li Lyna Zhang, Yifei Liu, Ning Shang,
+Youran Sun, Yi Zhu, Fan Yang, and Mao Yang.
+2025. rstar-math: Small llms can master math reason-
+ing with self-evolved deep thinking. arXiv preprint
+arXiv:2501.04519 .
+Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song,
+Ruoyu Zhang, Runxin Xu, Qihao Zhu, Shirong Ma,
+Peiyi Wang, Xiao Bi, et al. 2025. Deepseek-r1: In-
+centivizing reasoning capability in llms via reinforce-
+ment learning. arXiv preprint arXiv:2501.12948 .
+Simeng Han, Hailey Schoelkopf, Yilun Zhao, Zhenting
+Qi, Martin Riddell, Luke Benson, Lucy Sun, Eka-
+terina Zubova, Yujie Qiao, Matthew Burtell, et al.
+2022. Folio: Natural language reasoning with first-
+order logic. arXiv preprint arXiv:2209.00840 .
+Alex Havrilla, Yuqing Du, Sharath Chandra Raparthy,
+Christoforos Nalmpantis, Jane Dwivedi-Yu, Maksym
+Zhuravinskyi, Eric Hambro, Sainbayar Sukhbaatar,
+and Roberta Raileanu. 2024a. Teaching large lan-
+guage models to reason with reinforcement learning.
+arXiv preprint arXiv:2403.04642 .
+Alex Havrilla, Sharath Raparthy, Christoforus Nalm-
+pantis, Jane Dwivedi-Yu, Maksym Zhuravinskyi,
+Eric Hambro, and Roberta Raileanu. 2024b. Glore:
+When, where, and how to improve llm reasoning
+via global and local refinements. arXiv preprint
+arXiv:2402.10963 .
+Chaoqun He, Renjie Luo, Yuzhuo Bai, Shengding Hu,
+Zhen Leng Thai, Junhao Shen, Jinyi Hu, Xu Han,
+Yujie Huang, Yuxiang Zhang, et al. 2024. Olympiad-
+bench: A challenging benchmark for promoting agi
+with olympiad-level bilingual multimodal scientific
+problems. arXiv preprint arXiv:2402.14008 .
+Dan Hendrycks, Collin Burns, Saurav Kadavath, Akul
+Arora, Steven Basart, Eric Tang, Dawn Song, and
+Jacob Steinhardt. 2021a. Measuring mathematical
+problem solving with the math dataset. In Thirty-
+fifth Conference on Neural Information Processing
+Systems Datasets and Benchmarks Track (Round 2) .
+Dan Hendrycks, Collin Burns, Saurav Kadavath, Akul
+Arora, Steven Basart, Eric Tang, Dawn Song, and
+Jacob Steinhardt. 2021b. Measuring mathemati-
+cal problem solving with the math dataset. arXiv
+preprint arXiv:2103.03874 .
+Jie Huang, Xinyun Chen, Swaroop Mishra,
+Huaixiu Steven Zheng, Adams Wei Yu, Xiny-
+ing Song, and Denny Zhou. 2023. Large language
+models cannot self-correct reasoning yet. arXiv
+preprint arXiv:2310.01798 .
+Huchen Jiang, Yangyang Ma, Chaofan Ding, Kexin
+Luan, and Xinhan Di. 2024. Towards intrinsic self-
+correction enhancement in monte carlo tree search
+boosted reasoning via iterative preference learning.
+arXiv preprint arXiv:2412.17397 .Ryo Kamoi, Yusen Zhang, Nan Zhang, Jiawei Han,
+and Rui Zhang. 2024. When can llms actually cor-
+rect their own mistakes? a critical survey of self-
+correction of llms. Transactions of the Association
+for Computational Linguistics , 12:1417–1440.
+Wouter Kool, Herke van Hoof, and Max Welling. 2019.
+Buy 4 reinforce samples, get a baseline for free!
+Aviral Kumar, Vincent Zhuang, Rishabh Agarwal,
+Yi Su, John D Co-Reyes, Avi Singh, Kate Baumli,
+Shariq Iqbal, Colton Bishop, Rebecca Roelofs,
+et al. 2024. Training language models to self-
+correct via reinforcement learning. arXiv preprint
+arXiv:2409.12917 .
+Woosuk Kwon, Zhuohan Li, Siyuan Zhuang, Ying
+Sheng, Lianmin Zheng, Cody Hao Yu, Joseph E.
+Gonzalez, Hao Zhang, and Ion Stoica. 2023. Effi-
+cient memory management for large language model
+serving with pagedattention. In Proceedings of the
+ACM SIGOPS 29th Symposium on Operating Systems
+Principles .
+Jia LI, Edward Beeching, Lewis Tunstall, Ben Lipkin,
+Roman Soletskyi, Shengyi Costa Huang, Kashif
+Rasul, Longhui Yu, Albert Jiang, Ziju Shen, Zihan
+Qin, Bin Dong, Li Zhou, Yann Fleureau, Guillaume
+Lample, and Stanislas Polu. 2024. Numina-
+math. [https://github.com/project-numina/
+aimo-progress-prize](https://github.com/
+project-numina/aimo-progress-prize/blob/
+main/report/numina_dataset.pdf) .
+Minpeng Liao, Wei Luo, Chengxi Li, Jing Wu, and
+Kai Fan. 2024. Mario: Math reasoning with code
+interpreter output–a reproducible pipeline. arXiv
+preprint arXiv:2401.08190 .
+Hunter
 
 === PAGE 14 ===
-Kahneman Daniel. Thinking, fast and slow. Macmillan , 2011.
-Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Abhishek Kadian, Ahmad Al-Dahle, Aiesha
-Letman, Akhil Mathur, Alan Schelten, Amy Yang, Angela Fan, et al. The llama 3 herd of models.
-arXiv preprint arXiv:2407.21783 , 2024.
-Zhibin Gou, Zhihong Shao, Yeyun Gong, Yujiu Yang, Minlie Huang, Nan Duan, Weizhu Chen,
-et al. Tora: A tool-integrated reasoning agent for mathematical problem solving. arXiv preprint
-arXiv:2309.17452 , 2023.
-Shibo Hao, Yi Gu, Haodi Ma, Joshua Jiahua Hong, Zhen Wang, Daisy Zhe Wang, and Zhiting Hu.
-Reasoning with language model is planning with world model. arXiv preprint arXiv:2305.14992 ,
-2023.
-Chaoqun He, Renjie Luo, Yuzhuo Bai, Shengding Hu, Zhen Leng Thai, Junhao Shen, Jinyi Hu,
-Xu Han, Yujie Huang, Yuxiang Zhang, et al. Olympiadbench: A challenging benchmark for
-promoting agi with olympiad-level bilingual multimodal scientific problems. arXiv preprint
-arXiv:2402.14008 , 2024.
-Jie Huang, Xinyun Chen, Swaroop Mishra, Huaixiu Steven Zheng, Adams Wei Yu, Xinying Song,
-and Denny Zhou. Large language models cannot self-correct reasoning yet. arXiv preprint
-arXiv:2310.01798 , 2023.
-Zhen Huang, Haoyang Zou, Xuefeng Li, Yixiu Liu, Yuxiang Zheng, Ethan Chern, Shijie Xia,
-Yiwei Qin, Weizhe Yuan, and Pengfei Liu. O1 replication journey – part 2: Surpassing o1-
-preview through simple distillation big progress or bitter lesson? Github , 2024. URL https:
-//github.com/GAIR-NLP/O1-Journey .
-Lewis Tunstall Ben Lipkin Roman Soletskyi Shengyi Costa Huang Kashif Rasul
-Longhui Yu Albert Jiang Ziju Shen Zihan Qin Bin Dong Li Zhou Yann Fleureau
-Guillaume Lample Jia LI, Edward Beeching and Stanislas Polu. Numinamath.
-[https://github.com/project-numina/aimo-progress-prize](https://github.com/
-project-numina/aimo-progress-prize/blob/main/report/numina_dataset.pdf) , 2024a.
-Lewis Tunstall Ben Lipkin Roman Soletskyi Shengyi Costa Huang Kashif Rasul Longhui Yu Al-
-bert Jiang Ziju Shen Zihan Qin Bin Dong Li Zhou Yann Fleureau Guillaume Lample Jia LI,
-Edward Beeching and Stanislas Polu. Numinamath cot, 2024b. URL https://huggingface.co/
-datasets/AI-MO/NuminaMath-CoT .
-Jikun Kang, Xin Zhe Li, Xi Chen, Amirreza Kazemi, and Boxing Chen. Mindstar: Enhancing math
-reasoning in pre-trained llms at inference time. arXiv preprint arXiv:2405.16265 , 2024.
-Levente Kocsis and Csaba Szepesvári. Bandit based monte-carlo planning. volume 2006, pages
-282–293, 09 2006. ISBN 978-3-540-45375-8. doi: 10.1007/11871842_29.
-Aviral Kumar, Vincent Zhuang, Rishabh Agarwal, Yi Su, John D Co-Reyes, Avi Singh, Kate Baumli,
-Shariq Iqbal, Colton Bishop, Rebecca Roelofs, et al. Training language models to self-correct via
-reinforcement learning. arXiv preprint arXiv:2409.12917 , 2024.
-Tamera Lanham, Anna Chen, Ansh Radhakrishnan, Benoit Steiner, Carson Denison, Danny Hernan-
-dez, Dustin Li, Esin Durmus, Evan Hubinger, Jackson Kernion, et al. Measuring faithfulness in
-chain-of-thought reasoning. arXiv preprint arXiv:2307.13702 , 2023.
-Chen Li, Weiqi Wang, Jingcheng Hu, Yixuan Wei, Nanning Zheng, Han Hu, Zheng Zhang, and
-Houwen Peng. Common 7b language models already possess strong math capabilities. arXiv
-preprint arXiv:2403.04706 , 2024.
-Minpeng Liao, Wei Luo, Chengxi Li, Jing Wu, and Kai Fan. Mario: Math reasoning with code
-interpreter output–a reproducible pipeline. arXiv preprint arXiv:2401.08190 , 2024.
-Hunter Lightman, Vineet Kosaraju, Yura Burda, Harri Edwards, Bowen Baker, Teddy Lee, Jan
-Leike, John Schulman, Ilya Sutskever, and Karl Cobbe. Let’s verify step by step. arXiv preprint
-arXiv:2305.20050 , 2023.
-14
+Ruotian Ma, Xiaolei Wang, Xin Zhou, Jian Li, Nan
+Du, Tao Gui, Qi Zhang, and Xuanjing Huang. 2024.
+Are large language models good prompt optimizers?
+arXiv preprint arXiv:2402.02101 .
+Aman Madaan, Niket Tandon, Prakhar Gupta, Skyler
+Hallinan, Luyu Gao, Sarah Wiegreffe, Uri Alon,
+Nouha Dziri, Shrimai Prabhumoye, Yiming Yang,
+et al. 2024a. Self-refine: Iterative refinement with
+self-feedback. Advances in Neural Information Pro-
+cessing Systems , 36.
+Aman Madaan, Niket Tandon, Prakhar Gupta, Skyler
+Hallinan, Luyu Gao, Sarah Wiegreffe, Uri Alon,
+Nouha Dziri, Shrimai Prabhumoye, Yiming Yang,
+et al. 2024b. Self-refine: Iterative refinement with
+self-feedback. Advances in Neural Information Pro-
+cessing Systems , 36.
+OpenAI. 2024. Openai o1 system card. preprint .
+Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida,
+Carroll Wainwright, Pamela Mishkin, Chong Zhang,
+Sandhini Agarwal, Katarina Slama, Alex Ray, et al.
+2022. Training language models to follow instruc-
+tions with human feedback. Advances in neural in-
+formation processing systems , 35:27730–27744.
+Debjit Paul, Mete Ismayilzada, Maxime Peyrard, Beat-
+riz Borges, Antoine Bosselut, Robert West, and
+Boi Faltings. 2023. Refiner: Reasoning feedback
+on intermediate representations. arXiv preprint
+arXiv:2304.01904 .
+Zhenting Qi, Mingyuan Ma, Jiahang Xu, Li Lyna Zhang,
+Fan Yang, and Mao Yang. 2024. Mutual reasoning
+makes smaller llms stronger problem-solvers. arXiv
+preprint arXiv:2408.06195 .
+Yiwei Qin, Xuefeng Li, Haoyang Zou, Yixiu Liu, Shijie
+Xia, Zhen Huang, Yixin Ye, Weizhe Yuan, Hector
+Liu, Yuanzhi Li, et al. 2024. O1 replication journey:
+A strategic progress report–part 1. arXiv preprint
+arXiv:2410.18982 .
+Yuxiao Qu, Tianjun Zhang, Naman Garg, and Aviral
+Kumar. 2025. Recursive introspection: Teaching lan-
+guage model agents how to self-improve. Advances
+in Neural Information Processing Systems , 37:55249–
+55285.
+Qwen. 2024. Qwen2.5-math-7b.
+Corby Rosset, Ching-An Cheng, Arindam Mi-
+tra, Michael Santacroce, Ahmed Awadallah, and
+Tengyang Xie. 2024. Direct nash optimization:
+Teaching language models to self-improve with gen-
+eral preferences. arXiv preprint arXiv:2404.03715 .
+William Saunders, Catherine Yeh, Jeff Wu, Steven Bills,
+Long Ouyang, Jonathan Ward, and Jan Leike. 2022.
+Self-critiquing models for assisting human evaluators.
+arXiv preprint arXiv:2206.05802 .Amrith Setlur, Saurabh Garg, Xinyang Geng, Naman
+Garg, Virginia Smith, and Aviral Kumar. 2025. Rl on
+incorrect synthetic data scales the efficiency of llm
+math reasoning by eight-fold. Advances in Neural
+Information Processing Systems , 37:43000–43031.
+Amrith Setlur, Chirag Nagpal, Adam Fisch, Xinyang
+Geng, Jacob Eisenstein, Rishabh Agarwal, Alekh
+Agarwal, Jonathan Berant, and Aviral Kumar.
+2024. Rewarding progress: Scaling automated pro-
+cess verifiers for llm reasoning. arXiv preprint
+arXiv:2410.08146 .
+Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu,
+Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan
+Zhang, YK Li, Y Wu, et al. 2024. Deepseekmath:
+Pushing the limits of mathematical reasoning in open
+language models. arXiv preprint arXiv:2402.03300 .
+Maohao Shen, Guangtao Zeng, Zhenting Qi, Zhang-Wei
+Hong, Zhenfang Chen, Wei Lu, Gregory Wornell,
+Subhro Das, David Cox, and Chuang Gan. 2025.
+Satori: Reinforcement learning with chain-of-action-
+thought enhances llm reasoning via autoregressive
+search. arXiv preprint arXiv:2502.02508 .
+Noah Shinn, Federico Cassano, Ashwin Gopinath,
+Karthik Narasimhan, and Shunyu Yao. 2024. Re-
+flexion: Language agents with verbal reinforcement
+learning. Advances in Neural Information Process-
+ing Systems , 36.
+Noah Shinn, Beck Labash, and Ashwin Gopinath.
+2023. Reflexion: an autonomous agent with dy-
+namic memory and self-reflection. arXiv preprint
+arXiv:2303.11366 .
+Charlie Snell, Jaehoon Lee, Kelvin Xu, and Aviral Ku-
+mar. 2024a. Scaling llm test-time compute optimally
+can be more effective than scaling model parameters.
+arXiv preprint arXiv:2408.03314 .
+Charlie Snell, Jaehoon Lee, Kelvin Xu, a
 
 === PAGE 15 ===
-Hunter Lightman, Vineet Kosaraju, Yuri Burda, Harrison Edwards, Bowen Baker, Teddy Lee, Jan
-Leike, John Schulman, Ilya Sutskever, and Karl Cobbe. Let’s verify step by step. In The Twelfth
-International Conference on Learning Representations , 2024. URL https://openreview.net/
-forum?id=v8L0pN6EOi .
-Aixin Liu, Bei Feng, Bing Xue, Bingxuan Wang, Bochao Wu, Chengda Lu, Chenggang Zhao,
-Chengqi Deng, Chenyu Zhang, Chong Ruan, et al. Deepseek-v3 technical report. arXiv preprint
-arXiv:2412.19437 , 2024.
-Haipeng Luo, Qingfeng Sun, Can Xu, Pu Zhao, Jianguang Lou, Chongyang Tao, Xiubo Geng,
-Qingwei Lin, Shifeng Chen, and Dongmei Zhang. Wizardmath: Empowering mathematical
-reasoning for large language models via reinforced evol-instruct. arXiv preprint arXiv:2308.09583 ,
-2023.
-Liangchen Luo, Yinxiao Liu, Rosanne Liu, Samrat Phatale, Harsh Lara, Yunxuan Li, Lei Shu, Yun
-Zhu, Lei Meng, Jiao Sun, et al. Improve mathematical reasoning in language models by automated
-process supervision. arXiv preprint arXiv:2406.06592 , 2024.
-Microsoft. Phi-3-mini-4k-instruct, 2024. URL https://huggingface.co/microsoft/
-Phi-3-mini-4k-instruct .
-Ilge Akkaya Noam Brown and Hunter Lightman. Openai’s noam brown, ilge akkaya and hunter
-lightman on o1 and teaching llms to reason better, 2024. URL https://www.youtube.com/
-watch?v=jPluSXJpdrA .
-OpenAI. Gpt-4 technical report. 2023.
-OpenAI. Openai o1 system card. preprint , 2024.
-Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll Wainwright, Pamela Mishkin, Chong
-Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, et al. Training language models to follow
-instructions with human feedback. Advances in Neural Information Processing Systems , 35:
-27730–27744, 2022.
-Zhenting Qi, Mingyuan Ma, Jiahang Xu, Li Lyna Zhang, Fan Yang, and Mao Yang. Mutual reasoning
-makes smaller llms stronger problem-solvers. arXiv preprint arXiv:2408.06195 , 2024.
-Qwen. Qwen2-math-7b, 2024a. URL https://huggingface.co/Qwen/Qwen2-Math-7B .
-Qwen. Qwen2.5-math-1.5b, 2024b. URL https://huggingface.co/Qwen/Qwen2.5-Math-1.5B .
-Qwen. Qwen2.5-math-7b, 2024c. URL https://huggingface.co/Qwen/Qwen2.5-Math-7B .
-Matthew Renze and Erhan Guven. Self-reflection in llm agents: Effects on problem-solving perfor-
-mance. arXiv preprint arXiv:2405.06682 , 2024.
-Noah Shinn, Federico Cassano, Ashwin Gopinath, Karthik Narasimhan, and Shunyu Yao. Reflexion:
-Language agents with verbal reinforcement learning. Advances in Neural Information Processing
-Systems , 36, 2024.
-David Silver, Thomas Hubert, Julian Schrittwieser, Ioannis Antonoglou, Matthew Lai, Arthur Guez,
-Marc Lanctot, Laurent Sifre, Dharshan Kumaran, Thore Graepel, et al. Mastering chess and shogi
-by self-play with a general reinforcement learning algorithm. arXiv preprint arXiv:1712.01815 ,
-2017.
-Charlie Snell, Jaehoon Lee, Kelvin Xu, and Aviral Kumar. Scaling llm test-time compute optimally
-can be more effective than scaling model parameters. arXiv preprint arXiv:2408.03314 , 2024.
-Zhengyang Tang, Xingxing Zhang, Benyou Wan, and Furu Wei. Mathscale: Scaling instruction
-tuning for mathematical reasoning. arXiv preprint arXiv:2403.02884 , 2024.
-Qwen Team. Qwq: Reflect deeply on the boundaries of the unknown, November 2024a. URL
-https://qwenlm.github.io/blog/qwq-32b-preview/ .
-15
+Zhengyang Tang, Xingxing Zhang, Benyou Wang, and
+Furu Wei. 2024b. Mathscale: Scaling instruction
+tuning for mathematical reasoning. arXiv preprint
+arXiv:2403.02884 .
+Kimi Team, Angang Du, Bofei Gao, Bowei Xing,
+Changjiu Jiang, Cheng Chen, Cheng Li, Chenjun
+Xiao, Chenzhuang Du, Chonghua Liao, et al. 2025.
+Kimi k1. 5: Scaling reinforcement learning with llms.
+arXiv preprint arXiv:2501.12599 .
+Qwen Team. 2024a. Qwq: Reflect deeply on the bound-
+aries of the unknown.
+The Mistral AI Team. 2024b. Mathstral-7b-v0.1.
+Ye Tian, Baolin Peng, Linfeng Song, Lifeng Jin, Dian
+Yu, Haitao Mi, and Dong Yu. 2024. Toward self-
+improvement of llms via imagination, searching, and
+criticizing. arXiv preprint arXiv:2404.12253 .
+Shubham Toshniwal, Wei Du, Ivan Moshkov, Branislav
+Kisacanin, Alexan Ayrapetyan, and Igor Gitman.
+2024. Openmathinstruct-2: Accelerating ai for math
+with massive open-source instruction data. arXiv
+preprint arXiv:2410.01560 .
+Gladys Tyen, Hassan Mansoor, Peter Chen, Tony Mak,
+and Victor C ˘arbune. 2023. Llms cannot find rea-
+soning errors, but can correct them! arXiv preprint
+arXiv:2311.08516 .
+Chaojie Wang, Yanchen Deng, Zhiyi Lv, Shuicheng Yan,
+and An Bo. 2024a. Q*: Improving multi-step rea-
+soning for llms with deliberative planning. Preprint ,
+arXiv:2406.14283.
+Huaijie Wang, Shibo Hao, Hanze Dong, Shenao Zhang,
+Yilin Bao, Ziran Yang, and Yi Wu. 2024b. Offline
+reinforcement learning for llm multi-step reasoning.
+arXiv preprint arXiv:2412.16145 .
+Peiyi Wang, Lei Li, Zhihong Shao, R. X. Xu, Damai
+Dai, Yifei Li, Deli Chen, Y . Wu, and Zhifang Sui.
+2024c. Math-shepherd: Verify and reinforce llms
+step-by-step without human annotations. Preprint ,
+arXiv:2312.08935.
+Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc V Le,
+Ed H. Chi, Sharan Narang, Aakanksha Chowdhery,
+and Denny Zhou. 2023. Self-consistency improves
+chain of thought reasoning in language models. In
+The Eleventh International Conference on Learning
+Representations .
+Yubo Wang, Xueguang Ma, Ge Zhang, Yuansheng Ni,
+Abhranil Chandra, Shiguang Guo, Weiming Ren,
+Aaran Arulraj, Xuan He, Ziyan Jiang, et al. 2024d.
+Mmlu-pro: A more robust and challenging multi-task
+language understanding benchmark. arXiv preprint
+arXiv:2406.01574 .
+Yangzhen Wu, Zhiqing Sun, Shanda Li, Sean Welleck,
+and Yiming Yang. 2024. An empirical analysis of
+compute-optimal inference for problem-solving with
+language models. arXiv preprint arXiv:2408.00724 .An Yang, Beichen Zhang, Binyuan Hui, Bofei Gao,
+Bowen Yu, Chengpeng Li, Dayiheng Liu, Jianhong
+Tu, Jingren Zhou, Junyang Lin, et al. 2024. Qwen2.
+5-math technical report: Toward mathematical ex-
+pert model via self-improvement. arXiv preprint
+arXiv:2409.12122 .
+Shunyu Yao, Dian Yu, Jeffrey Zhao, Izhak Shafran,
+Tom Griffiths, Yuan Cao, and Karthik Narasimhan.
+2023. Tree of thoughts: Deliberate problem solving
+with large language models. Advances in neural
+information processing systems , 36:11809–11822.
+Lifan Yuan, Wendi Li, Huayu Chen, Ganqu Cui, Ning
+Ding, Kaiyan Zhang, Bowen Zhou, Zhiyuan Liu,
+and Hao Peng. 2024. Free process rewards without
+process labels. arXiv preprint arXiv:2412.01981 .
+Weihao Zeng, Yuzhen Huang, Wei Liu, Keqing
+He, Qian Liu, Zejun Ma, and Junxian He. 2025.
+7b model and 8k examples: Emerging reason-
+ing with reinforcement learning is both effective
+and efficient. https://hkust-nlp.notion.site/
+simplerl-reason . Notion Blog.
+Dan Zhang, Sining Zhoubian, Ziniu Hu, Yisong Yue,
+Yuxiao Dong, and Jie Tang. 2024a. Rest-mcts*: Llm
+self-training via process reward guided tree search.
+arXiv preprint arXiv:2406.03816 .
+Lunjun Zhang, Arian Hosseini, Hritik Bansal, Mehran
+Kazemi, Aviral Kumar, and Rishabh Agarwal. 2024b.
+Generative verifiers: Reward modeling as next-token
+prediction. In The 4th Workshop on Mathematical
+Reasoning and AI at NeurIPS’24 .
+Qingjie Zhang, Han Qiu, Di Wang, Haoting Qian, Yim-
+ing Li, Tianwei Zhang, and Minlie Huang. 2024c.
+Understanding the dark side of llms’ intrinsic self-
+correction. arXiv preprint arXiv:2412.14959 .
 
