@@ -1,71 +1,117 @@
 # Agentic RAG with Knowledge Graphs for Complex Multi-Hop Reasoning
 
-> **논문 정보**: Jean Lelong, Adnane Errrazine, Annabelle Blangero (Ekimetrics, France)
+> **논문 정보**: Jean Lelong, Adnane Errazine, Annabelle Blangero (Ekimetrics, France)
 > **arXiv**: 2507.16507 (2025.07)
+> **시스템**: INRAExplorer (INRAE 과학 데이터 탐색 에이전트)
 > **코드**: N/A
 
 ---
 
-## Overview
+## Problem
 
-| 항목 | 내용 |
-|------|------|
-| **Problem** | 기존 RAG는 top-k 벡터 검색으로 제한적인 텍스트 스니펫만 반환하여, 완전한 목록(예: 특정 저자의 모든 논문), 다중 데이터 포인트 통합, 복잡한 관계 경로 탐색(저자→논문→펀딩 프로젝트)이 필요한 쿼리에 부적합하다. |
-| **Motivation** | 지식 집약적 도메인(과학 데이터)에서는 단순 스니펫 추출이 아닌, 인간 연구자처럼 증거를 수집·평가하고 후속 검색을 계획하는 반복적 탐구가 필요하다. 지식 그래프의 구조화된 관계와 에이전트의 동적 추론을 결합하면 이를 달성할 수 있다. |
-| **Limitation** | 저자 언급: 특정 기관(INRAE) 데이터에 특화된 구현으로 일반화 가능성이 제한됨. 독자 관점: 에이전트가 Cypher 쿼리를 직접 생성해야 하므로 LLM의 Cypher 문법 이해에 의존하며 오류 가능성 존재. 정량적 벤치마크 비교 없이 정성적 시연에 그쳐 객관적 성능 평가 불가. 대규모 그래프 탐색 시 지연 시간 및 비용 문제 미검토. |
+기존 Retrieval-Augmented Generation(RAG) 시스템은 LLM을 외부 지식에 근거(ground)시키는 데 유용하지만, 복잡한 쿼리에는 치명적인 한계를 드러낸다.
+"Classical RAG"는 벡터 검색을 통해 의미적으로 유사한 상위 k개의 텍스트 청크를 회수하여 LLM 컨텍스트에 삽입하는 단일 패스(single-pass) 구조를 따른다.
+이 "top-k 스니펫" 접근은 추출형 QA에는 적합하나, 완전한 목록 회수(예: 특정 저자의 모든 논문), 여러 데이터 포인트의 통합, 복잡한 관계 경로 탐색(저자 → 논문 → 펀딩 프로젝트)이 요구되는 쿼리에서는 불충분하다.
+특히 과학 연구 데이터와 같은 지식 집약적(knowledge-intensive) 도메인에서는 텍스트 조각 나열만으로 사용자의 정보 요구를 충족시킬 수 없다.
+또한 기존 시스템은 중간 결과를 평가하고 후속 검색을 동적으로 계획하는 능력이 부족하여, 반복적이고 타겟팅된 다단계 탐색이 불가능하다.
+사용자가 "특정 주제에 대한 INRAE의 전문가를 식별하라" 또는 "특정 논문들에 연관된 펀딩 프로젝트의 주제 스펙트럼을 보여달라" 같은 다중 홉(multi-hop) 관계 추론 쿼리를 던지면, 단일 벡터 검색으로는 엔터티 간 관계를 명시적으로 따라갈 수 없다.
+결과적으로 답변이 불완전하거나, 여러 번 수동으로 쿼리를 재구성해야 하는 비효율이 발생한다.
+
+---
+
+## Motivation
+
+지식 그래프(Knowledge Graph, KG)는 엔터티와 관계를 명시적으로 구조화하여 정밀하고 망라적(exhaustive)인 관계형 질의를 가능케 한다.
+반면 LLM 에이전트는 동적 추론, 툴 선택, 중간 증거 평가, 계획 재수립 같은 능력을 갖는다.
+저자들은 두 패러다임이 상호 보완적이라고 본다 — KG는 구조화된 정확한 검색을, 에이전트는 적응적 다단계 추론을 제공한다.
+기존 KG-LLM 결합 연구는 대부분 KG에서 검색한 데이터를 map-reduce 방식으로 요약하는 데 그쳐, 인간 연구자와 같은 심층 추론 체인 구성에는 미치지 못했다.
+저자들은 "인간 탐구자처럼 증거를 수집·평가하고 다음 단계를 계획하는" 에이전트를 구현하고자 한다.
+이를 위해 LLM 에이전트가 Cypher 질의, 하이브리드 벡터 검색, 개념/키워드 검색, 전문가 식별이라는 특화 도구들 간을 동적으로 이동하며 사고 연쇄(chain of thought)를 구성하는 아키텍처가 필요하다.
+INRAE(프랑스 국립 농업·식품·환경 연구소)의 오픈 액세스 출판물이라는 실제 과학 데이터를 대상으로 이 접근의 유효성을 시연한다.
+궁극적 목표는 단순 스니펫 요약을 넘어 구조화되고 망라적이며 관계 인식적(relationally-aware)인 응답 생성이다.
 
 ---
 
 ## Method
 
-1. **지식 베이스 구축 (Knowledge Base Construction)**
-   - 데이터 범위: INRAE의 2019년 1월 ~ 2024년 8월 오픈액세스 출판물
-   - **벡터 DB**: 출판물 텍스트(제목 + 초록 + 결론)를 텍스트 청크로 변환
-     - Dense vector: Jina v3 임베딩 모델 (시맨틱 유사도)
-     - Sparse vector: BM25 알고리즘 (키워드 기반 매칭)
-     - 하이브리드 결과는 Cohere 리랭커로 통합·재정렬
-   - **Knowledge Graph (Neo4j)**: 417,030 노드 + 100만+ 관계로 구성
-     - Author 233,728 (56.0%), Keyword 96,588 (23.2%), Publication 38,791 (9.3%), Software 21,617 (5.2%), Concept 13,591 (3.3%), Journal 5,563 (1.3%), Project 3,999 (1.0%) 등 11개 노드 타입
-   - **PDF 파싱**: GROBID 도구로 출판물 원문 처리 및 구조화
+1. **지식 베이스 구축(Knowledge Base Construction)**: INRAE의 2019년 1월 ~ 2024년 8월 오픈 액세스 출판물을 내부 데이터와 조인하여 수집.
 
-2. **에이전트 기반 멀티툴 오케스트레이션**
-   - 백본 LLM: deepseek-r1-0528 (open-weight reasoning model)
-   - 오케스트레이션 프레임워크: Mirascope, 벡터 스토리지: Qdrant
-   - 에이전트 책임: 쿼리 이해 → 분해 → 실행 계획 수립 → 도구 동적 선택·호출 반복 → 수집 정보 종합 → 응답 생성
+2. **벡터 DB 구성**: 출판물의 제목 + 초록 + 결론을 연결(concatenate)하여 텍스트 청크로 구성하고 하이브리드 검색을 지원.
+   - Dense vector: Jina v3 임베딩(시맨틱 유사도).
+   - Sparse vector: BM25 알고리즘(키워드 매칭).
+   - Cohere 리랭커로 두 검색 결과 통합·재정렬.
 
-3. **전문화 도구 집합 (Specialized Tool Suite)**
-   - **SearchGraph**: Neo4j KG에 Cypher 쿼리 전송 → 특정 엔티티 검색, 관계 경로 탐색, 완전한 목록 검색
-   - **SearchPublications**: 벡터 DB에서 하이브리드 검색(semantic + keyword) → KG 탐색의 초기 진입점 식별
-   - **SearchConceptsKeywords**: KG 내 개념·키워드 검색 → 쿼리와 KG 구조화 어휘 간 간극 해소
-   - **IdentifyExperts**: 복합 전문성 점수(논문 관련도, 상위 10% 논문 수, 인용 수, 활동 기간, 최근 발표 시점 등 가중 지표) 기반 전문가 순위화
+3. **Knowledge Graph 구축(Neo4j)**: 417,030 노드와 100만 개 이상의 관계로 구성된 이종(heterogeneous) 그래프.
+   - 노드 타입 11종: Author(233,728, 56.0%), Keyword(96,588, 23.2%), Publication(38,791, 9.3%), Software(21,617, 5.2%), Concept(13,591, 3.3%), Journal(5,563, 1.3%), Project(3,999, 1.0%), Domain(2,595, 0.6%), ResearchUnit(299, 0.1%), Dataset(240, 0.1%), Region(19, 0.0%).
+   - INRAE thesaurus에서 Concept/Domain 노드 추출.
 
-4. **다중 홉 추론 프로세스**
-   - Step 1: SearchPublications로 관련 출판물 초기 집합 식별
-   - Step 2: SearchGraph로 저자 및 연관 프로젝트 추출 (Author → Publication → Project 경로)
-   - Step 3: SearchGraph로 프로젝트 연결 Concept 노드를 DESCRIBES 관계로 탐색
-   - Step 4: Author → Publication → Project → Concept 체인으로 구조화된 종합 응답 생성
+4. **PDF 파싱**: GROBID 도구로 출판물 원문을 파싱·구조화하여 메타데이터와 본문 추출.
+
+5. **LLM 에이전트 핵심(Agent Core)**: open-weight 모델 **deepseek-r1-0528** 기반 에이전트가 쿼리 이해 → 분해 → 계획 수립 → 도구 선택·호출 → 다중 응답 합성 역할 수행.
+
+6. **도구 #1 — SearchGraph (KG 질의)**: Neo4j KG에 Cypher 쿼리를 직접 전송하여 엔터티 회수, 관계 경로 탐색, 망라적 목록 추출(예: 특정 저자의 모든 논문, 특정 연구 단위의 모든 프로젝트) 수행. 이 도구가 시스템의 중핵.
+
+7. **도구 #2 — SearchPublications (하이브리드 검색)**: 벡터 DB에 시맨틱 + 키워드 기반 하이브리드 검색을 수행하고 Cohere 리랭커로 상위 결과 정제. 그래프 탐색의 진입점(entry point) 식별 용도.
+
+8. **도구 #3 — SearchConceptsKeywords (개념/키워드 검색)**: INRAE thesaurus의 구조화된 용어와 저자 키워드를 검색하여 쿼리 모호성 해소, 관련 용어 추천, 후속 그래프 탐색 진입점 확보.
+
+9. **도구 #4 — IdentifyExperts (전문가 식별)**: 도메인 특화 복합 로직을 캡슐화한 고수준 도구. 내부에서 SearchPublications로 주제 관련 논문을 찾고, SearchGraph로 저자를 추출한 뒤, 저자별 복합 전문성 점수 계산.
+   - 점수 구성 요소: 논문의 주제 평균 관련도, 상위 10% 결과 내 논문 수, 관련 출판물 총수, 인용 수, 도메인 내 활동 기간, 최신 논문 최신성.
+
+10. **에이전트 오케스트레이션**: Mirascope 프레임워크로 에이전트 제어, Qdrant로 벡터 저장, Neo4j로 KG 저장. 다중 홉 쿼리는 예를 들어 ① '기후 적응' 주제 논문 검색 → ② 해당 논문 저자 추출 → ③ 연결된 프로젝트 조회 → ④ 프로젝트-Concept 관계(DESCRIBES)로 다른 연관 주제 확장 → ⑤ 종합 응답 합성 단계로 구성.
+
+11. **답변 합성(Synthesis)**: 에이전트가 각 도구 호출의 중간 산출물을 평가하고 누락 정보를 추가 질의하며, 최종적으로 "저자 → 논문 → 펀딩 프로젝트 → 관련 주제" 같은 관계 체인을 명시적으로 드러낸 구조화된 답변 생성.
+
+12. **모듈화된 도구 설계 원칙**: 기본 도구(SearchGraph 등)는 자유로운 Cypher 조합을 허용하는 반면, IdentifyExperts 같은 고수준 도구는 재현성(reproducibility)과 도메인 일관성을 보장. 에이전트는 신규 쿼리엔 기본 도구, 정형 태스크엔 고수준 도구를 선택적으로 사용.
 
 ---
 
 ## Key Contribution
 
-1. **에이전틱 KG 쿼리의 실세계 적용**: 417K+ 노드 및 100만+ 관계 규모의 실세계 KG를 대상으로, 에이전트가 동적으로 탐색하며 반복적 다중 홉 추론을 수행하는 INRAExplorer 시스템 구현
-2. **Map-reduce 요약과의 차별화**: GraphRAG 스타일의 사전 요약 대신, 에이전트가 실시간으로 증거를 수집·평가·계획하는 "인간 연구자" 패러다임 채택
-3. **모듈형 전문 도구 설계**: IdentifyExperts처럼 복잡한 도메인 로직을 캡슐화한 고수준 도구와 저수준 도구(SearchGraph)의 혼합으로 유연성과 신뢰성 동시 달성
-4. **오픈소스 기반 아키텍처**: Mirascope, Qdrant, Neo4j, GROBID, deepseek-r1-0528 등 오픈소스 컴포넌트만으로 구성하여 다른 도메인으로의 이식성 제공
+1. **Agentic RAG와 KG-enhanced RAG의 심층 통합**: 단순 map-reduce 요약 수준을 넘어, KG 질의를 에이전트의 일급(first-class) 능력으로 내장하여 인간 연구자와 유사한 반복적 탐구(iterative investigation) 프로세스를 구현.
+
+2. **실제 대규모 과학 데이터셋 적용(INRAExplorer)**: 417,030 노드와 100만+ 관계의 실제 INRAE KG에 적용한 구체적 사례 제시 — 추상적 프레임워크가 아닌 실전 배치 가능한 시스템.
+
+3. **다중 도구 오케스트레이션 아키텍처**: SearchGraph / SearchPublications / SearchConceptsKeywords / IdentifyExperts 등 4종 특화 도구를 통한 하이브리드 검색 전략으로, 비정형 텍스트와 구조화된 그래프를 동시에 활용.
+
+4. **모듈화된 고수준 도메인 도구(IdentifyExperts)**: 복합 워크플로우(관련 논문 → 저자 → 다차원 점수 계산)를 단일 도구로 캡슐화하여, 에이전트 의사결정을 단순화하고 결과 재현성 확보.
+
+5. **오픈소스/오픈웨이트 생태계 기반**: Mirascope + Qdrant + Neo4j + GROBID + deepseek-r1-0528 조합으로 전 구성요소를 오픈 기술로 구축 — 적응성과 확장성을 보장.
+
+6. **다중 홉 관계형 응답 생성**: 기존 RAG가 다루기 어려운 "저자 → 논문 → 프로젝트 → 관련 주제" 같은 4홉 이상의 관계 체인을 명시적으로 드러내는 구조화된 답변 생성 가능.
 
 ---
 
-## Experiment & Results
+## Experiment
 
-- **시스템**: INRAExplorer — INRAE 과학 데이터 (2019.01~2024.08 오픈액세스 출판물)
-- **KG 규모**: 417,030 노드, 1,000,000+ 관계, 11개 노드 타입
-- **출판물**: Publication 노드 38,791개, Author 노드 233,728개
+1. 본 논문은 시스템 디모(system demonstration) 논문으로, 정량적 벤치마크 비교 실험보다는 실제 KG 규모와 정성적 사례 중심으로 구성.
 
-정성적 시연으로 시스템 능력을 보여줌 (정량 벤치마크 없음):
+2. **KG 규모(정량 지표)**: 총 417,030 노드, 100만+ 관계, 11개 노드 타입 — 실제 연구 데이터 기반의 대규모 그래프.
 
-- **완전한 목록 검색**: "특정 저자의 모든 논문 목록" → SearchGraph가 Cypher 쿼리로 완전한 목록 반환. 기존 top-k RAG 대비 누락 없는 exhaustive retrieval 달성
-- **다중 홉 관계 탐색**: "climate change adaptation 연구 관련 프로젝트 및 소프트웨어" → Author→Publication→Project→Concept 4단계 경로 탐색으로 구조화 응답 생성
-- **교차 도메인 전문가 식별**: "zoonoses 분야 INRAE 전문가 식별" → 6개 가중 지표 기반 복합 점수로 전문가 순위화
+3. **노드 분포**: Author 233,728개(56.0%), Keyword 96,588개(23.2%), Publication 38,791개(9.3%), Software 21,617개(5.2%), Concept 13,591개(3.3%), Journal 5,563개(1.3%), Project 3,999개(1.0%), Domain 2,595개(0.6%), ResearchUnit 299개(0.1%), Dataset 240개(0.1%), Region 19개 — 총 10개 이상의 수치 지표 제공.
 
-기존 classical RAG 대비 완전성(exhaustiveness)과 구조화된 응답에서 질적 우위를 보임. 단, 공개 벤치마크 대비 정량적 비교 실험은 미수행.
+4. **데이터 커버리지**: 2019년 1월 ~ 2024년 8월 기간의 오픈 액세스 출판물 38,791편을 수록 — 약 5년 7개월의 연구 출판물을 망라.
+
+5. **시연 사례 1 (기후 적응 관련 다중 홉 쿼리)**: "climate change adaptation strategies"에 관한 저자 → 출판물 → 펀딩 프로젝트 → 연관 Concept(DESCRIBES 관계) 4단계 홉을 추적하여 구조화된 응답 생성.
+
+6. **시연 사례 2 (전문가 식별)**: "Identify leading INRAE experts on 'zoonoses'" 쿼리에 대해 IdentifyExperts 도구가 관련도 평균, 상위 10% 논문 수, 총 출판물 수, 인용 수, 활동 기간, 최신성의 6개 가중 지표로 전문가 순위 리스트 반환.
+
+7. **LLM 백본**: deepseek-r1-0528 open-weight 모델 사용 — 상용 API에 종속되지 않는 배포 가능성 입증.
+
+8. **스택 구성(정량 아님이지만 재현성 지표)**: 4개 전문 도구, Mirascope·Qdrant·Neo4j·GROBID 4종 오픈소스 구성요소.
+
+9. 정성적으로는 기존 classical RAG 대비 "exhaustive 목록 회수", "관계 경로 추적", "구조화된 답변" 세 측면에서 우위를 시연으로 보임.
+
+10. 다만 외부 벤치마크 데이터셋(예: HotpotQA, Natural Questions) 대비 정량 비교나 ablation 실험은 제시되지 않아 객관 성능 평가가 제한적임.
+
+---
+
+## Limitation
+
+1. **정량적 벤치마크 부재**: 본 논문은 시스템 설명(system demonstration) 중심이며, 표준 multi-hop QA 벤치마크(HotpotQA, 2WikiMultiHopQA 등)와의 정량 비교 실험이 없어 객관적 성능 우위를 입증하지 못한다.
+2. **도메인 특화 한계**: INRAE 데이터 및 thesaurus에 고도로 맞춤화되어 있어 다른 과학 도메인이나 일반 웹 지식 그래프로의 일반화 가능성이 불명확하다.
+3. **Cypher 생성 의존성**: SearchGraph 도구가 LLM의 Cypher 쿼리 생성 능력에 의존하므로, 복잡한 스키마나 드문 관계 타입에서 구문 오류 및 잘못된 질의 발생 가능성이 있다.
+4. **Ablation 결여**: 4개 도구 각각의 기여도, 리랭커 유무, deepseek-r1-0528 대신 다른 모델 사용 시 영향 등 구성요소 ablation이 제시되지 않았다.
+5. **비용 및 지연 시간 미보고**: 대규모 KG 탐색과 반복적 에이전트 호출의 API 비용, 응답 지연, 토큰 사용량 같은 실용적 메트릭이 제공되지 않아 실제 배치 타당성을 평가하기 어렵다.
+6. **오류 전파 및 복구 미논의**: 중간 단계 도구 호출 실패, 잘못된 엔터티 매칭, Cypher 쿼리 결과 누락 시 에이전트의 복구 메커니즘(재시도, 대안 경로 선택)이 명시되지 않았다.
+7. **사용자 평가 부재**: 실제 INRAE 연구자 사용자 연구(user study)나 응답 품질 human evaluation이 누락되어, 생성된 답변의 유용성 및 정확도에 대한 외부 검증이 부족하다.
