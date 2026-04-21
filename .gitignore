@@ -7,3 +7,7 @@ summaries/.claude/
 # 임시 파일
 *.tmp
 *.json.bak
+
+# Python
+__pycache__/
+*.pyc

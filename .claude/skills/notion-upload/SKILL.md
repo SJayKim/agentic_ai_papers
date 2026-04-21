@@ -2,6 +2,7 @@
 name: notion-upload
 description: 로컬에 이미 작성된 요약을 Notion에 업로드. 특정 논문 지정 또는 미반영 논문 전체 업로드
 user-invocable: true
+disable-model-invocation: true
 allowed-tools: Read, Bash, Glob, Grep, Edit
 ---
 
@@ -32,9 +33,8 @@ allowed-tools: Read, Bash, Glob, Grep, Edit
 
 ## ⚠ 실행 방식 제약
 
-- **MCP 서버나 에이전트(subagent)를 사용하지 말 것** — 권한 문제로 실패함
+- **MCP 서버나 subagent를 사용하지 말 것** — 권한 문제로 실패함
 - **반드시 Bash에서 Python `requests`로 Notion API를 직접 호출**할 것
 - 토큰: `.claude/.mcp.json` → `mcpServers.notion.env.NOTION_TOKEN`
 - 필수 헤더: `Authorization: Bearer {TOKEN}`, `Notion-Version: 2022-06-28`
 - 대량 처리 시 하나의 Python 스크립트에서 루프로 처리
-- `notion-uploader` subagent도 사용하지 말 것 (동일한 권한 문제)
