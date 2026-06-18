@@ -6,22 +6,31 @@
 
 ```
 [논문 정리 요청]
-  → Step 1: 논문 PDF 확보 및 저장
-  → Step 2: 요약(Summary) 마크다운 작성 (서브에이전트로 PDF 분석 → 메인에서 파일 저장)
-  → Step 2.5: 품질 검증 (분량·수치 체크, 미달 시 PDF 재독 후 보강)
+  → Step 1: PDF 다운로드 → 텍스트 추출(_text.txt) → Drive 업로드 → 로컬 PDF 삭제
+  → Step 2: 요약(Summary) 마크다운 작성 (서브에이전트로 _text.txt 분석 → 메인에서 파일 저장)
+  → Step 2.5: 품질 검증 (분량·수치 체크, 미달 시 _text.txt 재독 후 보강)
   → Step 3: 개요 파일(agent_memory_papers.md) 업데이트
   → Step 4: Notion 업로드 (마크다운 파일을 읽어서 반영)
 ```
 
+> **PDF 저장 정책**: repo에는 PDF를 커밋하지 않음. 원본 PDF는 Google Drive `agentic_ai_papers/pdfs/`에 보관, 로컬에는 PyPDF2 추출본(`_text.txt`)만 유지.
+
 ---
 
-## Step 1: 논문 PDF 확보 및 저장
+## Step 1: 논문 PDF 확보 → 텍스트 추출 → Drive 이전 → 로컬 PDF 삭제
 
 1. 사용자가 논문 제목, arXiv ID, 또는 PDF 파일을 제공
 2. PDF가 없으면 arXiv 등에서 다운로드
-3. `agent_memory_pdfs/` 폴더에 저장
+3. `summaries/agent_memory_pdfs/{논문약칭}.pdf`로 **임시 다운로드**
    - 파일명 규칙: `{논문약칭}.pdf` (예: `A-MEM.pdf`, `MAGMA.pdf`)
-4. PDF가 텍스트 추출이 어려운 경우 `{논문약칭}_text.txt`로 텍스트 버전도 저장
+4. **PDF 텍스트를 `{논문약칭}_text.txt`로 추출** (PyPDF2, CLAUDE.md "PDF 읽기" 섹션 참조)
+   - 이 단계는 Drive 업로드 전에 반드시 선행되어야 함 — 로컬 PDF를 삭제하면 원본 접근 불가
+5. `_text.txt` 생성 확인 후 **PDF를 Google Drive `agentic_ai_papers/pdfs/{논문약칭}.pdf`로 업로드**
+   - Drive MCP 커넥터가 연결되어 있으면 Claude가 자동 업로드
+   - 커넥터가 없으면 사용자에게 수동 업로드 요청 후 확인 대기 (절대 삭제하지 않고 대기)
+6. **업로드 성공 확인 후 로컬 PDF 삭제**: `rm summaries/agent_memory_pdfs/{논문약칭}.pdf`
+   - 업로드 실패 시 삭제 금지 — 재시도 또는 사용자에게 보고
+7. 이후 Step 2~2.5의 모든 분석은 `_text.txt`만 사용 (원본 PDF 재접근 불필요)
 
 ## Step 2: 요약(Summary) 마크다운 작성
 
@@ -293,12 +302,17 @@ paper_listup/
 ├── summarize_instruction.md     # 이 파일 (전체 파이프라인)
 ├── notion_mcp_instruction.md    # Notion 업로드 상세 가이드
 ├── agent_memory_papers.md       # 전체 논문 개요 (카테고리별 테이블)
-├── agent_memory_pdfs/           # 원본 PDF 저장소
-│   ├── A-MEM.pdf
-│   ├── MAGMA.pdf
-│   └── ...
 └── summaries/                   # 개별 논문 요약 마크다운
     ├── 01_A-MEM.md
     ├── 02_MAGMA.md
-    └── ...
+    ├── ...
+    └── agent_memory_pdfs/       # PyPDF2 텍스트 추출본(*_text.txt)만 저장
+        ├── A-MEM_text.txt
+        ├── MAGMA_text.txt
+        └── ...                  # 원본 *.pdf는 .gitignore 제외
+
+[원본 PDF 보관처: Google Drive → agentic_ai_papers/pdfs/]
+  ├── A-MEM.pdf
+  ├── MAGMA.pdf
+  └── ...
 ```

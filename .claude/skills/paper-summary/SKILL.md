@@ -31,21 +31,28 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, WebSearch, WebFetch, Agent
 
 1. **개요 파일**: `agent_memory_papers.md`에서 논문 제목/약칭을 검색 (Grep)
 2. **요약 파일**: `summaries/` 디렉토리의 파일명에서 약칭을 검색 (Glob)
-3. **PDF 파일**: `summaries/agent_memory_pdfs/` 디렉토리에서 파일명 검색 (Glob)
+3. **텍스트 추출본**: `summaries/agent_memory_pdfs/{약칭}_text.txt` 존재 여부 (Glob)
+   - **원본 PDF는 Google Drive에 보관되어 repo에 없음** — `.pdf`가 아니라 `_text.txt`로 확인
 
 **판단 기준:**
 - 정확히 같은 논문이 이미 존재하면 → 해당 논문은 **건너뜀**
 - 유사한 제목의 다른 논문이 있으면 → 확인 요청
 - 존재하지 않으면 → Step 1 대상에 포함
 
-## Step 1: 논문 PDF 확보
+## Step 1: 논문 PDF 확보 → 텍스트 추출 → Drive 이전 → 로컬 PDF 삭제
+
+> **PDF 저장 정책**: repo에는 PDF를 커밋하지 않음. 원본 PDF는 Google Drive `agentic_ai_papers/pdfs/`에 보관하고, 로컬에는 `_text.txt`만 유지한다.
 
 1. 논문을 검색하세요 (WebSearch 활용)
-2. arXiv 또는 공식 소스에서 PDF를 다운로드
-3. `summaries/agent_memory_pdfs/{논문약칭}.pdf`에 저장
-4. PDF 텍스트를 추출하여 `{논문약칭}_text.txt`로 저장
+2. arXiv 또는 공식 소스에서 PDF를 `summaries/agent_memory_pdfs/{논문약칭}.pdf`에 **임시 다운로드**
+3. PDF 텍스트를 추출하여 `{논문약칭}_text.txt`로 저장
    - **⚠ Read 도구의 PDF 지원은 이 환경에서 동작하지 않음** (`pdftoppm` 미설치)
    - **반드시 Bash + PyPDF2로 텍스트 추출** (CLAUDE.md의 "PDF 읽기" 섹션 참조)
+4. `_text.txt` 생성 확인 (존재 + 비어있지 않은지)
+5. **PDF를 Google Drive `agentic_ai_papers/pdfs/{논문약칭}.pdf`로 업로드**
+   - Drive MCP 커넥터가 연결되어 있으면 자동 업로드. 없으면 사용자 수동 업로드 요청 후 대기
+6. **업로드 성공 확인 후 로컬 PDF 삭제**: `rm summaries/agent_memory_pdfs/{논문약칭}.pdf`
+   - 업로드 실패 시 삭제 금지
 
 ## Step 2: 요약 마크다운 작성 — 서브에이전트 활용
 

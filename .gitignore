@@ -1,8 +1,15 @@
 # Claude MCP 설정 — 토큰/시크릿 파일만 제외
 .claude/.mcp.json
 
+# Claude Code (local overrides — never committed)
+CLAUDE.local.md
+.claude/settings.local.json
+
 # 잘못 생성된 하위 .claude 디렉토리
 summaries/.claude/
+
+# 원본 PDF — Google Drive(agentic_ai_papers/pdfs/)에 보관. 로컬/repo에는 저장하지 않음
+summaries/agent_memory_pdfs/*.pdf
 
 # 임시 파일
 *.tmp

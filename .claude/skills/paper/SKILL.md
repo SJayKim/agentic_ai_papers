@@ -40,7 +40,8 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, WebSearch, WebFetch, Agent
 
 1. **개요 파일**: `agent_memory_papers.md`에서 논문 제목/약칭을 검색 (Grep)
 2. **요약 파일**: `summaries/` 디렉토리의 파일명에서 약칭을 검색 (Glob)
-3. **PDF 파일**: `summaries/agent_memory_pdfs/` 디렉토리에서 파일명 검색 (Glob)
+3. **텍스트 추출본**: `summaries/agent_memory_pdfs/{약칭}_text.txt` 존재 여부 확인 (Glob)
+   - **원본 PDF는 Google Drive에 보관되어 repo에 없음** — `.pdf`가 아니라 `_text.txt`로 확인
 
 **판단 기준:**
 - 정확히 같은 논문이 이미 존재하면 → "이미 {번호}_{약칭}.md로 정리되어 있습니다"라고 알리고 해당 논문은 **건너뜀**
@@ -55,14 +56,16 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, WebSearch, WebFetch, Agent
 - RAISE → 유사 논문 있음 (AgentRefine) — 확인 필요 ⚠️
 ```
 
-## Step 1: 논문 PDF 확보
+## Step 1: 논문 PDF 확보 → 텍스트 추출 → Drive 이전 → 로컬 PDF 삭제
+
+> **PDF 저장 정책**: repo에는 PDF를 커밋하지 않음. 원본 PDF는 Google Drive `agentic_ai_papers/pdfs/`에 보관하고, 로컬에는 `_text.txt`만 유지한다.
 
 1. 논문을 검색하세요 (WebSearch 활용)
    - 논문 제목, arXiv ID, 컨퍼런스 키워드 등 어떤 형태든 가능
 2. arXiv 또는 공식 소스에서 PDF URL을 찾으세요
-3. PDF를 다운로드하여 `summaries/agent_memory_pdfs/{논문약칭}.pdf`에 저장하세요
+3. PDF를 **임시로** `summaries/agent_memory_pdfs/{논문약칭}.pdf`에 다운로드하세요
    - 약칭은 논문의 핵심 키워드나 시스템 이름 (예: A-MEM, MAGMA, ChainOfAgents)
-4. PDF 텍스트를 추출하세요
+4. **PDF 텍스트를 추출하여 `_text.txt`로 저장** (Drive 이전 전에 반드시 선행)
    - **⚠ Read 도구의 PDF 지원은 이 환경에서 동작하지 않음** (`pdftoppm` 미설치)
    - **반드시 Bash + PyPDF2로 텍스트 추출 후 파일로 저장**:
      ```
@@ -78,6 +81,12 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, WebSearch, WebFetch, Agent
              f.write('\n\n')
      "
      ```
+5. **`_text.txt` 생성 확인** (존재 + 비어있지 않은지)
+6. **PDF를 Google Drive `agentic_ai_papers/pdfs/{논문약칭}.pdf`로 업로드**
+   - Google Drive MCP 커넥터가 연결되어 있으면 Claude가 자동 업로드 가능
+   - 커넥터가 없는 경우: 로컬 PDF를 그대로 두고 사용자에게 수동 업로드 요청 후 대기 (절대 로컬 삭제 금지)
+7. **업로드 성공 확인 후 로컬 PDF 삭제**: `rm summaries/agent_memory_pdfs/{논문약칭}.pdf`
+   - 업로드 실패 시 삭제 금지 — 재시도 또는 사용자에게 보고
 
 ## Step 2: 요약 마크다운 작성 — 서브에이전트 활용
 

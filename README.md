@@ -88,10 +88,12 @@ LLM 기반 에이전트의 핵심 기술(메모리, 도구, 계획, 자기교정
 ├── agent_memory_papers.md          # 전체 논문 개요 (카테고리별 테이블, 71편)
 ├── summaries/                      # 개별 논문 상세 요약 마크다운
 │   ├── 01_A-MEM.md ~ 71_SWE-bench.md
-│   └── agent_memory_pdfs/          # 원본 PDF 저장소
+│   └── agent_memory_pdfs/          # PyPDF2 텍스트 추출본(*_text.txt)만 저장
 ├── summarize_instruction.md        # 요약 파이프라인 정의
 ├── notion_mcp_instruction.md       # Notion API 연동 가이드
 └── CLAUDE.md                       # Claude Code 에이전트 지침서
+
+# 원본 PDF: Google Drive → agentic_ai_papers/pdfs/  (repo 용량 관리를 위해 외부 보관)
 ```
 
 ## 사용법 (Claude Code)

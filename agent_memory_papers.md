@@ -115,3 +115,8 @@
 | **LLM Readiness Harness** | 2026.03 | Lumytics | Alexandre Maiorano | 평가·관측성·CI 게이트를 통합한 LLM/RAG 배포 준비도 하네스 |
 | **PromptwareEng** | 2025.03 | Tsinghua / NTU / PKU | Zhenpeng Chen | 프롬프트 개발에 SE 원칙을 적용하는 프롬프트웨어 엔지니어링 프레임워크 + 27개 연구 기회 |
 | **ConfuciusCodeAgent** | 2025.12 | Meta / Harvard | Sherman Wong | AX/UX/DX 3축 설계 + 계층적 메모리 + Meta-agent로 대규모 코드베이스 스캐폴딩 |
+| **DSPy** | 2023.10 | ICLR 2024 / Stanford | Omar Khattab | Signature·Module·Teleprompter 추상화 + BootstrapFewShot으로 LLM 파이프라인의 prompt를 자동 컴파일 |
+| **MIPROv2** | 2024.06 | EMNLP 2024 / Stanford | Krista Opsahl-Ong | Bootstrap demo + Grounded instruction proposal + Bayesian(TPE) joint 최적화, 7개 task에서 최대 +13% |
+| **TextGrad** | 2024.06 | Nature 2025 / Stanford | Mert Yuksekgonul | LLM 비판을 텍스트 gradient로 backprop, PyTorch-style API로 코드·프롬프트·분자·치료계획 통합 최적화 |
+| **ProTeGi** | 2023.05 | EMNLP 2023 / Microsoft | Reid Pryzant | 실패 사례에 대한 LLM 비판을 textual gradient로 사용, beam search + bandit selection으로 prompt 최적화 |
+| **GEPA** | 2025.07 | arXiv / Stanford-UCB | Lakshya A Agrawal | Reflective mutation + Pareto-based candidate selection + System-aware Merge, GRPO 대비 35× rollout 효율로 평균 +6% |
