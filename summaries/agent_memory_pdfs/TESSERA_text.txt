@@ -1,0 +1,926 @@
+LLM-Guided Monte Carlo Tree Search over Knowledge Graphs: Composing
+Mechanistic Explanations for Drug–Disease Pairs
+Rishabh Jakhar1,Michel Dumontier1,Remzi Celebi1
+1Institute of Data Science, Department of Advanced Computing Sciences, Maastricht University, The
+Netherlands
+rishabh.jakhar@maastrichtuniversity.nl
+Abstract
+Extracting multi-step explanations from knowledge
+graphs poses a combinatorial challenge requiring
+both heuristic guidance (as candidates proliferate
+with depth) and credit assignment (as path quality
+emerges over extended sequences). Frontier LLMs,
+strong on knowledge/reasoning benchmarks, offer
+a compelling source of such heuristics, yet their
+knowledge comes sans guarantees and composi-
+tional performance degrades as chains lengthen.
+We thus present TESSERA, a 3-part neuro-symbolic
+framework that uses LLMs in a circumscribed role:
+for local discriminative judgement rather than au-
+tonomous multi-step generation; the knowledge
+graph then defines the hypothesis space enforc-
+ing hard structural constraints, and MCTS coordi-
+nates the long-horizon search with principled credit
+assignment via backpropagation. LLMs perform
+dual roles as a prior policy biasing exploration
+and a comparative state evaluator supplying reward
+signals. Evaluation on drug mechanism elucida-
+tion across two complementary knowledge graphs
+demonstrates fidelity to curated biology while sur-
+facing coherent alternative mechanisms, with abla-
+tions confirming discriminative contribution from
+both LLM components. Beyond its current appli-
+cation, our framework offers a general paradigm
+for compositional reasoning over structured knowl-
+edge.1
+1 Introduction
+Computational scientific discovery has engaged researchers
+for over half a century [Simon, 1966 ], often viewed as a
+heuristic search problem akin to planning or game-playing,
+but with the attendant expectation that its outputs constitute
+not merely predictions but explanations, expressed in for-
+malisms amenable to inspection, challenge, and communi-
+cation [Langley, 2024 ]. Systems medicine exemplifies this:
+in drug repurposing, for instance, a putative statistical asso-
+ciation between a drug and a disease is far more compelling
+1Code and supplementary material available at https://github.
+com/RishabhJakhar/tessera.when accompanied by a mechanistic account of how the inter-
+vention propagates, through biological intermediates, to pro-
+duce its therapeutic effect.
+Knowledge graphs, as explicit symbolic representations of
+domain knowledge, offer a natural substrate for such expla-
+nations [Sosa and Altman, 2022; d’Aquin, 2025 ]. Extracting
+these, however, poses a combinatorial challenge as candidates
+proliferate with depth, precluding exhaustive enumeration.
+The problem is thus well framed as heuristic search, with
+background knowledge guiding exploration towards promis-
+ing candidates [Langley, 2024 ].
+Frontier large language models, strong on biomedical
+knowledge and reasoning benchmarks [Phanet al., 2025;
+Wanget al., 2024; Reinet al., 2023 ], present a compelling
+source of such guidance. Yet LLMs exhibit a kind ofapprox-
+imate omniscience: broad coverage of domain knowledge,
+but without guarantees of correctness [Kambhampati, 2023;
+Kambhampatiet al., 2024 ], subject to hallucinations and con-
+fabulations [Huanget al., 2025 ]. Empirically, compositional
+performance degrades systematically as task complexity in-
+creases: models succeed at single / few-step judgments but
+fail to compose them reliably as errors compound [Dziriet
+al., 2023 ]. Together, these recommend a circumscribed role:
+LLMs as sources of local discriminative judgment, not au-
+tonomous generators of extended reasoning chains.
+Assembling these local judgments into a multi-step expla-
+nation requires credit assignment: determining which early
+choices contribute to eventual explanation quality. Monte
+Carlo Tree Search provides a principled framework for this,
+accumulating evidence across trajectories and backpropagat-
+ing credit over extended sequences. This yields a three-
+pillar framework, where the knowledge graph defines the hy-
+pothesis space and enforces hard structural constraints, the
+LLM provides soft, local semantic judgment, and MCTS
+coordinates long-horizon search. We refer to our frame-
+work as TESSERA(Tree-search forExplanationSynthesis via
+SemanticEvaluation andRankedActions).
+Our contributions include:(i)a neuro-symbolic frame-
+work coupling MCTS with LLM-derived heuristics for ex-
+tracting mechanistic explanations from biomedical knowl-
+edge graphs;(ii)a listwise prior policy (for exploration bias)
+that scales to large action sets through batched evaluation,
+exploiting LLMs’ strength at relative judgment while avoid-
+ing long-context degradation;(iii)a comparative state eval-arXiv:2605.09542v1  [cs.AI]  10 May 2026
+uator (for reward signal) that scores partial paths against a
+depth-bound competitor set, using token-level probabilities
+for uncertainty-aware estimates and conditioning on accepted
+paths to assess marginal contribution; and(iv)evaluation on
+two complementary substrates: DrugMechDB (allowing de-
+terministic evaluation against curated ground-truth), and the
+Multi-scale Interactome (enabling high-branching search, but
+without ground-truth, motivating an LLM-as-judge protocol,
+which we control and validate for reliability).
+2 Related Work
+We situate our work relative to two strands of prior research:
+(i)Post-hoc attribution, with methods such as Kelpie [Rossi
+et al., 2022 ], adversarial explanations [Betzet al., 2022 ],
+and GNNExplainer [Yinget al., 2019 ], produces saliency-
+style explanations that highlight influential inputs (triples,
+subgraphs, or feature subsets), but often lack key explanation
+desiderata (e.g., coherence, parsimony); an inadequacy em-
+phasised in broader critiques of attribution [Chouet al., 2022 ]
+and carried over to link-prediction explainability [Nuneset
+al., 2025 ].(ii)Path-based reasoningexplains predictions
+through multi-hop traversals that serve as interpretable traces.
+The dominant paradigm casts traversal as RL-based sequen-
+tial decision-making: MINERV A [Daset al., 2018 ]rewards
+terminal arrival alone, with subsequent work progressively
+shaping rewards towards explanatory virtues with metapath
+compliance (PoLo; [Liuet al., 2021 ]), phenotype associa-
+tions (CoCo; [Storket al., 2023 ]), and degree-based speci-
+ficity heuristics (REx; [Nuneset al., 2025 ]). REx goes fur-
+thest, explicitly invoking explanatory qualities—fidelity, rel-
+evance, simplicity—yet still relies on structural proxies opti-
+mised through fixed-length rollouts (typically 3-4 hops). Out-
+side RL, methods like DrugCORpath [Songet al., 2025 ]in-
+corporate LLM-derived embeddings of precomputed paths
+with subsequent clustering and classification, but remain con-
+strained to certain metapaths at fixed, short lengths (2-3
+hops). Our approach differs by replacing the hand-crafted
+proxies with a direct semantic evaluation via LLMs, and em-
+bedding this signal within a search algorithm (rather than pol-
+icy rollouts), enabling variable depth over longer horizons.
+We view these as complementary: proxy rewards and policy
+rollouts offer efficiency; semantic evaluation and combinato-
+rial search offer richer assessment and longer horizons, but at
+attendant cost.
+3 Methodology
+3.1 Problem Setting
+Given a graphGas substrate, we formulate the problem as
+one of extracting an explanatory subgraphg(d, z)that ac-
+counts for the therapeutic effect of a drugdon a target disease
+z. We perform a lookahead search onG: starting fromdand
+conditioned onz, the search traverses nodes and relations to
+uncover plausible mechanistic pathways.
+The substrate is a directed, typed, multi-relational knowl-
+edge graphG=(V,R,E),whereVare entity nodes,Rrela-
+tion types, andE⊆V×R×Vthe set of typed edges.
+A search states∈Sis encoded ass=(u, H, z),whereu∈V
+is the current node inG,H∈E∗is the ordered path traversed toreachu, andz∈Vis the target node.V(H)denotes the nodes
+appearing alongH.For any given search,zremains fixed.
+Since states are path-dependent, visiting the same graph node
+via different paths corresponds to distinct search states. The
+legal actions at states,A(s), form a subset of the outgoing
+edges ofuand are determined in two stages. The first is a
+filtering on the top-kneighbours ranked by a personalised
+PageRank scorepprz(v), with a one-hot personalisation vec-
+tor encoding the target diseasez:
+Ak(s) = Top-k pprz{(r, v) : (u, r, v)∈ E, v /∈V(H)}.
+The second is an augmentation tok,ensuring adequate rep-
+resentation of key node types: for a designated setT ⊆Vand
+target proportionλ∈(0,1], if nodes inTcomprise less than
+proportionλof the targets inA k(s),additional actions with
+v∈Tare injected from the ranked tail, up to an augmenta-
+tion budgetτ. WritingA+
+τ(s)for the resulting set of injected
+actions, the final action set is
+A(s) =A k(s)∪ A+
+τ(s), k≤ |A(s)| ≤k+τ.
+Since an action represents the tuple(r, v),the transition func-
+tion is deterministic: executing(r, v)ins=(u, H, z)yields
+afterstates′=(v, H+ +(u, r, v), z).
+3.2 Search Algorithm
+We use Monte Carlo Tree Search (MCTS), guided by an
+LLM-based prior policyπ LLM(·|s)to bias exploration to-
+wards high-probability actions and a comparative, path-aware
+state evaluationv(s L)to assign leaf values.
+The search tree consists of statessas nodes, with outgoing
+edges(s,a)for alla∈A(s). Each edge stores statistics: visit
+countN(s,a), cumulative action valueW(s,a), mean action
+valueQ(s,a), and a prior probabilityP(s, a) :=π LLM(a|s).
+Search starts at roots 0=(d,∅,z), and evolves under a pre-
+set simulation budgetT. Each simulation cycles through 4
+phases:
+Selection.Starting at the roots 0, the tree is traversed until
+a leafs Lis reached. At each stept<L,an actiona tis chosen
+to maximiseQ(s t, a)+U(s t, a)using PUCT [Rosin, 2011;
+Silveret al., 2017 ], with
+U(st, a) =c puctP(st, a)pP
+bN(st, b)
+1 +N(s t, a).
+We formulate the exploration coefficientc puct=δ(d)·ϕ(N)to
+be depth and visit-count dependent, where
+δ(d) =c0
+1 +αdandϕ(N) = 1 +βe−N/K.
+Heredis the depth andNthe total visit-count of the par-
+ent states t. δ(d)decays and hence tempers exploration as
+depth increases, whileϕ(N)provides an early-visit explo-
+ration bonus that vanishes ass tgets more visits.
+Evaluation.On reachings L=(u, H, z), we check for ter-
+minal states: ifu=z(target state), the corresponding path
+history is admitted to the explanation setH exp(s0),incom-
+ing edge(s L−1, aL−1)is closed andv(s L)is set to 0. If
+A(sL)=∅, i.e. a dead-end, again edge(s L−1, aL−1)is
+closed withv(s L)=0.For non-terminal states (excluding root
+s0), a scalar valuev(s L)∈[−1,1]is obtained from the LLM-
+based state evaluator (section 3.4).
+Backpropagation.A backward pass is made for
+stepst≤Lwith updates:N(s t, at)←N(s t, at)+1,
+W(s t, at)←W(s t, at)+v(s L),andQ(s t, at)←W(st,at)
+N(st,at).
+Expansion.Leafs Lis expanded unconditionally. Expan-
+sion is atomic over (i) materialising all successors inA(s L),
+and (ii) assigning priorsP(s L,a)=π LLM(a|sL).
+Upon search termination, subgraphg(d, z)is constructed
+as the edge union of all paths inH exp(s0).
+3.3 Prior Policy
+We estimateπ LLM(·|s)by pairing an LLM with a listwise
+sorting procedure. The design draws upon ranking algorithms
+in information retrieval and in particular, adapts the multi-
+pivot,n-ary quicksort of [Godfreyet al., 2025 ]for action
+scoring on graphs.
+Four considerations shape the method:(i)as|A(s)|typ-
+ically exceeds the quality cap for a single LLM pass, we
+use batched evaluations, with a batch sizeW≪|A(s)|,to
+avoid long-context degradation (e.g. position bias [Liuet al.,
+2024 ]),(ii)considering LLMs are stronger at relative than
+absolute judgements [Sunet al., 2023; Qinet al., 2024 ], we
+performn-ary listwise comparisons, which batching naturally
+enables by presenting sets of actions jointly,(iii)to maximise
+throughput given LLM latency, batches are scored concur-
+rently, with quicksort requiring only a light-weight final ag-
+gregation to scale batch-level judgements to a global distri-
+bution overA(s),and(iv)since MCTS is most sensitive to
+ordering of the top actions, the procedure progressively trun-
+cates the action set, concentrating computation on the distri-
+bution head. The full procedure is formalised in Algorithm 1
+(Suppl. S3). We outline the key steps below:
+Batch construction.The quicksort procedure runs overm
+passes, truncating the working action setA Tover a linear
+schedule fromT 1=|A(s)|toT m=W. In each pass, we se-
+lectk=⌊W/2⌋quantile-spaced pivots fromA Tusing boot-
+strap scoresβT2; batches are then formed by adjoining this
+shared pivot setP(sizek)to disjoint chunks of non-pivots
+(size≤W−k).
+LLM evaluation.Each batchB∈Bis sent concurrently for
+LLM evaluation, with context including the parent leaf state
+s=(u, H, z), rubricR prior, and for every actiona=(r, v)∈B,
+the predicaterand nodevattributes (identifier,type,label,
+anddescription). The model returns a rankπ B(a)and score
+sB(a)per action, and on the final pass (i.e. for the top-W
+actions) a free-text justification to support interpretability3.
+A within-batch z-score standardisation yields˜s B(a).
+Cross-batch aggregation & global order.Within each
+ordered batch, we identify the left and/or right pivot for
+every non-pivot. To obtain a transitive global order, we
+use the shared pivots as anchors: each pivot’s rank and
+score are averaged across batches to form an anchor score
+S(p)=(−¯π(p),¯s(p)). We then extendS(·)to non-pivots by
+2form=1,βTare the PageRank scorespprz(·),form≥2these
+are replaced with the batch-standardised LLM scores˜s(a).
+3Full prior policy prompt (template and example) in Suppl. S2.interpolating between their neighbouring pivots. Having es-
+tablishedS(a)for every action, the final ordering is obtained
+by sorting lexicographically on(S(a), s B(a), β(a)).
+Prior over actions.Given the final ordering, each action
+is assigned a utility that blends its normalised rank with its
+batch-standardised LLM score. We then map these utilities
+to probabilities via a temperature-controlled softmax.
+3.4 State Evaluation
+We perform a comparative evaluation of non-terminal leaves:
+each candidate is (i) assessed jointly with a small set of com-
+peting pathsC(s L), and (ii) scored for its marginal contribu-
+tion relative to the current explanation setH exp.
+Formally, consider the evaluation of a leaf state
+sL=(u,H,z)under roots 0.LetL(s 0)be the set of all ac-
+tive search states unders 0,andH sthe root-to-spath, whose
+length|H s|gives the depth of states.
+We aim to estimate the state valuev(s L)∈[−1,1]using an
+LLM-based evaluator by scoring its path historyH sLagainst
+adepth-boundcompetitor setC(s L).Competitors are se-
+lected from a filtered poolF ∆(sL),containing only states
+within a depth window∆∈N 0ofsL:
+F∆(sL) =n
+s∈ L(s 0)\ {s L}:|Hs| − |H sL|≤∆o
+.
+C(sL)is then constructed as{s L} ∪Top-k ≺(F∆(sL)),
+where the ordering≺is lexicographic (descending) on two
+search-tree statistics:
+logP path(s) =X
+(s,a)∈H slog 
+max{P(s, a), ε}
+,and
+Ncum(s) =X
+(s,a)∈H sN(s, a).
+HereNandPare per-edge visit counts and priors, and
+ε>0is a small numerical clamp. If fewer thankcompetitors
+exist, all are included; if none exist,C(s L) ={s L}.
+Each states∈C(s L)is presented to the model through
+its path historyH, with the prompt conditioned on the
+current explanation setH exp(s0)={H:∃s=(z, H, z)}.The
+model evaluates each state using a predefined ordinal rubric
+Rstate-eval ={ρ min<. . .<ρ max}⊂Zof integer labels.4Instead
+of using the output label directly, we obtain a continuous,
+uncertainty-aware score by taking a softmax over the rubric,
+using the model’s token-level log-probabilitiesℓ(ρ i|s), to get
+a categorical probability distributionp(ρ i|s). The resulting
+expected score,P
+ip(ρi|s)ρ i,is normalised to getv(s) :
+v(s) =2P
+ip(ρi|s)ρ i−(ρ max+ρmin)
+ρmax−ρmin∈[−1,1]
+Non-LLM baseline (PPR-eval).As a deterministic base-
+line, we replace the LLM evaluator with a value computed
+from the target-conditioned PageRank scorespprz(·). Since
+pprzis not on the[−1,1]scale used in PUCT backups, we
+apply a global rank calibration:
+vppr(s=(u, H, z)) = 2·rank pct 
+pprz(u)
+−1∈[−1,1],
+whererank pct∈[0,1]is the normalised rank ofpprz(u)
+over all nodes.
+4Full state-eval prompt (template and example) in Suppl. S4.
+4 Experimental Setup
+4.1 Substrate Graphs
+DrugMechDB (DMDB).A merged supergraph of expert-
+curated per-indication mechanisms from DrugMechDB
+[Gonzalez-Cavazoset al., 2023 ], allowing evaluation against
+ground-truth mechanisms, thus decoupling algorithmic per-
+formance from substrate completeness. The resulting graph
+(5,128 nodes; 10,064 edges) spans multiple levels of biolog-
+ical organisation (molecular activities, pathways, anatomical
+structures, phenotypes) but offers only a small per-step ac-
+tion set (out-degree mean=2; p90=4; max=224) and mini-
+mal strong connectivity (largest strongly connected compo-
+nent (SCC) covering just 1% of nodes).
+Multi-scale Interactome (MSI).To complement the above
+and probe performance under high-branching search, we
+evaluate on a large-scale biological knowledge graph adapted
+from the Multiscale Interactome [Ruizet al., 2021 ](adapta-
+tion details in Suppl. S5). The graph (29,698 nodes; 921,953
+edges) encompasses 17,527 proteins, 9,798 biological func-
+tions, 1,550 drugs, and 821 diseases. Its dense protein–
+protein interaction core and GO function hierarchy yield
+a much larger action space (out degree mean=31, p90=75,
+max=2,299). Moreover, the largest SCC spans 92% of nodes,
+indicating extensive bidirectional reachability and, as search
+states are path-dependent, a high path multiplicity, making
+search more challenging.
+4.2 Language Models and Evaluation Set
+For state evaluation during search, we experiment with
+SOTAnon-reasoningmodels, GPT-4.1, DEEPSEEK-V3.1,
+and QWEN3-235B, on the premise that decomposition of
+search into local discriminative judgments at least partially
+obviates the need for reasoning models. The prior policy uses
+GPT-4.1 throughout; priors are cached per search state, en-
+abling reuse across runs varying only the state-eval model.
+Model identifiers, inference settings, and algorithm hyperpa-
+rameters are provided in Supplement S1.
+Due to the computational costs associated with LLM infer-
+ence (see Supplement S10 for a per-search LLM-call bound),
+we limit our evaluation to a representative sample of 15 drug-
+disease pairs. To ensure diversity across pharmacological and
+pathophysiological contexts, pairs were sampled across 12
+MeSH disease categories and 9 ATC therapeutic classes, and
+further stratified by DMDB reference graph size (node/edge
+count). Full details in Supplement S6.
+4.3 Evaluation Protocol
+With DrugMechDB as substrate
+The predicted subgraphs are compared deterministically
+against their curated (gold) counterparts along 4 axes (formal
+definitions in Suppl. S7).
+Node Set Agreement (NSA).Set overlap between the cu-
+rated and predicted nodes; order agnostic.
+Edge Set Agreement (ESA@h).Edge agreement withh-
+hop tolerance. A predicted edge(u→v)counts forprecision
+if the curated graph connects(u⇝v)within≤hhops (i.e.
+shortcuts allowed). Conversely, a curated edge iscovered(counts forrecall) if the prediction connects(u⇝v)within
+≤hhops (i.e. detours allowed). ESA@1 reduces to strict
+edge overlap.
+Transitive-Closure Agreement (TCA).Path independent
+reachability among curated nodes. LetC ⋆andC pbe the
+transitive closures of the curated and predicted graphs over
+the curated node setV ⋆(i.e.,C ⋆, Cp⊆V⋆×V⋆). Precision
+is the fraction of pairs inC pthat also lie inC ⋆; recall is the
+fraction of pairs inC ⋆that also lie inC p(predicted paths may
+traverse any, including non-curated, nodes). Captures agree-
+ment of the overall connectivity structure.
+Exact Path Agreement (EPA).Overlap ofexactdrug to
+disease paths, evaluated only at path lengths present in the
+curated subgraph.EPA–IV(in-vocabulary)scores only those
+predicted paths that stay entirely within curated nodes, mak-
+ing precision more lenient to off-mechanism nodes and iso-
+latingverbatim fidelityto the curated narrative.EPA–OW
+(open-world)scores all predicted paths, yielding stricter pre-
+cision and emphasizingparsimonyby penalizing paths that
+route through non-curated nodes.
+With the Multi-scale Interactome as substrate
+In absence of ground-truth mechanisms to compare against,
+we implement a rubric-based LLM-as-judge protocol, using
+large language models augmented with expert-curated ref-
+erence knowledge to score the predicted subgraphs. Each
+subgraph is judged on 5 dimensions–Biological Plausibility,
+Mechanistic Coherence,Contextual Specificity,Complete-
+ness,Conciseness–with each dimension rated on a 1-5 or-
+dinal scale. As reference, we use the mechanism-of-action
+entries from DrugBank [Knoxet al., 2024 ]and mechanism
+graphs from DrugMechDB to ground assessments (prompt
+and rubric in Suppl. S8).
+To control for scoring variability, we employ a3×3design:
+(i)as LLMs can exhibit sensitivity to the presentation-order of
+graph elements, each judge evaluates 3 different serialisations
+(permutations) of the same graph, varying only in node/edge
+ordering;(ii)as different LLMs can exhibit different scor-
+ing behaviours, each subgraph is independently scored by
+3 judges (GPT-4.1, DEEPSEEK-V3.1, QWEN3-235B). For
+each individual judgment, we extract the model’s token prob-
+abilities over the five ordinal scale valuesk∈{1, . . .,5},
+renormalise them, and compute a probability-weighted ex-
+pected ratingE[s]=P
+kk p(k), yielding a continuous score
+in[1,5]. The reported scores(per subgraph, dimension)
+are the mean of these expected ratings across all 9 permu-
+tation–judge combinations.
+5 Results and Discussion
+5.1 Evaluation on DrugMechDB
+Aggregate performance
+Table 1 reports scores pooled across state-eval LLMs. Node-
+level agreement is strong (NSA Micro P/R =0.71/0.83).
+At edge level, ESA@1 (no hop slack) yields Micro P/R =
+0.44/0.64.Allowing for a 1-hop tolerance (ESA@2) raises
+precision (0.44to0.50), while recall remains flat, indicating
+more 1-hop shortcuts than detours in the predicted subgraphs
+(examined further below). To investigate whether the modest
+1 2 3 4 5 6
+Hops in Predicted Graph hP123456Hops in Curated (Gold) Graph hG
+221 132 135 543 82 124 25 313 16 12 123 9 3
+equal hops = 73.1%
+shortcuts = 25.8%, detours = 1.1%
+mass within | h|  1 = 91.6%
+A. Path-Length Alignment
+0 1 2 3 4 5
+#mediators - Predicted Graph mP=hP 1
+012345#mediators - Curated (Gold) Graph mG=hG 1
+average mediator overlap = 61.5%0.86 0.000.28 0.77 0.250.11 0.39 0.690.00 0.30 0.49 0.500.12 0.37 0.71B. Mediator Overlap (Jaccard)
+0 1 2 3 4 5
+#mediators - Predicted Graph mP=hP 1
+012345#mediators - Curated (Gold) Graph mG=hG 1
+% mediation via gold nodes = 74.1%0.000.90 0.160.60 0.82 0.330.50 0.62 0.740.00 0.78 0.65 0.610.50 0.89 0.71C. Mediation via Curated (Gold) Nodes
+0 25 50 75 100 125 150 175 200
+count of reachable node pairs (predicted  gold)
+0.0 0.2 0.4 0.6 0.8 1.0
+mediator overlap (mean per <mP,mG> bin)
+0.0 0.2 0.4 0.6 0.8 1.0
+curated mediator fraction (mean per <mP,mG> bin)Figure 1:Panel A: joint distribution of shortest-path hop counts(h P,hG)between node pairs reachable in both curated and predicted graphs;
+diagonal = matched length, above = shortcuts, below = detours;h=1separates direct vs. mediated connections.Panel B: Jaccard overlap of
+predicted vs. curated mediator sets (mean perm P,mGbin); undefined form P=0orm G=0(hatched).Panel C: fraction of mediators in the
+predictedpaths that arecurated (gold)nodes (mean perm P,mGbin); undefined form P=0(hatched).
+precision at bothh={1,2}reflects outright spurious edges or
+plausible but uncurated mediators, a valid possibility given
+DMDB mechanisms are not exhaustive, we evaluated ESA
+whilerestricting edges to curated nodes only, which raised
+Micro P to0.86ath=1and0.99ath=2,confirming the
+low rate of false positives (spurious edges) among curated
+nodes. Comparing reachability between curated node pairs in
+both graphs, TCA shows Micro P/R =0.99/0.66,i.e. nearly
+all reachability claims made by the algorithm are valid, with
+the predictions missing about34%of node pairs reachable
+in gold (primarily due to missing nodes). Finally, comparing
+complete drug→disease paths, EPA-IV has a Micro P of0.84,
+implying the algorithm’s traversal of curated nodes by and
+large follows gold paths. On the other hand, the significant
+drop in precision from EPA-IV to EPA-OW (0.84to0.27)
+underscores that predicted paths frequently incorporate nodes
+outside the curated mechanism.
+Path-length and mediator analysis
+Figure 1 decomposes the structural agreement.A.(Path-
+Length Alignment) shows73.1%of mass on the diago-
+nal (matched hops) and91.6%within|∆h|≤1. When not
+matched, paths tend to compress (above diagonal (shortcut) =
+25.8%) rather than expand (detour =1.1%), reinforcing why
+ESA precision improves withh=2while recall stays flat;B.
+(Mediator Overlap) shows that for pairs requiring at least one
+mediator (h≥2hops), predicted paths share on average61.5%
+of their mediators with the corresponding gold paths (Jac-
+card overlap); the remainder includes substitutions involving
+both curated and uncurated nodes;C.(Mediation via Gold
+Nodes) shows that74.1%of all predicted mediators are cu-
+rated nodes, thus most mediation mass flows through curated
+biology even if exact routes differ.
+The comparisons above show the algorithm largely identi-
+fies and connects the correct endpoints (high NSA/TCA), of-
+ten via slightly shorter routes (Panel A) that nonetheless passAxis Micro P Micro R Micro F1 Macro F1
+NSA0.71
+(0.68–0.74)0.83
+(0.77–0.88)0.76
+(0.73–0.80)0.77
+(0.73–0.80)
+ESA@10.44
+(0.39–0.49)0.64
+(0.54–0.74)0.52
+(0.46–0.58)0.53
+(0.47–0.60)
+ESA@20.50
+(0.46–0.56)0.64
+(0.55–0.73)0.56
+(0.51–0.62)0.57
+(0.51–0.63)
+TCA0.99
+(0.98–1.00)0.66
+(0.58–0.75)0.79
+(0.73–0.85)0.81
+(0.75–0.87)
+EPA–IV0.84
+(0.72–0.95)0.33
+(0.21–0.48)0.48
+(0.33–0.63)0.44
+(0.30–0.58)
+EPA–OW0.27
+(0.18–0.37)0.33
+(0.21–0.48)0.30
+(0.20–0.41)0.31
+(0.21–0.42)
+Table 1: DrugMechDB results (15 pairs×3 state-eval LLMs = 45
+runs). Columns show Micro (pooled across runs) and Macro (per-
+run mean) aggregates. Cells display point estimate on line 1; 95%
+CI on line 2. Confidence intervals via run-level bootstrap.
+through curated biology (Panel C). It also shows good fidelity
+to curated paths (high EPA-IV precision) but can lack parsi-
+mony, proposing paths that traverse uncurated mediators (low
+EPA-OW precision). While understandable, given the search
+uses pre-trained LLMs with no task-specific supervision to
+match DMDB exactly, it does raise the question of whether
+these uncurated proposals constitute valid alternatives.
+Qualitative analysis
+We examined 15 subgraphs (GPT-4.1 state-eval) and identi-
+fied recurring divergence patterns that nonetheless preserved
+biological coherence; per-pair annotations in Suppl. S9.
+Two dominant patterns appeared: (1)mechanistic elabora-
+tion, where predictions added upstream signaling pathways or
+regulatory detail (12/15 pairs; e.g., IL-1-mediated signaling
+pathway, adenylate cyclase-GPCR signaling, smooth mus-
+Figure 2: Predicted vs. Curated explanatory subgraph for
+Benazepril→Hypertensive Disorder. Legend: Common;
+Curated only; Predicted only.
+cle contraction), and (2)phenotype insertion, where predic-
+tions introduced explicit phenotypic states between biologi-
+cal processes and disease endpoints (9/15 pairs; e.g., Hyper-
+tension before Hypertensive disorder, joint swelling before
+Rheumatoid arthritis). Less frequent patterns included inser-
+tion/omission of chemical mediators (5/15; e.g., Dopamine,
+Aldosterone, Calcium) and addition/omission of anatomi-
+cal/cellular context (4/15; e.g., lymphoid system, Leuko-
+cyte). In all cases, direction of effect and endpoint align-
+ment were maintained. Figure 2 illustrates this on a represen-
+tative pair,Benazepril-Hypertensive Disorder, which other-
+wise shows poor performance on exact path metrics (EPA-(IV
+& OW)=0). Both graphs share the canonical ACE inhibitor
+pharmacology (Benazepril→Benazeprilat→inhibits ACE
+→ ↓Angiotensin II). The curated graph then routes through
+renal sodium absorptionandwater retention; the prediction
+instead captures an upstream regulator in the same axis,al-
+dosterone secretion. The prediction also inserts an explicit
+phenotypic intermediate (Hypertension).
+5.2 Evaluation on the Multi-scale Interactome
+Following the LLM-as-judge protocol, letsm
+g,dbe the mean
+expected score across the 3x3 serialisation-judge combina-
+tions, for subgraphg,dimensiond,and state evaluation
+modelm∈{GPT-4.1,DEEPSEEK-V3.1,QWEN3-235B}.
+Reliability.To assess the reliability of the scoring pro-
+cess, we estimated intra- and inter-rater agreement using two-
+way mixed-effects, absolute-agreement, intraclass correla-
+tions (ICC) [Koo and Li, 2016 ]. Within-model agreement
+across the 3 serialisations was extremely high, ICC(3,3) =
+0.989 (DEEPSEEK-V3.1), 0.987 (QWEN3-235B), and 0.981
+(GPT-4.1), indicating practical invariance to permutation or-
+der. Likewise, agreement among the 3 judge LLMs, pooled
+across the 5 dimensions, was excellent: ICC(3,3)=0.946, 95%
+CI 0.93-0.96, justifying the use ofsm
+g,das a reliable input.
+Score distributions.Figure 3 shows the score distributions;
+included are two baselines that substitute the LLM-based
+state evaluation with PPR-eval. Baseline-1 retains the LLM
+prior; Baseline-2 pairs PPR-eval with a uniform prior over le-
+gal actions. Across the three LLM-based state-eval variants,
+Contextual Specificitywas uniformly highest (medians span-
+ning 4.23-4.51), followed byBiological Plausibility(3.72-
+3.87),Mechanistic Coherence(3.70-3.84), andCompleteness
+(3.64-3.71);Concisenesswas scored the lowest (2.34-2.47).
+1.0 1.5 2.0 2.5 3.0 3.5 4.0 4.5 5.0
+Score (sm
+g,d)BP MC CS Comp. Conc.
+GPT-4.1/GPT-4.1
+Baseline-1
+(GPT-4.1/PPR)GPT-4.1/Qwen3-235B
+Baseline-2
+(Uniform/PPR)GPT-4.1/DeepSeek-V3.1Figure 3: Score (sm
+g,d) distributions on MSI across 5 dimensions
+(BP: Biological Plausibility; MC: Mechanistic Coherence; CS: Con-
+textual Specificity; Comp.: Completeness; Conc.: Conciseness).
+Legend shows prior model/state-eval model.
+GPT-4.1 exhibited the tightest dispersion (IQR between 0.22-
+0.42); QWEN3-235B and DEEPSEEK-V3.1 showed wider
+spread (IQR between 0.54-1.10). While both baselines scored
+lower across all dimensions, Baseline-2 collapsed markedly,
+i.e. the exploration bias induced by the LLM-informed priors
+largely offsets PPR-eval; absent this, search tends to degener-
+ate and disperse across the target-proximal space.
+Cross-model comparison.We compute the difference be-
+tween dimension-averaged scores, per drug-disease pair, for
+each state-eval model pair ∆g(m1, m2) =1
+5P
+d(sm1
+g,d−sm2
+g,d),
+and report (Table 2) the median (signed and absolute) and
+fraction of subgraphs scored withinδ= 1/4and 1/2of a scale
+point. Additionally, we measure rank concordance across
+subgraphs using Kendall’sτ b.Looking at the results, signed
+medians are near-zero; absolute medians span 0.13–0.16,
+small relative to the 1-5 rubric scale. Agreement within-δfur-
+ther underscores the tight clustering, with DEEPSEEK-V3.1
+accounting for most outliers. Rank concordance is also strong
+(τb=0.60−0.79), implying the models largely agree on which
+drug-disease pairs are easier or harder to explain, in part due
+to topological constraints of the shared substrate.
+Model PairMedian
+∆g/|∆g|τbPr(|∆g|≤δ)
+δ: 0.25/0.50
+GPT-4.1 vs
+DEEPSEEK-V3.1−0.10/0.13 0.79 0.67/0.80
+QWEN3-235B vs
+DEEPSEEK-V3.10.02/0.16 0.60 0.67/0.87
+GPT-4.1 vs
+QWEN3-235B−0.02/0.15 0.77 0.87/1.00
+Table 2: Cross-model (state-eval) agreement on dimension-averaged
+subgraph scores.
+0.0 0.2 0.4 0.5 0.6 0.8 1.0 1.2
+Absolute score difference (|g(m1,m2)|[0,4])
+0.00.20.40.50.60.81.0Edge Jaccard distance (1Jedge)
+40.0%
+(Q11)48.9%(Q12)
+0.0%
+(Q21)11.1%(Q22)
+GPT-4.1 vs DeepSeek-V3.1
+Qwen3-235B vs DeepSeek-V3.1
+GPT-4.1 vs Qwen3-235BFigure 4: Per-subgraph absolute score difference vs. structural di-
+vergence across state-eval model pairs; quadrants show pooled per-
+centages.
+Structural convergence vs. Mechanistic pluralism.The
+patterns above imply strong cross-model agreement in the
+scored outcomes. For insight into the extent to which this
+reflects structural convergence versus distinct but equally
+defensible mechanisms, Figure 4 relates the absolute score
+difference (| ∆g|) to structural divergence (edge-level Jac-
+card distance). We see a substantial structural spread (edge-
+distance IQRs between0.37−0.41across model pairs), point-
+ing to significant mechanistic pluralism between the mod-
+els, and, in turn, to the discriminative influence of the state-
+eval function on the search. Taking a per-quadrant view,
+using| ∆g|=0.5(half a scale step) and edge-distance=0.5
+as thresholds, mass concentrates comparably between Q11
+(40.0%,convergent mechanisms) and Q12(49.0%,plural
+mechanisms). Notably, Q21 (structural convergence, score
+divergence) is empty across pairs, consistent with the high
+ICC values and a reliable subgraph evaluation methodology.
+5.3 Ablation Study: Prior Policy
+To assess the influence of the prior policy, we conduct an ab-
+lation on MSI, replacingπ LLM(·|s)utilising GPT-4.1 with a
+uniform distribution over legal actions. Figure 5 shows, for
+each dimensiondand state-eval modelm, the mean of score
+differences∆sm
+g,d=sm,LLM
+g,d−sm,Uniform
+g,dacross drug–disease
+pairs. Overall, the LLM-derived priors yield higher scores
+across rubric dimensions and state-eval models. The largest
+gains are onConciseness, followed byMechanistic Coher-
+ence, and smallest onContextual Specificity, the latter indica-
+tive of both priors, bound by the same PPR-filtered neigh-
+bourhood, exploring similar regions of the substrate; larger
+differences in conciseness and coherence thus appear to re-
+flect how paths are assembled within this overlapping region.
+To examine this, we compute four structural metrics per
+subgraph: drug→disease path count (n path), mean path length
+(ℓpath), fraction of paths consisting solely of protein–protein
+interactions (f PPI-only ), and ratio of biological-process to pro-
+tein nodes (r BP:Prot ). Table 3 reports averages across drug-
+disease pairs and state-eval models. To situate the analy-
+sis in the substrate’s topology, consider that MSI is protein-
+dominated: protein–protein interactions comprise 84% of
+0.2
+ 0.0 0.2 0.4 0.6 0.8 1.0
+sm
+g,d=sm,LLM
+g,dsm,Uniform
+g,d
+BP MC CS Comp. Conc.
+LLM (GPT-4.1) vs. Uniform Priors
+GPT-4.1 eval Qwen3-235B eval DeepSeek-V3.1 evalFigure 5: Prior policy ablation: mean score difference (LLM minus
+uniform prior) by dimension and state-eval model; 95% bootstrap
+CIs.
+Prior¯n path¯ℓpath¯fPPI-only ¯rBP:Prot
+GPT-4.17.58±5.287.89±2.670.13±0.170.64±0.24
+UNIFORM19.56±9.685.97±0.780.39±0.300.29±0.19
+Table 3: Subgraph structural metrics: LLM vs. Uniform priors. En-
+tries show mean±SD across drug-disease pairs, state-eval models.
+all edges, and proteins outnumber biological-process nodes
+17,527 to 9,798, predisposing any under-discriminative pol-
+icy to proliferate protein-heavy subgraphs. The search under
+a uniform prior manifests this bias clearly, admitting on aver-
+age2.5×more paths per subgraph, that are substantially more
+protein-dominated ( ¯fPPI-only :0.39vs.0.13) and markedly less
+process-enriched (¯r BP:Prot :0.29vs.0.64). In contrast,π LLM
+biases search onto a smaller set of longer, process-mediated
+routes, suppressing many shorter, redundant, protein-only
+chains. Taken together with the score deltas in Figure 5, this
+partially explains why explanations become simultaneously
+more complete and more concise, and why mechanistic co-
+herence improves despite the increase in average path length.
+6 Conclusion
+Extracting multi-step explanations from knowledge graphs
+requires heuristic guidance to manage combinatorial explo-
+sion and credit assignment to evaluate extended sequences.
+To address these, we present TESSERA, a neuro-symbolic
+decomposition wherein the knowledge graph bounds the hy-
+pothesis space, LLMs supply local semantic judgment, and
+MCTS coordinates search with principled backpropagation.
+Evaluation on drug mechanism elucidation demonstrates the
+approach recovers established biology while surfacing coher-
+ent alternatives. The decomposition applies broadly to com-
+positional reasoning over structured knowledge.
+A note on limitations.Our evaluation spanned 15 drug-
+disease pairs; while stratified for diversity, broader validation
+is needed. Additionally, a systematic hyperparameter opti-
+misation remains non-trivial and unexplored given LLM in-
+ference costs and sparse ground-truth signal; current settings
+reflect manual tuning from pilot experiments.
+Acknowledgments
+This work was supported by the GENIUS Lab (Generative
+Enhanced Next-Generation Intelligent Understanding Sys-
+tems), a collaboration between Delft University of Technol-
+ogy, Maastricht University, DSM-Firmenich, and Kickstar-
+tAI, and by the NWO Long-Term Programme ROBUST,
+initiated by the Innovation Center for Artificial Intelligence
+(ICAI). We thank Dennis Soemers for helpful discussions on
+Monte Carlo Tree Search.
+References
+[Betzet al., 2022 ]Patrick Betz, Christian Meilicke, and
+Heiner Stuckenschmidt. Adversarial Explanations for
+Knowledge Graph Embeddings. volume 4, pages 2820–
+2826, July 2022.
+[Chouet al., 2022 ]Yu-Liang Chou, Catarina Moreira, Peter
+Bruza, Chun Ouyang, and Joaquim Jorge. Counterfac-
+tuals and causability in explainable artificial intelligence:
+Theory, algorithms, and applications.Information Fusion,
+81:59–83, May 2022.
+[Daset al., 2018 ]Rajarshi Das, Shehzaad Dhuliawala,
+Manzil Zaheer, Luke Vilnis, Ishan Durugkar, Akshay
+Krishnamurthy, Alex Smola, and Andrew McCallum. Go
+for a Walk and Arrive at the Answer: Reasoning Over
+Paths in Knowledge Bases using Reinforcement Learning,
+December 2018. arXiv:1711.05851 [cs].
+[Dziriet al., 2023 ]Nouha Dziri, Ximing Lu, Melanie Sclar,
+Xiang Lorraine Li, Liwei Jiang, Bill Yuchen Lin, Pe-
+ter West, Chandra Bhagavatula, Ronan Le Bras, Jena D.
+Hwang, Soumya Sanyal, Sean Welleck, Xiang Ren,
+Allyson Ettinger, Zaid Harchaoui, and Yejin Choi. Faith
+and fate: limits of transformers on compositionality. In
+Proceedings of the 37th International Conference on Neu-
+ral Information Processing Systems, NIPS ’23, pages
+70293–70332, Red Hook, NY , USA, December 2023. Cur-
+ran Associates Inc.
+[d’Aquin, 2025 ]Mathieu d’Aquin. On the role of knowledge
+graphs in AI-based scientific discovery.Journal of Web
+Semantics, 84:100854, January 2025.
+[Godfreyet al., 2025 ]Charles Godfrey, Ping Nie, Natalia
+Ostapuk, David Ken, Shang Gao, and Souheil Inati. Lik-
+ert or Not: LLM Absolute Relevance Judgments on Fine-
+Grained Ordinal Scales, May 2025. arXiv:2505.19334
+[cs].
+[Gonzalez-Cavazoset al., 2023 ]Adriana Carolina
+Gonzalez-Cavazos, Anna Tanska, Michael Mayers,
+Denise Carvalho-Silva, Brindha Sridharan, Patrick A.
+Rewers, Umasri Sankarlal, Lakshmanan Jagannathan, and
+Andrew I. Su. DrugMechDB: A Curated Database of
+Drug Mechanisms.Scientific Data, 10(1):632, September
+2023. Publisher: Nature Publishing Group.
+[Huanget al., 2025 ]Lei Huang, Weijiang Yu, Weitao Ma,
+Weihong Zhong, Zhangyin Feng, Haotian Wang, Qian-
+glong Chen, Weihua Peng, Xiaocheng Feng, Bing Qin,
+and Ting Liu. A Survey on Hallucination in Large Lan-
+guage Models: Principles, Taxonomy, Challenges, andOpen Questions.ACM Trans. Inf. Syst., 43(2):42:1–42:55,
+January 2025.
+[Kambhampatiet al., 2024 ]Subbarao Kambhampati,
+Karthik Valmeekam, Lin Guan, Mudit Verma, Kaya
+Stechly, Siddhant Bhambri, Lucas Paul Saldyt, and
+Anil B. Murthy. Position: LLMs Can’t Plan, But Can
+Help Planning in LLM-Modulo Frameworks. InProceed-
+ings of the 41st International Conference on Machine
+Learning, pages 22895–22907. PMLR, July 2024. ISSN:
+2640-3498.
+[Kambhampati, 2023 ]Subbarao Kambhampati. Avenging
+polanyi’s revenge: Exploiting the approximate omni-
+science of llms in planning without deluding yourself in
+the process. Invited talk, Knowledge and Logical Reason-
+ing in the Era of Data-driven Learning Workshop, Inter-
+national Conference on Machine Learning (ICML 2023),
+July 2023.
+[Knoxet al., 2024 ]Craig Knox, Mike Wilson, Christen M
+Klinger, Mark Franklin, Eponine Oler, Alex Wilson, Al-
+lison Pon, Jordan Cox, Na Eun (Lucy) Chin, Seth A
+Strawbridge, Marysol Garcia-Patino, Ray Kruger, Aad-
+havya Sivakumaran, Selena Sanford, Rahil Doshi, Nitya
+Khetarpal, Omolola Fatokun, Daphnee Doucet, Ash-
+ley Zubkowski, Dorsa Yahya Rayat, Hayley Jackson,
+Karxena Harford, Afia Anjum, Mahi Zakir, Fei Wang,
+Siyang Tian, Brian Lee, Jaanus Liigand, Harrison Peters,
+Ruo Qi (Rachel) Wang, Tue Nguyen, Denise So, Matthew
+Sharp, Rodolfo da Silva, Cyrella Gabriel, Joshua Scant-
+lebury, Marissa Jasinski, David Ackerman, Timothy Jew-
+ison, Tanvir Sajed, Vasuk Gautam, and David S Wishart.
+DrugBank 6.0: the DrugBank Knowledgebase for 2024.
+Nucleic Acids Research, 52(D1):D1265–D1275, January
+2024.
+[Koo and Li, 2016 ]Terry K. Koo and Mae Y . Li. A Guide-
+line of Selecting and Reporting Intraclass Correlation Co-
+efficients for Reliability Research.Journal of Chiropractic
+Medicine, 15(2):155–163, June 2016.
+[Langley, 2024 ]Pat Langley. Integrated Systems for Com-
+putational Scientific Discovery.Proceedings of the
+AAAI Conference on Artificial Intelligence, 38(20):22598–
+22606, March 2024.
+[Liuet al., 2021 ]Yushan Liu, Marcel Hildebrandt, Mitchell
+Joblin, Martin Ringsquandl, Rime Raissouni, and V olker
+Tresp. Neural Multi-hop Reasoning with Logical Rules
+on Biomedical Knowledge Graphs. InThe Semantic Web:
+18th International Conference, ESWC 2021, Virtual Event,
+June 6–10, 2021, Proceedings, pages 375–391, Berlin,
+Heidelberg, June 2021. Springer-Verlag.
+[Liuet al., 2024 ]Nelson F. Liu, Kevin Lin, John Hewitt,
+Ashwin Paranjape, Michele Bevilacqua, Fabio Petroni,
+and Percy Liang. Lost in the Middle: How Language Mod-
+els Use Long Contexts.Transactions of the Association for
+Computational Linguistics, 12:157–173, 2024.
+[Nuneset al., 2025 ]Susana Nunes, Samy Badreddine, and
+Catia Pesquita. Rewarding explainability in drug repurpos-
+ing with knowledge graphs. In James Kwok, editor,Pro-
+ceedings of the thirty-fourth international joint conference
+on artificial intelligence, IJCAI-25, pages 4624–4632. In-
+ternational Joint Conferences on Artificial Intelligence Or-
+ganization, August 2025.
+[Phanet al., 2025 ]Long Phan, Alice Gatti, Ziwen Han,
+Nathaniel Li, et al. Humanity’s Last Exam, February 2025.
+arXiv:2501.14249 [cs] version: 2.
+[Qinet al., 2024 ]Zhen Qin, Rolf Jagerman, Kai Hui, Hon-
+glei Zhuang, Junru Wu, Le Yan, Jiaming Shen, Tianqi Liu,
+Jialu Liu, Donald Metzler, Xuanhui Wang, and Michael
+Bendersky. Large Language Models are Effective Text
+Rankers with Pairwise Ranking Prompting. In Kevin Duh,
+Helena Gomez, and Steven Bethard, editors,Findings of
+the Association for Computational Linguistics: NAACL
+2024, pages 1504–1518, Mexico City, Mexico, June 2024.
+Association for Computational Linguistics.
+[Reinet al., 2023 ]David Rein, Betty Li Hou, Asa Cooper
+Stickland, Jackson Petty, Richard Yuanzhe Pang, Julien
+Dirani, Julian Michael, and Samuel R. Bowman. GPQA: A
+Graduate-Level Google-Proof Q&A Benchmark, Novem-
+ber 2023. arXiv:2311.12022 [cs].
+[Rosin, 2011 ]Christopher D. Rosin. Multi-armed bandits
+with episode context.Annals of Mathematics and Artifi-
+cial Intelligence, 61(3):203–230, March 2011.
+[Rossiet al., 2022 ]Andrea Rossi, Donatella Firmani, Paolo
+Merialdo, and Tommaso Teofili. Kelpie: an explainability
+framework for embedding-based link prediction models.
+Proc. VLDB Endow., 15(12):3566–3569, August 2022.
+[Ruizet al., 2021 ]Camilo Ruiz, Marinka Zitnik, and Jure
+Leskovec. Identification of disease treatment mechanisms
+through the multiscale interactome.Nature Communica-
+tions, 12(1):1796, March 2021. Publisher: Nature Pub-
+lishing Group.
+[Silveret al., 2017 ]David Silver, Julian Schrittwieser,
+Karen Simonyan, Ioannis Antonoglou, Aja Huang, Arthur
+Guez, Thomas Hubert, Lucas Baker, Matthew Lai, Adrian
+Bolton, Yutian Chen, Timothy Lillicrap, Fan Hui, Laurent
+Sifre, George van den Driessche, Thore Graepel, and
+Demis Hassabis. Mastering the game of Go without
+human knowledge.Nature, 550(7676):354–359, October
+2017. Publisher: Nature Publishing Group.
+[Simon, 1966 ]Herbert A. Simon. Scientific discovery and
+the psychology of problem solving. In Robert G. Colodny,
+editor,Mind and Cosmos: Essays in Contemporary Sci-
+ence and Philosophy, pages 22–40. University of Pitts-
+burgh Press, 1966.
+[Songet al., 2025 ]Haerin Song, Dongmin Bang, Bonil Koo,
+Sun Kim, and Sangseon Lee. LLM-integrated representa-
+tive path selection for context-aware drug repurposing on
+biomedical knowledge graphs. InNeurIPS 2025 Workshop
+on AI Virtual Cells and Instruments: A New Era in Drug
+Discovery and Development, 2025.
+[Sosa and Altman, 2022 ]Daniel N. Sosa and Russ B. Alt-
+man. Contexts and contradictions: a roadmap for com-
+putational drug repurposing with knowledge inference.
+Briefings in Bioinformatics, 23(4):bbac268, July 2022.[Storket al., 2023 ]Lise Stork, Ilaria Tiddi, Ren ´e Spijker,
+and Annette ten Teije. Explainable Drug Repurposing
+in Context via Deep Reinforcement Learning: 20th Inter-
+national Conference on The Semantic Web, ESWC 2023.
+The Semantic Web, pages 3–20, 2023. Publisher: Springer
+Science and Business Media Deutschland GmbH.
+[Sunet al., 2023 ]Weiwei Sun, Lingyong Yan, Xinyu Ma,
+Shuaiqiang Wang, Pengjie Ren, Zhumin Chen, Dawei Yin,
+and Zhaochun Ren. Is ChatGPT Good at Search? Investi-
+gating Large Language Models as Re-Ranking Agents. In
+Houda Bouamor, Juan Pino, and Kalika Bali, editors,Pro-
+ceedings of the 2023 Conference on Empirical Methods in
+Natural Language Processing, pages 14918–14937, Sin-
+gapore, December 2023. Association for Computational
+Linguistics.
+[Wanget al., 2024 ]Yubo Wang, Xueguang Ma, Ge Zhang,
+Yuansheng Ni, Abhranil Chandra, Shiguang Guo, Weim-
+ing Ren, Aaran Arulraj, Xuan He, Ziyan Jiang, Tianle Li,
+Max Ku, Kai Wang, Alex Zhuang, Rongqi Fan, Xiang Yue,
+and Wenhu Chen. MMLU-Pro: A More Robust and Chal-
+lenging Multi-Task Language Understanding Benchmark,
+November 2024. arXiv:2406.01574 [cs].
+[Yinget al., 2019 ]Rex Ying, Dylan Bourgeois, Jiaxuan
+You, Marinka Zitnik, and Jure Leskovec. GNNEx-
+plainer: Generating Explanations for Graph Neural Net-
+works.Advances in neural information processing sys-
+tems, 32:9240–9251, December 2019.

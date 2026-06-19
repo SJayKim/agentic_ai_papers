@@ -23,6 +23,7 @@
 | **HippoRAG** | 2024.05 | NeurIPS 2024 / OSU | Bernal Jiménez | 해마 인덱싱 이론 + KG + PPR로 단일 단계 멀티홉 검색, IRCoT 대비 10-20x 저렴 |
 | **HippoRAG 2** | 2025.02 | OSU | Bernal Jiménez | HippoRAG 확장, GraphRAG/LightRAG 대비 +7% 및 비용·지연 효율적 |
 | **A-MAC** | 2026.03 | ICLR 2026 Workshop | Guilin Zhang | 메모리 입장을 5가지 요인으로 분해하는 구조적 의사결정 프레임워크 |
+| **REMem** | 2026.02 | ICLR 2026 / Ohio State-Intuit | Yiheng Shu | 시간 파싱 gist + n-ary fact 하이브리드 메모리 그래프와 에이전틱 시간여행 검색으로 episodic 회상·추론, HippoRAG2·Mem0 능가 |
 
 ## 2. Tool Use & MCP (도구 사용 및 모델 컨텍스트 프로토콜)
 
@@ -37,6 +38,8 @@
 | **τ-bench** | 2024.06 | ICLR 2025 / Sierra-Princeton | Shunyu Yao | 도구-에이전트-사용자 3자 상호작용 벤치마크, GPT-4o 50% 미만 성공 |
 | **MCP Security** | 2025.03 | arXiv | Xinyi Hou | MCP 4단계 라이프사이클별 16개 보안 위협 분류 및 방어 전략 |
 | **Agent Protocols Survey** | 2025.04 | arXiv / SJTU | Yingxuan Yang | MCP, A2A, ACP, ANP 에이전트 통신 프로토콜 체계적 비교 서베이 |
+| **MCP-Bench** | 2025.08 | arXiv / Accenture | Zhenting Wang | 28개 라이브 MCP 서버·250개 도구로 의존성 사슬·cross-server 오케스트레이션을 fuzzy 지시로 평가(20개 LLM 중 gpt-5 0.749 최고) |
+| **ComplexMCP** | 2026.05 | arXiv / Alibaba | Yuanyang Li | 315개 stateful·상호의존 도구 샌드박스 + seed 기반 결정론적 평가로 상용 SW 자동화 'last mile' 측정(최상위 <60% vs 인간 93.6%) |
 
 ## 3. Planning & Task Decomposition (계획 수립 및 작업 분할)
 
@@ -51,6 +54,8 @@
 | **SWE-agent** | 2024.05 | NeurIPS 2024 / Princeton | John Yang | ACI 설계 원칙으로 GitHub 이슈 자동 해결, SWE-bench 당시 SOTA 12.29% |
 | **EvoAgent** | 2024.06 | NAACL 2025 / Fudan-Microsoft | Siyu Yuan | 진화 알고리즘(돌연변이/교차/선택)으로 단일→다중 에이전트 자동 확장 |
 | **GPTSwarm** | 2024.02 | ICML 2024 Oral / KAUST | Mingchen Zhuge | 에이전트를 계산 그래프로 모델링, 프롬프트+토폴로지 동시 자동 최적화 |
+| **EvoMAS** | 2026.02 | arXiv / Amazon AWS | Yuntong Hu | MAS 생성을 구조적 config 진화로 정식화, 실행 트레이스 기반 변이·교차로 코드 없이 견고한 멀티에이전트 설계(실행성공률 ~99%) |
+| **O-Researcher** | 2026.01 | arXiv / OPPO | Yi Yao | 병렬 멀티에이전트 distillation + GRPO RLAIF로 오픈 deep-research 모델 학습, RACE 48.48로 오픈웨이트 SOTA |
 
 ## 4. Self-Correction & Test-Time Compute (자가 교정 및 추론 시간 연산)
 
@@ -83,6 +88,10 @@
 | **Think-on-Graph** | 2023.07 | ICLR 2024 / IDEA Research | Jiashuo Sun | LLM⊗KG 패러다임: LLM이 KG 위에서 빔 서치로 추론 경로 탐색, 9개 중 6개 SOTA |
 | **Think-on-Graph 2.0** | 2024.07 | ICLR 2025 / IDEA Research | Shengjie Ma | KG 탐색과 문서 검색을 교대 수행하는 하이브리드 프레임워크, 7개 중 6개 SOTA |
 | **Plan-on-Graph** | 2024.10 | NeurIPS 2024 | Liyi Chen | 서브 목표 분해 + 적응적 가이드/메모리/반성으로 ToG 대비 40.8% 적은 LLM 호출 |
+| **Graph-R1** | 2025.07 | ICML 2026 / BUPT-NTU | Haoran Luo | 지식 하이퍼그래프 + 멀티턴 검색을 end-to-end GRPO로 최적화하는 에이전틱 GraphRAG(7B 평균 F1 57.82) |
+| **EvoGraph-R1** | 2026.06 | CVPR 2026 / NPU-Shanghai AI Lab | Jiashi Lin | 멀티모달 지식 하이퍼그래프를 MDP 환경으로 모델링, 검색·추론·지식진화(GRAPHEDIT)를 단일 RL 루프로 통합 |
+| **AgentGL** | 2026.04 | ACL 2026 Main / NYU Shanghai | Yuanfu Sun | graph-native 도구를 가진 RL 에이전트로 그래프 학습(노드분류/링크예측) 확장(노드분류 최대 +17.5%, 링크예측 +28.4%) |
+| **TESSERA** | 2026.05 | IJCAI-ECAI 2026 / Maastricht | Rishabh Jakhar | LLM-guided MCTS로 KG 위에서 약물-질병 기전 설명을 합성하는 neuro-symbolic 프레임워크(listwise prior + 비교적 평가) |
 
 ## 6. General (에이전트 아키텍처 및 기타)
 
@@ -100,6 +109,7 @@
 | **AutoGen** | 2023.08 | COLM 2024 / Microsoft | Qingyun Wu | 커스터마이즈 가능한 다중 에이전트 대화 프레임워크, 사실상 표준 |
 | **MetaGPT** | 2023.08 | ICLR 2024 / FoundationAgents | Sirui Hong | SOP 기반 역할 할당으로 환각 전파 억제, HumanEval 85.9% Pass@1 |
 | **SWE-bench** | 2023.10 | ICLR 2024 Oral / Princeton | Carlos E. Jimenez | 2,294개 실제 GitHub 이슈로 코딩 에이전트 평가하는 사실상 표준 벤치마크 |
+| **Agent Reliability** | 2026.02 | ICML 2026 / Princeton | Stephan Rabanser | 신뢰성을 4차원(일관성/강건성/예측가능성/안전성) 12지표로 정식화, 24개월 역량 향상(r=0.92)이 신뢰성으론 거의 이어지지 않음 실증 |
 
 ## 7. Harness Engineering (하네스 엔지니어링)
 
@@ -120,3 +130,4 @@
 | **TextGrad** | 2024.06 | Nature 2025 / Stanford | Mert Yuksekgonul | LLM 비판을 텍스트 gradient로 backprop, PyTorch-style API로 코드·프롬프트·분자·치료계획 통합 최적화 |
 | **ProTeGi** | 2023.05 | EMNLP 2023 / Microsoft | Reid Pryzant | 실패 사례에 대한 LLM 비판을 textual gradient로 사용, beam search + bandit selection으로 prompt 최적화 |
 | **GEPA** | 2025.07 | arXiv / Stanford-UCB | Lakshya A Agrawal | Reflective mutation + Pareto-based candidate selection + System-aware Merge, GRPO 대비 35× rollout 효율로 평균 +6% |
+| **Less-Context** | 2026.06 | arXiv / Microsoft | Abhilasha Lodha | frozen 에이전트 컨텍스트를 recent-5 도구쌍+요약으로 가지치기, GPT-5 완료율 71%→91.6%를 토큰 62.7%↓로 달성 |
